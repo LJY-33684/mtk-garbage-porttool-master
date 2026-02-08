@@ -1,0 +1,193 @@
+{
+    "mt6572/mt6582/mt6592 kernel-3.4.67": {
+        "partitions": {
+            "system": "/dev/block/mmcblk0p4",
+            "boot": "/dev/block/bootimg"
+        },
+        "flags": {
+            "generate_script": true,
+            "replace_kernel": true,
+            "replace_fstab": false,
+            "selinux_permissive": true,
+            "enable_adb": true,
+            "replace_firmware": true,
+            "replace_mddb": true,
+            "replace_malidriver": true,
+            "replace_audiodriver": false,
+            "replace_libshowlogo": false,
+            "replace_mtk-kpd": true,
+            "replace_gralloc": true,
+            "replace_hwcomposer": true,
+            "replace_ril": false,
+            "single_simcard": false,
+            "dual_simcard": false,
+            "fit_density": true,
+            "change_model": true,
+            "change_timezone": true,
+            "change_locale": true,
+            "use_custom_update-binary": true
+        },
+        "replace": {
+            "kernel": [
+                "kernel"
+            ],
+            "fstab": [
+                "initrd/fstab",
+                "initrd/fstab.mt6572",
+                "initrd/fstab.mt6582",
+                "initrd/fstab.mt6592"
+            ],
+            "firmware": [
+                "etc/firmware"
+            ],
+            "mddb": [
+                "etc/mddb"
+            ],
+            "malidriver": [
+                "lib/libMali.so"
+            ],
+            "audiodriver": [
+                "lib/libaudio.primary.default.so",
+                "etc/audio_effects.conf",
+                "etc/audio_policy.conf"
+            ],
+            "libshowlogo": [
+                "lib/libshowlogo.so"
+            ],
+            "mtk-kpd": [
+                "usr/keylayout/mtk-kpd.kl"
+            ],
+            "ril": [
+                "bin/ccci_fsd",
+                "bin/ccci_mdinit",
+                "bin/gsm0710muxd",
+                "bin/gsm0710muxdmd2 ",
+                "bin/rild",
+                "bin/rildmd2",
+                "lib/librilmtk.so",
+                "lib/librilmtkmd2.so",
+                "lib/librilutils.so ",
+                "lib/mtk-ril.so",
+                "lib/mtk-rilmd2.so"
+            ],
+            "gralloc": [
+                "lib/hw/gralloc.mt6572.so",
+                "lib/hw/gralloc.mt6582.so",
+                "lib/hw/gralloc.mt6592.so"
+            ],
+            "hwcomposer": [
+                "lib/hw/hwcomposer.mt6572.so",
+                "lib/hw/hwcomposer.mt6582.so",
+                "lib/hw/hwcomposer.mt6592.so"
+            ]
+        }
+    },
+    "kernel only (only replace kernel)": {
+        "partitions": {},
+        "flags": {
+            "generate_script": false,
+            "replace_kernel": true,
+            "selinux_permissive": true,
+            "enable_adb": true,
+            "replace_firmware": true,
+            "replace_mddb": true
+        },
+        "replace": {
+            "kernel": [
+                "kernel",
+                "kernel.gz"
+            ],
+            "firmware": [
+                "etc/firmware"
+            ],
+            "mddb": [
+                "etc/mddb"
+            ]
+        }
+    },
+    "G79 (mt6735/mt6735m/mt6737) kernel-3.18.19": {
+        "partitions": {},
+        "flags": {
+            "generate_script": false,
+            "replace_kernel": true,
+            "replace_fstab": false,
+            "selinux_permissive": true,
+            "enable_adb": true,
+            "replace_firmware": true,
+            "replace_mddb": true,
+            "replace_malidriver": false,
+            "replace_audiodriver": false,
+            "replace_libshowlogo": false,
+            "replace_mtk-kpd": false,
+            "replace_wifi": false,
+            "replace_camera": false,
+            "single_simcard": false,
+            "dual_simcard": false,
+            "fit_density": true,
+            "change_model": true,
+            "change_timezone": true,
+            "change_locale": true,
+            "use_custom_update-binary": true
+        },
+        "replace": {
+            "kernel": [
+                "kernel"
+            ],
+            "fstab": [
+                "initrd/fstab",
+                "initrd/fstab.mt6735",
+                "initrd/fstab.mt6737"
+            ],
+            "firmware": [
+                "etc/firmware"
+            ],
+            "mddb": [
+                "etc/mddb"
+            ],
+            "malidriver": [
+                "lib/libMali.so"
+            ],
+            "audiodriver": [
+                "lib/hw/audio.primary.mt6735.so",
+                "lib/hw/audio.primary.mt6735m.so",
+                "lib/hw/audio.primary.mt6737.so",
+                "lib/hw/audio.primary.mt6737m.so"
+            ],
+            "libshowlogo": [
+                "lib/libshowlogo.so"
+            ],
+            "mtk-kpd": [
+                "usr/keylayout/mtk-kpd.kl"
+            ],
+            "wifi": [
+                "bin/netcfg",
+                "bin/dhcpcd",
+                "bin/ifconfig",
+                "bin/hostap",
+                "bin/hostapd",
+                "bin/hostapd_bin",
+                "bin/pcscd",
+                "bin/wlan*",
+                "bin/wpa*",
+                "bin/netd",
+                "lib/libhardware_legacy.so",
+                "etc/wifi"
+            ],
+            "camera": [
+                "lib/lib3a.so",
+                "lib/libcamalgo.so",
+                "lib/libcamdrv.so",
+                "lib/libcameracustom.so",
+                "lib/libfeatureio.so",
+                "lib/libimageio.so",
+                "lib/libimageio_plat_drv.so",
+                "lib/libJpgDecPipe.so",
+                "lib/libJpgEncPipe.so",
+                "lib/libmhalImageCodec.so",
+                "lib/libmtkcamera_client.so",
+                "lib/libmtkjpeg.so",
+                "lib/libcam.paramsmgr.so"
+            ]
+        }
+    }
+}
