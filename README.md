@@ -125,3 +125,8 @@ A：检查 bin 目录下的工具是否与当前系统平台匹配（如Window
 # 改进者QQ/邮箱
 
 3368436451@qq.com
+
+# 相关群聊
+
+![qrcode_1770570404334](https://github.com/user-attachments/assets/3dbaaedb-818e-4b15-8df8-b423a63edd0e)
+
