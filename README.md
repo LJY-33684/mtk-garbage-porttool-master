@@ -161,7 +161,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 1.修复了处理build.prop文件时遇到非utf-8字符导致报错
 
-1. Fixed errors caused by non-UTF-8 characters when processing the build.prop file.
+1.Fixed errors caused by non-UTF-8 characters when processing the build.prop file.
 
 2.新增了单独system和boot镜像移植为img镜像的功能
 
@@ -169,7 +169,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 3.优化了输出日志的描述
 
-3. Optimized the description of the output logs.
+3.Optimized the description of the output logs.
 
 4.解决了工具在报错时无法自动删除临时文件以及漏删base文件夹
 
