@@ -117,12 +117,15 @@ The tool automatically executes the following steps:
 # 常见问题 / FAQ
  
 Q：点击“一键移植”后按钮变灰，无其他反应？
+
 A：这是防止重复执行的机制，工具正在后台处理流程，可通过“日志输出”查看进度。
  
 Q：ADB调试未生效？
+
 A：工具会优先修改 system/build.prop 中的 ro.debuggable 等配置，若未生效可手动检查该文件。
  
 Q：镜像生成失败？
+
 A：检查 bin 目录下的工具是否与当前系统平台匹配（如Windows对应 win/x86_64 目录）。
 
 Q: After clicking "One-Click Porting", the button turns gray and there's no other response?
