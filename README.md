@@ -153,7 +153,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <img width="948" height="471" alt="image" src="https://github.com/user-attachments/assets/0e5c8c30-8d12-4595-8ac2-37519ad6979f" />
 
 
-# 感谢[@affggh分享](https://github.com/affggh)的原文件，此移植工具基于原工具进行的改进 / Thanks to [@affggh分享](https://github.com/affggh) for sharing the original files. This porting tool is an improvement based on the original tool.
+# 感谢[@affggh](https://github.com/affggh)分享的原文件，此移植工具基于原工具进行的改进 / Thanks to [@affggh](https://github.com/affggh) for sharing the original files. This porting tool is an improvement based on the original tool.
 
 原作者/Original Author [@affggh](https://github.com/affggh)
 
