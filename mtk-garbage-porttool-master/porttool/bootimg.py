@@ -121,7 +121,7 @@ def write_bootimg(output, kernel, ramdisk, second,
     writecontent(output, ramdisk)
     writecontent(output, second)
     writecontent(output, dt_image)
-    if hasattr('output', 'close'):
+    if hasattr(output, 'close'):
         output.close()
 
 
@@ -630,9 +630,12 @@ def repack_bootimg(_base=None, _cmdline=None, _page_size=None, _padding_size=Non
             tmp.close()
             output.close()
             bootinfo.close()
-    os.remove('bootinfo.txt')
-    os.remove('boot.img')
-    os.remove('cpiolist.txt')
+    if os.path.exists('bootinfo.txt'):
+        os.remove('bootinfo.txt')
+    if os.path.exists('boot.img'):
+        os.remove('boot.img')
+    if os.path.exists('cpiolist.txt'):
+        os.remove('cpiolist.txt')
     if os.path.exists('ramdisk.gz'):
         os.remove('ramdisk.gz')
     if os.path.exists('ramdisk.cpio.gz'):
@@ -645,7 +648,10 @@ def repack_bootimg(_base=None, _cmdline=None, _page_size=None, _padding_size=Non
         os.remove('dt_image')
     if os.path.exists('ramdisk'):
         os.remove('ramdisk')
-    shutil.rmtree('initrd')
+    if os.path.exists('initrd'):
+        shutil.rmtree('initrd', ignore_errors=True)
+    if os.path.exists('boot-new.img'):
+        os.remove('boot-new.img')
     os.rename('boot.img.tmp', 'boot-new.img')
 
 def unpack_bootimg(bootimg=None, ramdisk=None, directory=None):

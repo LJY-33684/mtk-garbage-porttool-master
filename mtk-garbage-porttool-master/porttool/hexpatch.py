@@ -7,19 +7,21 @@ def hex2byte(hexstr):
 
 def hexpatch(file_path: str, from_: str, to: str) -> bool:
     patched = False
+    pattern = hex2byte(from_)
+    patch = hex2byte(to)
+    if len(patch) != len(pattern):
+        print(f"hexpatch 错误：from_ 长度({len(pattern)}字节)与 to_ 长度({len(patch)}字节)不一致，跳过")
+        return False
 
     with open(file_path, "r+b") as f:
         with mmap.mmap(f.fileno(), 0) as m:
-            pattern = hex2byte(from_)
-            patch = hex2byte(to)
-            end = m.tell() + len(m)
-            curr = m.tell()
+            end = len(m)
+            curr = 0
             while curr < end:
                 curr = m.find(pattern, curr)
                 if curr == -1:
                     return patched
                 print(f"Patch @ {curr:08X} [{from_}] -> [{to}]")
-                m[curr:curr+len(pattern)] = b'\0' * len(pattern)
                 m[curr:curr+len(patch)] = patch
                 patched = True
                 curr += len(patch)

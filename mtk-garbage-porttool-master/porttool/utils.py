@@ -5,12 +5,14 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from os import walk, getcwd, chdir, symlink, readlink, name as osname, stat, unlink, chmod
 import os.path as op
 from shutil import rmtree, copytree
+from stat import S_IWRITE
 import lzma
 import subprocess
 from sys import stdout
 from hashlib import md5
 from .bootimg import unpack_bootimg, repack_bootimg
 from .imgextractor import Extractor
+from .symlink_fix import fix_symlinks, fix_inode_bitmaps, verify_image_integrity
 from .configs import (
     make_ext4fs_bin,
     magiskboot_bin,
@@ -26,6 +28,31 @@ import glob
 
 if osname == 'nt':
     from ctypes import windll, wintypes
+
+
+def _clear_attrs(path):
+    """清除 Windows 只读/系统/隐藏属性，使文件可被写入或删除。"""
+    try:
+        if osname == 'nt':
+            windll.kernel32.SetFileAttributesW(str(path), 0x80)  # FILE_ATTRIBUTE_NORMAL
+        else:
+            chmod(path, S_IWRITE)
+    except Exception:
+        pass
+
+
+def _rmtree(path):
+    """健壮版 rmtree：遇到只读/系统属性等拒绝删除时，先清属性再重试。"""
+    if not Path(path).exists():
+        return
+    def _onerror(func, p, exc_info):
+        _clear_attrs(p)
+        try:
+            func(p)
+        except Exception:
+            pass
+    rmtree(str(path), onerror=_onerror)
+
 
 tool_author = 'affggh'; tool_version = '1.1145141919810'
 
@@ -241,6 +268,10 @@ class portutils:
                 return False
         return True
 
+    def _flag(self, item: str) -> bool:
+        """读取移植项开关。优先顶层键（UI 设置方式），回退到 flags 字典。"""
+        return bool(self.items.get(item, self.items.get('flags', {}).get(item, False)))
+
     def execv(self, cmd, verbose=False):
         """
         执行系统命令（优化版）
@@ -277,7 +308,7 @@ class portutils:
         outdir = Path("tmp/rom")
         if outdir.exists():
             print(f"【清理临时文件】删除已有 tmp/rom 目录", file=self.std)
-            rmtree(outdir)
+            _rmtree(outdir)
         outdir.mkdir(parents=True)
         
         if self.source_type == 'zip':
@@ -295,6 +326,8 @@ class portutils:
     def __port_boot(self) -> bool:
         def __replace(src: Path, dest: Path):
             print(f"【文件替换】{src.name} -> {dest.parent}/{dest.name}...", file=self.std)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            _clear_attrs(dest)
             dest.write_bytes(src.read_bytes())
             return True
         
@@ -303,9 +336,9 @@ class portutils:
         
         # 清理旧目录
         if basedir.exists():
-            rmtree(basedir)
+            _rmtree(basedir)
         if portdir.exists():
-            rmtree(portdir)
+            _rmtree(portdir)
         basedir.mkdir(parents=True)
         portdir.mkdir(parents=True)
         
@@ -339,7 +372,7 @@ class portutils:
         # 执行boot移植逻辑
         print(f"【开始移植】执行boot.img移植逻辑...", file=self.std)
         for item in self.items['flags']:
-            item_flag = self.items['flags'][item]
+            item_flag = self._flag(item)
             if not item_flag:
                 continue
             
@@ -423,24 +456,41 @@ class portutils:
     def __port_system(self):
         def __replace(val: str):
             print(f"【文件替换】底包/{val} -> 移植源/{val}...", file=self.std)
+            src = base_prefix.joinpath(val)
+            dst = port_prefix.joinpath(val)
             if "*" in val:
                 for file in glob.glob(op.join(str(base_prefix), val)):
                     relfile = op.relpath(file, str(base_prefix))
-                    port_prefix.joinpath(relfile).write_bytes(base_prefix.joinpath(relfile).read_bytes())
+                    dst2 = port_prefix.joinpath(relfile)
+                    dst2.parent.mkdir(parents=True, exist_ok=True)
+                    _clear_attrs(dst2)
+                    dst2.write_bytes(base_prefix.joinpath(relfile).read_bytes())
                     print(f"  - 替换通配文件 {file}", file=self.std)
-            elif base_prefix.joinpath(val).is_dir():
-                if port_prefix.joinpath(val).exists():
-                    rmtree(port_prefix.joinpath(val))
-                copytree(base_prefix.joinpath(val), port_prefix.joinpath(val))
+            elif src.is_dir():
+                if dst.exists():
+                    if dst.is_dir():
+                        _rmtree(dst)
+                    else:
+                        _clear_attrs(dst)
+                        dst.unlink()
+                copytree(src, dst)
                 print(f"  - 替换目录 {val}", file=self.std)
             else:
-                port_prefix.joinpath(val).write_bytes(base_prefix.joinpath(val).read_bytes())
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                _clear_attrs(dst)
+                dst.write_bytes(src.read_bytes())
                 print(f"  - 替换文件 {val}", file=self.std)
         
-        # 检查并解包底包system.img
+        # 检查并解包底包system.img（分块计算MD5，避免大文件全读入内存）
         unpack_flag = False
+        sysmd5 = md5()
         with open(self.sysimg, 'rb') as f:
-            sysmd5 = md5(f.read()).hexdigest()
+            while True:
+                chunk = f.read(1024 * 1024)
+                if not chunk:
+                    break
+                sysmd5.update(chunk)
+        sysmd5 = sysmd5.hexdigest()
         md5path = Path("base/system.md5")
         
         if not md5path.exists() or md5path.read_text().strip() != sysmd5:
@@ -449,7 +499,7 @@ class portutils:
             md5path.write_text(sysmd5)
             if Path("base/system").exists():
                 print(f"【清理缓存】删除旧的base/system目录（MD5不一致）", file=self.std)
-                rmtree("base/system")
+                _rmtree("base/system")
         
         if unpack_flag:
             print(f"【解包system.img】正在解包底包system.img到 base/system...", file=self.std)
@@ -476,14 +526,86 @@ class portutils:
         print(f"【开始移植】执行system.img移植逻辑...", file=self.std)
         base_prefix = Path("base/system")
         port_prefix = Path("tmp/rom/system")
-        
+
+        # === 同平台通用自动替换模式 ===
+        if self.items['flags'].get('auto_replace'):
+            print(f"【自动替换】同平台通用模式：自动扫描底包硬件文件并替换...", file=self.std)
+            auto_count = 0
+
+            # 1. 整个目录替换（固件/配置/GPU驱动）
+            auto_dirs = [
+                "vendor/firmware", "etc/firmware",
+                "vendor/etc/mddb", "etc/mddb",
+                "vendor/etc/audio_param", "vendor/etc/.tp",
+                "vendor/lib/egl",
+                "etc/wifi", "etc/bluetooth",
+            ]
+            for d in auto_dirs:
+                if base_prefix.joinpath(d).is_dir():
+                    __replace(d)
+                    auto_count += 1
+
+            # 2. HAL 模块目录（所有 .so 全替换）
+            for hwdir in ["lib/hw", "vendor/lib/hw"]:
+                src_dir = base_prefix.joinpath(hwdir)
+                if src_dir.is_dir():
+                    for sofile in src_dir.glob("*.so"):
+                        rel = str(sofile.relative_to(base_prefix)).replace("\\", "/")
+                        __replace(rel)
+                        auto_count += 1
+
+            # 3. 硬件库关键词匹配（/vendor/lib/ 和 /lib/ 下的 .so）
+            hw_lib_keywords = [
+                'audio', 'gralloc', 'hwcomposer', 'camera', 'cam',
+                'sensors', 'lights', 'gps', 'power', 'bluetooth',
+                'vibrator', 'thermal', 'wifi', 'wlan', 'ril', 'ccci',
+                'mali', 'imgegl', 'pvr', 'vulkan', 'omx', 'codec',
+                'vcodec', '3a', 'featureio', 'imageio', 'showlogo',
+                'gralloc_extra', 'ksensor', 'rgbwlight', 'mtk-ril',
+                'mtkfusion', 'libbt-vendor', 'libem_wifi', 'libccci',
+                'librilutils', 'libvia-ril', 'libviagpsrpc', 'libgpu',
+                'libmtkcam', 'libcam', 'libmhal', 'libmtkjpeg',
+                'libJpg', 'libSwJpg', 'libhardware_legacy', 'libwpa',
+                'libwifi', 'libnetd', 'libdrm', 'libsecure',
+            ]
+            for libdir in ["lib", "vendor/lib"]:
+                src_dir = base_prefix.joinpath(libdir)
+                if src_dir.is_dir():
+                    for sofile in src_dir.glob("*.so"):
+                        name = sofile.name.lower()
+                        if any(kw in name for kw in hw_lib_keywords):
+                            rel = str(sofile.relative_to(base_prefix)).replace("\\", "/")
+                            __replace(rel)
+                            auto_count += 1
+
+            # 4. 硬件守护进程关键词匹配（/vendor/bin/ 和 /bin/）
+            hw_bin_keywords = [
+                'ccci_', 'rild', 'gsm0710muxd', 'mtkfusion',
+                'wpa_', 'hostapd', 'netdiag', 'agpsd', 'boot_logo',
+                'netd', 'pcscd', 'dhcpcd', 'netcfg',
+            ]
+            for bindir in ["bin", "vendor/bin"]:
+                src_dir = base_prefix.joinpath(bindir)
+                if src_dir.is_dir():
+                    for binfile in src_dir.iterdir():
+                        if binfile.is_file():
+                            name = binfile.name.lower()
+                            if any(kw in name for kw in hw_bin_keywords):
+                                rel = str(binfile.relative_to(base_prefix)).replace("\\", "/")
+                                __replace(rel)
+                                auto_count += 1
+
+            print(f"【自动替换】完成，共替换 {auto_count} 个硬件文件/目录", file=self.std)
+
         for item in self.items['flags']:
-            item_flag = self.items[item]
+            item_flag = self._flag(item)
             if not item_flag or item in ['replace_kernel', 'replace_fstab']:
                 continue
             
             if item.startswith("replace_"):
-                replace_type = item.split('_')[1]
+                if self.items['flags'].get('auto_replace'):
+                    continue  # 自动替换模式已处理所有硬件替换，跳过手动 replace_ 项
+                replace_type = item[len("replace_"):]
                 print(f"【移植项】替换{replace_type}相关文件...", file=self.std)
                 for i in self.items['replace'][replace_type]:
                     if base_prefix.joinpath(i).exists() or "*" in i:
@@ -623,7 +745,7 @@ class portutils:
                 print(f"  - 清理重复的文件上下文配置", file=self.std)
             
             # 生成文件系统配置
-            fs_label = [["/", '0', '0', '0755'], ["/lost\\+found", '0', '0', '0700']]
+            fs_label = [["/", '0', '0', '0755'], ["/lost+found", '0', '0', '0700']]
             fs_files = [i[0] for i in fs_label]
             
             for root, dirs, files in walk("tmp/rom/system"):
@@ -668,7 +790,37 @@ class portutils:
             if ret_code != 0:
                 print(f"【生成失败】system_raw.img创建失败（返回码：{ret_code}）", file=self.std)
                 return
-            
+
+            # 修复符号链接（支持 sparse/raw 两种格式）
+            print(f"【符号链接修复】正在修复 system_raw.img 中的符号链接...", file=self.std)
+            try:
+                fixed = fix_symlinks("out/system_raw.img", log=self.std)
+                print(f"  - 修复完成，共转换 {fixed} 个符号链接", file=self.std)
+            except Exception as e:
+                print(f"  - 符号链接修复失败：{e}", file=self.std)
+
+            # 修复 make_ext4fs 可能产生的 inode bitmap 未标记问题
+            print(f"\n【inode bitmap 修复】正在检查并修复 inode bitmap...", file=self.std)
+            try:
+                ib_fixed = fix_inode_bitmaps("out/system_raw.img", log=self.std)
+                if ib_fixed > 0:
+                    print(f"  - 修复完成，共修复 {ib_fixed} 个未标记 inode", file=self.std)
+                else:
+                    print(f"  - 无需修复", file=self.std)
+            except Exception as e:
+                print(f"  - inode bitmap 修复异常：{e}", file=self.std)
+
+            # 文件系统一致性自查
+            print(f"【一致性自查】正在校验 system_raw.img 文件系统完整性...", file=self.std)
+            try:
+                ok, errs = verify_image_integrity("out/system_raw.img", log=self.std)
+                if ok:
+                    print(f"  - 一致性自查通过", file=self.std)
+                else:
+                    print(f"  - 一致性自查发现 {len(errs)} 个问题", file=self.std)
+            except Exception as e:
+                print(f"  - 一致性自查异常：{e}", file=self.std)
+
             # 转换为稀疏镜像
             print(f"【格式转换】将system_raw.img转为稀疏镜像...", file=self.std)
             ret_code, _ = self.execv([img2simg_bin, "out/system_raw.img", "out/system.img"], verbose=False)
@@ -678,7 +830,7 @@ class portutils:
             
             # 转换为SDAT格式
             print(f"【格式转换】将system.img转为SDAT格式...", file=self.std)
-            rmtree("tmp/rom/system")
+            _rmtree("tmp/rom/system")
             img2sdat("out/system.img", "tmp/rom", self.sdat_ver)
             if Path("tmp/rom/system.img").exists():
                 unlink("tmp/rom/system.img")
@@ -697,22 +849,36 @@ class portutils:
             if osname == 'nt':
                 with open(dest, 'wb') as f:
                     f.write(b"!<symlink>" + src.encode('utf-16') + b'\0\0')
-                windll.kernel32.SetFileAttributesA(dest.encode('gb2312'), 0x4)
             else:
                 symlink(src, dest)
         
         print(f"\n【开始打包】生成img镜像文件...", file=self.std)
+
+        # kernel-only 模式：只输出 boot.img，不打包 system.img
+        if self.items['flags'].get('kernel_only_mode'):
+            out_boot = Path("out/boot.img")
+            out_boot.parent.mkdir(parents=True, exist_ok=True)
+            src_boot = Path("tmp/rom/boot.img")
+            if src_boot.exists():
+                out_boot.write_bytes(src_boot.read_bytes())
+                print(f"【kernel-only】仅输出 boot.img（不生成 system.img）", file=self.std)
+                print(f"  └─ boot.img：out/boot.img", file=self.std)
+            else:
+                print(f"【kernel-only】错误：未找到 tmp/rom/boot.img", file=self.std)
+            print(f"\n【打包完成】kernel-only 模式，仅 boot.img", file=self.std)
+            return
+
         updater = Path("tmp/rom/META-INF/com/google/android/updater-script")
         config_dir = Path("tmp/config")
         
         # 清理旧配置
         if config_dir.exists():
-            rmtree(config_dir)
+            _rmtree(config_dir)
         config_dir.mkdir(parents=True)
         
         # 解析刷机脚本获取权限配置（zip源）或使用默认配置（img源）
         print(f"【配置生成】解析权限配置（SD卡刷包源）...", file=self.std)
-        fs_label = [["/", '0', '0', '0755'], ["/lost\\+found", '0', '0', '0700']]
+        fs_label = [["/", '0', '0', '0755'], ["/lost+found", '0', '0', '0700']]
         fc_label = [['/', 'u:object_r:system_file:s0'], ['/system(/.*)?', 'u:object_r:system_file:s0']]
         
         if updater.exists():
@@ -844,6 +1010,37 @@ class portutils:
             print(f"  ├─ 权限配置条目：{fs_config_count} 条", file=self.std)
             print(f"  ├─ 实际镜像大小：{actual_size_info}", file=self.std)
             print(f"  └─ 输出路径：out/system.img", file=self.std)
+
+            # 修复符号链接：Windows 解包/打包会把符号链接打成 !<symlink> 标记文件，
+            # 这里在 ext4 镜像上把标记文件转回真正的符号链接
+            print(f"\n【符号链接修复】正在将 !<symlink> 标记转回真正的符号链接...", file=self.std)
+            try:
+                fixed = fix_symlinks("out/system.img", log=self.std)
+                print(f"  - 修复完成，共转换 {fixed} 个符号链接", file=self.std)
+            except Exception as e:
+                print(f"  - 符号链接修复失败（不影响其它步骤，但建议检查镜像）：{e}", file=self.std)
+
+            # 修复 make_ext4fs 可能产生的 inode bitmap 未标记问题
+            print(f"\n【inode bitmap 修复】正在检查并修复 inode bitmap...", file=self.std)
+            try:
+                ib_fixed = fix_inode_bitmaps("out/system.img", log=self.std)
+                if ib_fixed > 0:
+                    print(f"  - 修复完成，共修复 {ib_fixed} 个未标记 inode", file=self.std)
+                else:
+                    print(f"  - 无需修复", file=self.std)
+            except Exception as e:
+                print(f"  - inode bitmap 修复异常：{e}", file=self.std)
+
+            # 文件系统一致性自查（组校验和 / 位图 / 目录项类型 / 标记残留）
+            print(f"\n【一致性自查】正在校验 system.img 文件系统完整性...", file=self.std)
+            try:
+                ok, errs = verify_image_integrity("out/system.img", log=self.std)
+                if ok:
+                    print(f"  - 一致性自查通过", file=self.std)
+                else:
+                    print(f"  - 一致性自查发现 {len(errs)} 个问题（建议重新生成或检查）", file=self.std)
+            except Exception as e:
+                print(f"  - 一致性自查异常：{e}", file=self.std)
         else:
             print(f"【生成失败】system.img创建失败！", file=self.std)
             print(f"  ├─ 返回码：{ret_code}", file=self.std)
@@ -896,7 +1093,11 @@ class portutils:
             if not self.__port_boot():
                 print(f"【移植失败】boot.img移植过程出错", file=self.std)
                 return
-            self.__port_system()
+            # kernel-only 模式：只处理 boot.img，跳过 system.img
+            if self.items['flags'].get('kernel_only_mode'):
+                print(f"\n【kernel-only】仅替换内核模式，跳过 system.img 处理", file=self.std)
+            else:
+                self.__port_system()
             
             if self.genimg:
                 self.__pack_img()
@@ -910,9 +1111,9 @@ class portutils:
         """清理临时文件"""
         print(f"【清理临时文件】删除tmp目录...", file=self.std)
         if Path("tmp").exists():
-            rmtree("tmp")
+            _rmtree("tmp")
         print(f"【清理完成】临时文件已删除", file=self.std)
         print(f"【清理残留文件】删除base目录...", file=self.std)
         if Path("base").exists():
-            rmtree("base")
+            _rmtree("base")
         print(f"【清理完成】base目录已删除", file=self.std)

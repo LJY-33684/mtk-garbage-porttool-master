@@ -115,7 +115,7 @@ class BootPatcher(object):
             return False
 
     def __prepare_env(self):
-        bool2str = lambda x: "true" if x else "flase"
+        bool2str = lambda x: "true" if x else "false"
         self.env = {
             "KEEPVERITY": bool2str(self.keep_verity),
             "KEEPFORCEENCRYPT": bool2str(self.keep_forceencrypt),
@@ -171,7 +171,7 @@ class BootPatcher(object):
                 return False
             case 2:
                 print("- ChromeOS 格式boot镜像", file=self.log)
-                print("- 暂不支持")
+                print("- 暂不支持", file=self.log)
                 return False
             case _:
                 print("! 无法解包此boot镜像", file=self.log)
