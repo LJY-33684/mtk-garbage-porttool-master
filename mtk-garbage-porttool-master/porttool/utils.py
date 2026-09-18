@@ -568,7 +568,8 @@ class portutils:
                 'libJpg', 'libSwJpg', 'libhardware_legacy', 'libwpa',
                 'libwifi', 'libnetd', 'libdrm', 'libsecure',
             ]
-            for libdir in ["lib", "vendor/lib"]:
+            # 只扫描 vendor/lib（vendor 分区的硬件驱动库），不扫 /lib 根目录（系统框架库不能换）
+            for libdir in ["vendor/lib"]:
                 src_dir = base_prefix.joinpath(libdir)
                 if src_dir.is_dir():
                     for sofile in src_dir.glob("*.so"):
@@ -578,13 +579,25 @@ class portutils:
                             __replace(rel)
                             auto_count += 1
 
-            # 4. 硬件守护进程关键词匹配（/vendor/bin/ 和 /bin/）
+            # /lib 根目录下少数确实需要替换的硬件兼容库（单独列出，不做关键词扫描）
+            lib_hw_specific = [
+                "lib/libhardware_legacy.so",
+                "lib/libwpa_client.so",
+                "lib/libwifi-service.so",
+                "lib/libreference-ril.so",
+                "lib/libril.so",
+            ]
+            for rel in lib_hw_specific:
+                if base_prefix.joinpath(rel).exists():
+                    __replace(rel)
+                    auto_count += 1
+
+            # 4. 硬件守护进程关键词匹配（只扫 vendor/bin，/bin 是系统工具不替换）
             hw_bin_keywords = [
                 'ccci_', 'rild', 'gsm0710muxd', 'mtkfusion',
                 'wpa_', 'hostapd', 'netdiag', 'agpsd', 'boot_logo',
-                'netd', 'pcscd', 'dhcpcd', 'netcfg',
             ]
-            for bindir in ["bin", "vendor/bin"]:
+            for bindir in ["vendor/bin"]:
                 src_dir = base_prefix.joinpath(bindir)
                 if src_dir.is_dir():
                     for binfile in src_dir.iterdir():
