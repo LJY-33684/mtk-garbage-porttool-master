@@ -1,3 +1,3 @@
-﻿latest_version=1.2-beta4
-update_url_1=https://github.com/LJY-33684/mtk-garbage-porttool-master/releases/download/1.2-beta3/mtk-garbage-porttool-master.zip
+﻿latest_version=1.2-beta3
+update_url_1=https://github.com/LJY-33684/mtk-garbage-porttool-master/releases/download/1.2-beta31/mtk-garbage-porttool-master.zip
 update_url_2=https://gitee.com/Q3368436451/mtk-garbage-porttool-master/releases/download/1.2-beta3/mtk-garbage-porttool-master.zip
