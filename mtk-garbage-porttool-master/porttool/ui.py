@@ -1,4 +1,9 @@
 # 导入必要的库和模块
+import urllib.request
+import json
+import re
+import webbrowser
+import threading
 from tkinter import (
     ttk,
     Toplevel,
@@ -6,6 +11,9 @@ from tkinter import (
     StringVar,
     BooleanVar,
     Canvas,
+    Text,
+    END,
+    WORD,
 )
 from tkinter.filedialog import askopenfilename
 from os import getcwd
@@ -14,7 +22,7 @@ from multiprocessing.dummy import DummyProcess
 
 # 导入自定义模块（需确保这些模块存在于同级目录）
 from .configs import support_chipset, support_chipset_portstep
-from .utils import portutils
+from .utils import portutils, tool_version
 
 class FileChooser(Toplevel):
     """文件选择弹窗类：用于选择底包、移植源文件"""
@@ -195,13 +203,30 @@ class MyUI(ttk.Labelframe):
     """主UI框架类"""
     def __init__(self, parent):
         super().__init__(parent, text="MTK 低端机移植工具")
+        self.update_source = StringVar(value='GitHub')  # 更新源：GitHub / Gitee
+        # 用 labelwidget 实现标题+检查更新按钮（必须在 super 之后创建，parent=self）
+        self._header_frame = ttk.Frame(self)
+        self._title_label = ttk.Label(self._header_frame, text="MTK 低端机移植工具", font=('Microsoft YaHei', 9, 'bold'))
+        self._title_label.pack(side='left', padx=(0, 8))
+        self._check_update_btn = ttk.Button(self._header_frame, text="检查更新", width=10, command=self._on_check_update)
+        self._check_update_btn.pack(side='left')
+        # 更新源选择框（参照芯片类型样式）
+        ttk.Label(self._header_frame, text="更新源").pack(side='left', padx=(10, 2))
+        self._update_source_menu = ttk.OptionMenu(
+            self._header_frame,
+            self.update_source,
+            'GitHub',
+            'GitHub', 'Gitee'
+        )
+        self._update_source_menu.pack(side='left')
+        self.configure(labelwidget=self._header_frame)
         # 核心配置变量
         self.chipset_select = StringVar(value='mt65')  # 芯片类型
         self.pack_type = StringVar(value='zip')        # 输出类型（默认zip）
         self.patch_magisk = BooleanVar(value=False)    # 是否修补magisk
         self.target_arch = StringVar(value='arm64')    # magisk架构
         self.magisk_apk = StringVar(value="magisk.apk")# magisk apk路径
-        
+
         # ========== 新增：防止重复点击的核心变量 ==========
         self.is_running = False  # 标记是否正在执行移植流程
         self.port_button = None  # 保存一键移植按钮对象
@@ -423,7 +448,7 @@ class MyUI(ttk.Labelframe):
             *["arm64", "arm", "x86", "x86_64"]
         )
         magiskapkentry = ttk.Entry(buttonlabel, textvariable=self.magisk_apk)
-        magiskapkentry.bind("<Button-1>", lambda x:self.magisk_apk.set(askopenfilename()))
+        magiskapkentry.bind("<Double-Button-1>", lambda x:self.magisk_apk.set(askopenfilename()))
         
         # Magisk修补复选框（控制架构/APK输入框显示）
         buttonmagisk = ttk.Checkbutton(
@@ -453,3 +478,215 @@ class MyUI(ttk.Labelframe):
         
         # 初始加载移植条目
         __load_port_item(self.chipset_select.get())
+
+
+    # ========== 检查更新功能 ==========
+    UPDATE_SOURCES = {
+        'GitHub': {
+            'raw': 'https://raw.githubusercontent.com/LJY-33684/mtk-garbage-porttool-master/main/latest_version.txt',
+            'api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/releases/tags/{tag}',
+            'url_key': 'update_url_1',
+        },
+        'Gitee': {
+            'raw': 'https://gitee.com/Q3368436451/mtk-garbage-porttool-master/raw/main/latest_version.txt',
+            'api': 'https://gitee.com/api/v5/repos/Q3368436451/mtk-garbage-porttool-master/releases/tags/{tag}',
+            'url_key': 'update_url_2',
+        },
+    }
+    UPDATE_TIMEOUT = 30  # 秒
+
+    def _on_check_update(self):
+        """检查更新按钮点击回调"""
+        self._check_update_btn.config(text="检查更新中...", state="disabled")
+        # 后台线程请求，避免阻塞 UI
+        t = threading.Thread(target=self._fetch_update_worker, daemon=True)
+        t.start()
+
+    def _fetch_update_worker(self):
+        """后台线程：请求 latest_version.txt + 对应源 release 信息"""
+        source = self.update_source.get()
+        src_cfg = self.UPDATE_SOURCES.get(source, self.UPDATE_SOURCES['GitHub'])
+        try:
+            # 1. 请求对应源的 latest_version.txt
+            req = urllib.request.Request(src_cfg['raw'], headers={"User-Agent": "MTK-PortTool"})
+            with urllib.request.urlopen(req, timeout=self.UPDATE_TIMEOUT) as resp:
+                raw = resp.read().decode("utf-8-sig")
+
+            # 2. 解析 latest_version.txt（支持有引号/无引号、update_url/update_url_1/update_url_2）
+            tag = None
+            all_urls = {}
+            for line in raw.splitlines():
+                line = line.strip()
+                m = re.match(r'latest_version\s*=\s*(.+?)\s*$', line)
+                if m:
+                    tag = m.group(1).strip().strip('"').strip("'")
+                m = re.match(r'(update_url(?:_\d+)?)\s*=\s*(.+?)\s*$', line)
+                if m:
+                    all_urls[m.group(1)] = m.group(2).strip().strip('"').strip("'")
+
+            if not tag:
+                self.after(0, lambda: self._on_update_failed("版本信息格式错误"))
+                return
+
+            # 版本相同则提示已是最新
+            if tag == tool_version:
+                self.after(0, lambda: self._on_already_latest(tag))
+                return
+
+            # 选择对应源的下载链接
+            download_url = all_urls.get(src_cfg['url_key']) or all_urls.get('update_url')
+
+            # 3. 请求对应源 API 获取 release 内容（markdown）
+            body = ""
+            try:
+                api_url = src_cfg['api'].format(tag=tag)
+                req2 = urllib.request.Request(api_url, headers={"User-Agent": "MTK-PortTool", "Accept": "application/json"})
+                with urllib.request.urlopen(req2, timeout=self.UPDATE_TIMEOUT) as resp2:
+                    release_data = json.loads(resp2.read().decode("utf-8"))
+                    body = release_data.get("body", "") or ""
+                    if not download_url:
+                        download_url = release_data.get("html_url", "")
+            except Exception:
+                body = f"## {tag}\n\n更新内容获取失败，请前往下载页面查看详情。"
+
+            self.after(0, lambda: self._on_update_success(tag, body, download_url))
+
+        except urllib.error.URLError as e:
+            reason = "网络超时" if "timed out" in str(e).lower() else f"网络错误: {e}"
+            self.after(0, lambda: self._on_update_failed(reason))
+        except Exception as e:
+            self.after(0, lambda: self._on_update_failed(f"未知错误: {e}"))
+
+    def _on_update_success(self, tag, body, download_url):
+        """检查更新成功（主线程）"""
+        self._check_update_btn.config(text="检查更新", state="normal")
+        self._show_update_dialog(tag, body, download_url)
+
+    def _on_update_failed(self, reason):
+        """检查更新失败（主线程）"""
+        self._check_update_btn.config(text="检查更新失败", state="normal")
+        # 3秒后恢复按钮文字
+        self.after(3000, lambda: self._check_update_btn.config(text="检查更新"))
+
+    def _on_already_latest(self, tag):
+        """已是最新版本（主线程）"""
+        self._check_update_btn.config(text="检查更新", state="normal")
+        win = Toplevel(self)
+        win.title("检查更新")
+        win.geometry("320x140")
+        win.resizable(False, False)
+        win.transient(self.winfo_toplevel())
+        win.grab_set()
+        ttk.Label(win, text="当前已是最新版本", font=('Microsoft YaHei', 12, 'bold')).pack(pady=(25, 5))
+        ttk.Label(win, text=f"版本号：{tag}", font=('Microsoft YaHei', 10)).pack(pady=5)
+        ttk.Button(win, text="确定", command=win.destroy, width=10).pack(pady=15)
+
+    def _show_update_dialog(self, tag, body, download_url):
+        """显示更新内容弹窗（markdown 格式 + 标题右侧前往下载按钮）"""
+        win = Toplevel(self)
+        win.title(f"发现新版本 - {tag}")
+        win.geometry("640x480")
+        win.transient(self.winfo_toplevel())
+        win.grab_set()
+
+        # 标题栏：左侧标题 + 右侧前往下载按钮
+        header_frame = ttk.Frame(win)
+        header_frame.pack(fill='x', padx=12, pady=(10, 5))
+        ttk.Label(header_frame, text=f"发现新版本：{tag}", font=('Microsoft YaHei', 12, 'bold')).pack(side='left')
+
+        def open_download():
+            if download_url:
+                webbrowser.open(download_url)
+
+        ttk.Button(header_frame, text="前往下载", command=open_download).pack(side='right')
+
+        # markdown 内容区
+        content_frame = ttk.Frame(win)
+        content_frame.pack(fill='both', expand=True, padx=12, pady=5)
+
+        text_widget = Text(content_frame, wrap=WORD, font=('Microsoft YaHei', 10), padx=8, pady=8)
+        scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side='right', fill='y')
+        text_widget.pack(side='left', fill='both', expand=True)
+
+        self._render_markdown(text_widget, body)
+        text_widget.config(state='disabled')  # 只读
+
+    def _render_markdown(self, text_widget, markdown_text):
+        """简单 markdown 渲染：标题、粗体、列表、代码块、链接"""
+        # 配置 tag 样式
+        text_widget.tag_configure('h1', font=('Microsoft YaHei', 16, 'bold'), spacing1=8, spacing3=4)
+        text_widget.tag_configure('h2', font=('Microsoft YaHei', 14, 'bold'), spacing1=6, spacing3=3)
+        text_widget.tag_configure('h3', font=('Microsoft YaHei', 12, 'bold'), spacing1=4, spacing3=2)
+        text_widget.tag_configure('bold', font=('Microsoft YaHei', 10, 'bold'))
+        text_widget.tag_configure('code', font=('Consolas', 9), background='#f0f0f0')
+        text_widget.tag_configure('link', foreground='#0066cc', underline=True)
+        text_widget.tag_configure('list', lmargin1=20, lmargin2=20)
+
+        in_code_block = False
+        for line in markdown_text.splitlines():
+            stripped = line.strip()
+
+            # 代码块
+            if stripped.startswith('```'):
+                in_code_block = not in_code_block
+                continue
+            if in_code_block:
+                text_widget.insert(END, line + '\n', 'code')
+                continue
+
+            # 标题
+            if stripped.startswith('### '):
+                text_widget.insert(END, stripped[4:] + '\n', 'h3')
+                continue
+            if stripped.startswith('## '):
+                text_widget.insert(END, stripped[3:] + '\n', 'h2')
+                continue
+            if stripped.startswith('# '):
+                text_widget.insert(END, stripped[2:] + '\n', 'h1')
+                continue
+
+            # 列表项
+            if re.match(r'^[-*]\s+', stripped):
+                content = re.sub(r'^[-*]\s+', '', stripped)
+                text_widget.insert(END, '• ', 'list')
+                self._insert_inline(text_widget, content)
+                text_widget.insert(END, '\n')
+                continue
+            if re.match(r'^\d+\.\s+', stripped):
+                content = re.sub(r'^\d+\.\s+', '', stripped)
+                text_widget.insert(END, stripped.split('.')[0] + '. ', 'list')
+                self._insert_inline(text_widget, content)
+                text_widget.insert(END, '\n')
+                continue
+
+            # 普通行（处理内联格式）
+            if stripped:
+                self._insert_inline(text_widget, stripped)
+            text_widget.insert(END, '\n')
+
+    def _insert_inline(self, text_widget, text):
+        """处理行内 markdown：**粗体**、`代码`、[链接](url)"""
+        # 用正则分割：**bold**、`code`、[link](url)
+        pattern = r'(\*\*.+?\*\*|`.+?`|\[.+?\]\(.+?\))'
+        parts = re.split(pattern, text)
+        for part in parts:
+            if not part:
+                continue
+            if part.startswith('**') and part.endswith('**'):
+                text_widget.insert(END, part[2:-2], 'bold')
+            elif part.startswith('`') and part.endswith('`'):
+                text_widget.insert(END, part[1:-1], 'code')
+            elif part.startswith('[') and '](' in part:
+                m = re.match(r'\[(.+?)\]\((.+?)\)', part)
+                if m:
+                    label, url = m.group(1), m.group(2)
+                    text_widget.insert(END, label, 'link')
+                    # 点击链接打开浏览器
+                    tag_name = f"link_{id(url)}"
+                    text_widget.tag_bind('link', '<Button-1>', lambda e, u=url: webbrowser.open(u))
+                else:
+                    text_widget.insert(END, part)
+            else:
+                text_widget.insert(END, part)

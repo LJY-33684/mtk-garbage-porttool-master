@@ -209,7 +209,7 @@ def parse_bootimg(bootimg):
         output = open('second%s' % gzname(second[:3]) , 'wb')
         output.write(second)
         output.close()
-        bootimg.seek(padding(ramdisk_size), 1)
+        bootimg.seek(padding(second_size), 1)
 
     if dt_size:
         dt_image = bootimg.read(dt_size)
@@ -535,6 +535,17 @@ def repack_bootimg(_base=None, _cmdline=None, _page_size=None, _padding_size=Non
     repack_ramdisk(cpiolist)
 
     global base, ramdisk_addr, second_addr, tags_addr, name, cmdline, page_size, padding_size
+    # 重置模块级全局变量，防止同一进程内多次移植时地址参数残留
+    # （UI 单进程 + 移植线程，第一次移植后这些全局永不为 None，
+    #  parse_bootinfo 的 if None 守卫导致第二次不更新，打包出地址不匹配的 boot.img）
+    base = None
+    ramdisk_addr = None
+    second_addr = None
+    tags_addr = None
+    name = None
+    cmdline = None
+    page_size = None
+    padding_size = None
     if os.path.exists('ramdisk.cpio.gz'):
         ramdisk = 'ramdisk.cpio.gz'
     elif os.path.exists('ramdisk'):

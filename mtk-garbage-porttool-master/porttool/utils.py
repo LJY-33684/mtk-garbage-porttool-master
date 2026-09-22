@@ -54,7 +54,7 @@ def _rmtree(path):
     rmtree(str(path), onerror=_onerror)
 
 
-tool_author = 'affggh'; tool_version = '1.1145141919810'
+tool_author = 'affggh'; tool_version = '1.2-beta3'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -64,7 +64,7 @@ class proputil:
             self.encoding = self.__detect_encoding(propfile)
             self.propfd = Path(propfile).open('r+', encoding=self.encoding)
         else:
-            raise FileExistsError(f"File {propfile} does not exist!")
+            raise FileNotFoundError(f"File {propfile} does not exist!")
         self.prop = self.__loadprop
 
     def __detect_encoding(self, filepath):
@@ -85,15 +85,15 @@ class proputil:
 
     def getprop(self, key: str) -> str | None:
         for i in self.prop:
-            if i.startswith(key): return i.rstrip().split('=')[1]
+            if i.startswith(key + '='): return i.rstrip().split('=', 1)[1]
         return None
     
     def setprop(self, key, value) -> None:
         flag: bool = False
         for index, current in enumerate(self.prop):
-            if key in current:
+            if current.startswith(key + '='):
                 if not value: value = ''
-                self.prop[index] = current.split('=')[0] + '=' + value + '\n'
+                self.prop[index] = current.split('=', 1)[0] + '=' + value + '\n'
                 flag = True
         if not flag:
             self.prop.append(key + '=' + value + '\n')
@@ -223,7 +223,7 @@ class bootutil:
         repack_bootimg(base, cmdline, page_size, padding_size, None)
         chdir(self.retcwd)
     
-    def __entry__(self):
+    def __enter__(self):
         return self
 
     def __exit__(self, *vars):
@@ -241,10 +241,10 @@ class portutils:
         if not self.outdir.exists():
             self.outdir.mkdir(parents=True)
         self.std = stdlog if stdlog else stdout
+        self.sdat = False  # 提前赋值，确保属性始终存在
         if not self.__check_exist:
-            print("【检查失败】文件是否存在检查不通过", file=self.std)
-            return
-        self.sdat = False
+            print("【检查失败】必要文件不存在，移植流程终止", file=self.std)
+            raise RuntimeError("移植初始化失败：底包或移植源文件不存在，请检查路径配置")
     
     @property
     def __check_exist(self) -> bool:
@@ -528,7 +528,7 @@ class portutils:
         port_prefix = Path("tmp/rom/system")
 
         # === 同平台通用自动替换模式 ===
-        if self.items['flags'].get('auto_replace'):
+        if self._flag('auto_replace'):
             print(f"【自动替换】同平台通用模式：自动扫描底包硬件文件并替换...", file=self.std)
             auto_count = 0
 
@@ -616,9 +616,10 @@ class portutils:
                 continue
             
             if item.startswith("replace_"):
-                if self.items['flags'].get('auto_replace'):
-                    continue  # 自动替换模式已处理所有硬件替换，跳过手动 replace_ 项
                 replace_type = item[len("replace_"):]
+                # auto 模式下手动选项优先：若 replace 字典有配置则用手动路径覆盖自动替换结果
+                if replace_type not in self.items.get('replace', {}):
+                    continue  # 该方案未配置此替换项的路径，跳过
                 print(f"【移植项】替换{replace_type}相关文件...", file=self.std)
                 for i in self.items['replace'][replace_type]:
                     if base_prefix.joinpath(i).exists() or "*" in i:
@@ -631,45 +632,64 @@ class portutils:
                 case 'single_simcard' | 'dual_simcard':
                     sim_type = "单卡" if item == 'single_simcard' else "双卡"
                     print(f"【移植项】修改为{sim_type}模式...", file=self.std)
-                    with proputil(str(port_prefix.joinpath("build.prop"))) as p:
-                        kv = [
-                            ('persist.multisim.config', 'ss' if item == 'single_simcard' else 'dsds'),
-                            ('persist.radio.multisim.config', 'ss' if item == 'single_simcard' else 'dsds'),
-                            ('ro.telephony.sim.count', '1' if item == 'single_simcard' else '2'),
-                            ('persist.dsds.enabled', 'false' if item == 'single_simcard' else 'true'),
-                            ('ro.dual.sim.phone', 'false' if item == 'single_simcard' else 'true')
-                        ]
-                        for key, value in kv:
-                            p.setprop(key, value)
-                            print(f"  - 设置 {key} = {value}", file=self.std)
-                    print(f"  - {sim_type}模式已配置完成", file=self.std)
+                    build_prop_path = port_prefix.joinpath("build.prop")
+                    if build_prop_path.exists():
+                        with proputil(str(build_prop_path)) as p:
+                            kv = [
+                                ('persist.multisim.config', 'ss' if item == 'single_simcard' else 'dsds'),
+                                ('persist.radio.multisim.config', 'ss' if item == 'single_simcard' else 'dsds'),
+                                ('ro.telephony.sim.count', '1' if item == 'single_simcard' else '2'),
+                                ('persist.dsds.enabled', 'false' if item == 'single_simcard' else 'true'),
+                                ('ro.dual.sim.phone', 'false' if item == 'single_simcard' else 'true')
+                            ]
+                            for key, value in kv:
+                                p.setprop(key, value)
+                                print(f"  - 设置 {key} = {value}", file=self.std)
+                        print(f"  - {sim_type}模式已配置完成", file=self.std)
+                    else:
+                        print(f"  - 跳过（未找到system/build.prop）", file=self.std)
                 case 'fit_density':
                     print(f"【移植项】同步底包屏幕DPI...", file=self.std)
-                    with proputil(str(port_prefix.joinpath("build.prop"))) as pp, proputil(str(base_prefix.joinpath("build.prop"))) as bp:
-                        dpi_value = bp.getprop('ro.sf.lcd_density')
-                        if dpi_value:
-                            pp.setprop('ro.sf.lcd_density', dpi_value)
-                            print(f"  - 同步DPI值：{dpi_value}", file=self.std)
-                        else:
-                            print(f"  - 跳过（底包中未找到ro.sf.lcd_density）", file=self.std)
+                    port_prop = port_prefix.joinpath("build.prop")
+                    base_prop = base_prefix.joinpath("build.prop")
+                    if port_prop.exists() and base_prop.exists():
+                        with proputil(str(port_prop)) as pp, proputil(str(base_prop)) as bp:
+                            dpi_value = bp.getprop('ro.sf.lcd_density')
+                            if dpi_value:
+                                pp.setprop('ro.sf.lcd_density', dpi_value)
+                                print(f"  - 同步DPI值：{dpi_value}", file=self.std)
+                            else:
+                                print(f"  - 跳过（底包中未找到ro.sf.lcd_density）", file=self.std)
+                    else:
+                        print(f"  - 跳过（未找到build.prop）", file=self.std)
                 case 'change_timezone':
                     print(f"【移植项】同步底包时区...", file=self.std)
-                    with proputil(str(port_prefix.joinpath("build.prop"))) as pp, proputil(str(base_prefix.joinpath("build.prop"))) as bp:
-                        timezone = bp.getprop('persist.sys.timezone')
-                        if timezone:
-                            pp.setprop('persist.sys.timezone', timezone)
-                            print(f"  - 同步时区：{timezone}", file=self.std)
-                        else:
-                            print(f"  - 跳过（底包中未找到persist.sys.timezone）", file=self.std)
+                    port_prop = port_prefix.joinpath("build.prop")
+                    base_prop = base_prefix.joinpath("build.prop")
+                    if port_prop.exists() and base_prop.exists():
+                        with proputil(str(port_prop)) as pp, proputil(str(base_prop)) as bp:
+                            timezone = bp.getprop('persist.sys.timezone')
+                            if timezone:
+                                pp.setprop('persist.sys.timezone', timezone)
+                                print(f"  - 同步时区：{timezone}", file=self.std)
+                            else:
+                                print(f"  - 跳过（底包中未找到persist.sys.timezone）", file=self.std)
+                    else:
+                        print(f"  - 跳过（未找到build.prop）", file=self.std)
                 case 'change_locale':
                     print(f"【移植项】同步底包语言区域...", file=self.std)
-                    with proputil(str(port_prefix.joinpath("build.prop"))) as pp, proputil(str(base_prefix.joinpath("build.prop"))) as bp:
-                        locale = bp.getprop('ro.product.locale')
-                        if locale:
-                            pp.setprop('ro.product.locale', locale)
-                            print(f"  - 同步语言区域：{locale}", file=self.std)
-                        else:
-                            print(f"  - 跳过（底包中未找到ro.product.locale）", file=self.std)
+                    port_prop = port_prefix.joinpath("build.prop")
+                    base_prop = base_prefix.joinpath("build.prop")
+                    if port_prop.exists() and base_prop.exists():
+                        with proputil(str(port_prop)) as pp, proputil(str(base_prop)) as bp:
+                            locale = bp.getprop('ro.product.locale')
+                            if locale:
+                                pp.setprop('ro.product.locale', locale)
+                                print(f"  - 同步语言区域：{locale}", file=self.std)
+                            else:
+                                print(f"  - 跳过（底包中未找到ro.product.locale）", file=self.std)
+                    else:
+                        print(f"  - 跳过（未找到build.prop）", file=self.std)
                 case 'enable_adb':
                     print(f"【移植项】开启ADB调试...", file=self.std)
                     build_prop_path = port_prefix.joinpath("build.prop")
@@ -690,15 +710,20 @@ class portutils:
                 case 'change_model':
                     print(f"【移植项】同步底包设备型号信息...", file=self.std)
                     keys = ['ro.product.manufacturer', 'ro.build.product', 'ro.product.model', 'ro.product.device', 'ro.product.board', 'ro.product.brand']
-                    with proputil(str(port_prefix.joinpath("build.prop"))) as pp, proputil(str(base_prefix.joinpath("build.prop"))) as bp:
-                        for key in keys:
-                            value = bp.getprop(key)
-                            if value:
-                                pp.setprop(key, value)
-                                print(f"  - 设置 {key} = {value}", file=self.std)
-                            else:
-                                print(f"  - 跳过 {key}（底包中未找到）", file=self.std)
-                    print(f"  - 设备型号信息同步完成", file=self.std)
+                    port_prop = port_prefix.joinpath("build.prop")
+                    base_prop = base_prefix.joinpath("build.prop")
+                    if port_prop.exists() and base_prop.exists():
+                        with proputil(str(port_prop)) as pp, proputil(str(base_prop)) as bp:
+                            for key in keys:
+                                value = bp.getprop(key)
+                                if value:
+                                    pp.setprop(key, value)
+                                    print(f"  - 设置 {key} = {value}", file=self.std)
+                                else:
+                                    print(f"  - 跳过 {key}（底包中未找到）", file=self.std)
+                        print(f"  - 设备型号信息同步完成", file=self.std)
+                    else:
+                        print(f"  - 跳过（未找到build.prop）", file=self.std)
         
         print(f"【system移植完成】system.img处理完毕", file=self.std)
         return True
@@ -707,7 +732,7 @@ class portutils:
         print(f"【开始打包】生成zip卡刷包...", file=self.std)
         # 执行卡刷包定制逻辑
         for item in self.items['flags']:
-            item_flag = self.items['flags'][item]
+            item_flag = self._flag(item)
             if not item_flag:
                 continue
             
