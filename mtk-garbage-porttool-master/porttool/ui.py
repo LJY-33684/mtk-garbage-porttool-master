@@ -192,13 +192,9 @@ class LogLabel(scrolledtext.ScrolledText):
         self.insert('end', end)
         self.see('end')  # 自动滚动到末尾
     
-    def flush(self): 
+    def flush(self):
         """兼容stdout的flush方法"""
         pass
-    
-    def print(self, *vars, end='\n'):
-        """自定义print方法"""
-        print(vars, end=end, file=self)
 
 class MyUI(ttk.Labelframe):
     """主UI框架类"""
@@ -227,6 +223,7 @@ class MyUI(ttk.Labelframe):
         self.patch_magisk = BooleanVar(value=False)    # 是否修补magisk
         self.target_arch = StringVar(value='arm64')    # magisk架构
         self.magisk_apk = StringVar(value="magisk.apk")# magisk apk路径
+        self.clean_base_after = BooleanVar(value=False)  # 完成后清除base缓存目录
 
         # ========== 新增：防止重复点击的核心变量 ==========
         self.is_running = False  # 标记是否正在执行移植流程
@@ -299,8 +296,9 @@ class MyUI(ttk.Labelframe):
             else:
                 print(f"移植用boot.img路径：{port_source[0]}\n移植用system.img路径：{port_source[1]}", file=self.log)
             
-            # 配置移植参数
-            newdict = support_chipset_portstep[self.chipset_select.get()]
+            # 配置移植参数（深拷贝，避免勾选值污染模块级全局配置）
+            import copy
+            newdict = copy.deepcopy(support_chipset_portstep[self.chipset_select.get()])
             for key, tkbool in self.item:
                 newdict[key] = tkbool.get()
             
@@ -308,6 +306,7 @@ class MyUI(ttk.Labelframe):
             newdict['patch_magisk'] = self.patch_magisk.get()
             newdict['magisk_apk'] = self.magisk_apk.get()
             newdict['target_arch'] = self.target_arch.get()
+            newdict['clean_base_after'] = self.clean_base_after.get()
             
             # 确定输出类型（zip→genimg=False，img→genimg=True）
             genimg = True if self.pack_type.get() == 'img' else False
@@ -470,6 +469,16 @@ class MyUI(ttk.Labelframe):
             )
         )
         buttonmagisk.grid(column=0, row=2, padx=5, pady=5, sticky='w', columnspan=2)
+
+        # 完成后清除base缓存目录
+        ttk.Checkbutton(
+            buttonlabel,
+            text="完成后清除base目录",
+            variable=self.clean_base_after,
+            onvalue=True,
+            offvalue=False
+        ).grid(column=0, row=5, padx=5, pady=5, sticky='w', columnspan=2)
+
         buttonlabel.pack(side='top', padx=5, pady=5, fill='x', expand='yes')
 
         # 版本号（左下角，修补面具选项下面）
@@ -713,10 +722,9 @@ class MyUI(ttk.Labelframe):
                 m = re.match(r'\[(.+?)\]\((.+?)\)', part)
                 if m:
                     label, url = m.group(1), m.group(2)
-                    text_widget.insert(END, label, 'link')
-                    # 点击链接打开浏览器
                     tag_name = f"link_{id(url)}"
-                    text_widget.tag_bind('link', '<Button-1>', lambda e, u=url: webbrowser.open(u))
+                    text_widget.insert(END, label, tag_name)
+                    text_widget.tag_bind(tag_name, '<Button-1>', lambda e, u=url: webbrowser.open(u))
                 else:
                     text_widget.insert(END, part)
             else:

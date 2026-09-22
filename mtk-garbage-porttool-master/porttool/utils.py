@@ -493,14 +493,16 @@ class portutils:
         sysmd5 = sysmd5.hexdigest()
         md5path = Path("base/system.md5")
         
-        if not md5path.exists() or md5path.read_text().strip() != sysmd5:
+        # MD5不一致、或MD5一致但目录不存在（上次解包中途失败/手动删了目录），都需要解包
+        need_unpack = not md5path.exists() or md5path.read_text().strip() != sysmd5 or not Path("base/system").exists()
+        if need_unpack:
             unpack_flag = True
             md5path.parent.mkdir(parents=True, exist_ok=True)
             md5path.write_text(sysmd5)
             if Path("base/system").exists():
-                print(f"【清理缓存】删除旧的base/system目录（MD5不一致）", file=self.std)
+                print(f"【清理缓存】删除旧的base/system目录", file=self.std)
                 _rmtree("base/system")
-        
+
         if unpack_flag:
             print(f"【解包system.img】正在解包底包system.img到 base/system...", file=self.std)
             Extractor().main(self.sysimg, "base/system")
@@ -1094,9 +1096,7 @@ class portutils:
         print(f"  ├─ boot.img：out/boot.img", file=self.std)
         print(f"  └─ system.img：out/system.img", file=self.std)
         
-        # 清理临时文件
-        self.clean()
-    
+
     def __pack_fit_size(self):
         """计算镜像适配大小"""
         total = 0
@@ -1146,12 +1146,13 @@ class portutils:
         finally:  # 新增finally：无论成功/失败都执行清理
             self.clean()
     def clean(self):
-        """清理临时文件"""
+        """清理临时文件；base/ 缓存默认保留，勾选"完成后清除base目录"时删除"""
         print(f"【清理临时文件】删除tmp目录...", file=self.std)
         if Path("tmp").exists():
             _rmtree("tmp")
         print(f"【清理完成】临时文件已删除", file=self.std)
-        print(f"【清理残留文件】删除base目录...", file=self.std)
-        if Path("base").exists():
-            _rmtree("base")
-        print(f"【清理完成】base目录已删除", file=self.std)
+        if self.items.get('clean_base_after', False):
+            print(f"【清理缓存】删除base目录（已勾选完成后清除）...", file=self.std)
+            if Path("base").exists():
+                _rmtree("base")
+            print(f"【清理完成】base目录已删除", file=self.std)
