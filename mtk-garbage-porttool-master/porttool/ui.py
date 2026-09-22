@@ -2,6 +2,7 @@
 import urllib.request
 import json
 import re
+import base64
 import webbrowser
 import threading
 from tkinter import (
@@ -449,25 +450,31 @@ class MyUI(ttk.Labelframe):
         )
         magiskapkentry = ttk.Entry(buttonlabel, textvariable=self.magisk_apk)
         magiskapkentry.bind("<Double-Button-1>", lambda x:self.magisk_apk.set(askopenfilename()))
-        
+        magiskapkbtn = ttk.Button(buttonlabel, text="选择", width=6, command=lambda: self.magisk_apk.set(askopenfilename()))
+
         # Magisk修补复选框（控制架构/APK输入框显示）
         buttonmagisk = ttk.Checkbutton(
-            buttonlabel, 
-            text="修补magisk", 
-            variable=self.patch_magisk, 
-            onvalue=True, 
-            offvalue=False, 
+            buttonlabel,
+            text="修补magisk",
+            variable=self.patch_magisk,
+            onvalue=True,
+            offvalue=False,
             command=lambda: (
                 magiskapkentry.grid_forget(),
+                magiskapkbtn.grid_forget(),
                 magiskarch.grid_forget(),
             ) if not self.patch_magisk.get() else (
                 magiskarch.grid(column=0, row=3, padx=5, pady=5, sticky='nsew', columnspan=2),
-                magiskapkentry.grid(column=0, row=4, padx=5, pady=5, sticky='nsew', columnspan=2)
+                magiskapkentry.grid(column=0, row=4, padx=5, pady=5, sticky='ew'),
+                magiskapkbtn.grid(column=1, row=4, padx=(0, 5), pady=5, sticky='e')
             )
         )
         buttonmagisk.grid(column=0, row=2, padx=5, pady=5, sticky='w', columnspan=2)
         buttonlabel.pack(side='top', padx=5, pady=5, fill='x', expand='yes')
-        
+
+        # 版本号（左下角，修补面具选项下面）
+        ttk.Label(optframe, text=f"版本号：{tool_version}", font=('Microsoft YaHei', 8), foreground='gray').pack(side='bottom', anchor='w', padx=8, pady=(0, 5))
+
         optframe.pack(side='left', padx=5, pady=5, fill='y', expand='no')
         
         # ========== 右侧日志区域 ==========
@@ -475,9 +482,12 @@ class MyUI(ttk.Labelframe):
         self.log = LogLabel(logframe)
         self.log.pack(side='left', fill='both', anchor='center')
         logframe.pack(side='left', padx=5, pady=5, fill='both', expand='yes')
-        
+
         # 初始加载移植条目
         __load_port_item(self.chipset_select.get())
+
+        # 启动时静默检查更新（仅发现新版本时弹窗，失败/已是最新均不提示）
+        threading.Thread(target=lambda: self._fetch_update_worker(silent=True), daemon=True).start()
 
 
     # ========== 检查更新功能 ==========
@@ -485,6 +495,7 @@ class MyUI(ttk.Labelframe):
         'GitHub': {
             'raw': 'https://raw.githubusercontent.com/LJY-33684/mtk-garbage-porttool-master/main/latest_version.txt',
             'api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/releases/tags/{tag}',
+            'contents_api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/contents/latest_version.txt',
             'url_key': 'update_url_1',
         },
         'Gitee': {
@@ -502,15 +513,29 @@ class MyUI(ttk.Labelframe):
         t = threading.Thread(target=self._fetch_update_worker, daemon=True)
         t.start()
 
-    def _fetch_update_worker(self):
-        """后台线程：请求 latest_version.txt + 对应源 release 信息"""
+    def _fetch_update_worker(self, silent=False):
+        """后台线程：请求 latest_version.txt + 对应源 release 信息
+        silent=True 时：失败不弹提示、版本相同不弹窗，仅在发现新版本时弹出更新窗口
+        """
         source = self.update_source.get()
         src_cfg = self.UPDATE_SOURCES.get(source, self.UPDATE_SOURCES['GitHub'])
+        result = {'ok': False, 'tag': None, 'body': '', 'download_url': None, 'reason': ''}
         try:
             # 1. 请求对应源的 latest_version.txt
-            req = urllib.request.Request(src_cfg['raw'], headers={"User-Agent": "MTK-PortTool"})
-            with urllib.request.urlopen(req, timeout=self.UPDATE_TIMEOUT) as resp:
-                raw = resp.read().decode("utf-8-sig")
+            # GitHub 优先用 contents API（无 CDN 缓存，修改后立即可见），失败降级 raw
+            raw = None
+            if source == 'GitHub' and 'contents_api' in src_cfg:
+                try:
+                    req_c = urllib.request.Request(src_cfg['contents_api'], headers={"User-Agent": "MTK-PortTool", "Accept": "application/vnd.github+json"})
+                    with urllib.request.urlopen(req_c, timeout=self.UPDATE_TIMEOUT) as resp_c:
+                        file_data = json.loads(resp_c.read().decode("utf-8"))
+                        raw = base64.b64decode(file_data['content']).decode("utf-8-sig")
+                except Exception:
+                    raw = None
+            if raw is None:
+                req = urllib.request.Request(src_cfg['raw'], headers={"User-Agent": "MTK-PortTool"})
+                with urllib.request.urlopen(req, timeout=self.UPDATE_TIMEOUT) as resp:
+                    raw = resp.read().decode("utf-8-sig")
 
             # 2. 解析 latest_version.txt（支持有引号/无引号、update_url/update_url_1/update_url_2）
             tag = None
@@ -525,37 +550,55 @@ class MyUI(ttk.Labelframe):
                     all_urls[m.group(1)] = m.group(2).strip().strip('"').strip("'")
 
             if not tag:
-                self.after(0, lambda: self._on_update_failed("版本信息格式错误"))
-                return
+                result['reason'] = "版本信息格式错误"
+            else:
+                # 选择对应源的下载链接
+                download_url = all_urls.get(src_cfg['url_key']) or all_urls.get('update_url')
 
-            # 版本相同则提示已是最新
-            if tag == tool_version:
-                self.after(0, lambda: self._on_already_latest(tag))
-                return
+                # 3. 请求对应源 API 获取 release 内容（markdown）
+                body = ""
+                try:
+                    api_url = src_cfg['api'].format(tag=tag)
+                    req2 = urllib.request.Request(api_url, headers={"User-Agent": "MTK-PortTool", "Accept": "application/json"})
+                    with urllib.request.urlopen(req2, timeout=self.UPDATE_TIMEOUT) as resp2:
+                        release_data = json.loads(resp2.read().decode("utf-8"))
+                        body = release_data.get("body", "") or ""
+                        if not download_url:
+                            download_url = release_data.get("html_url", "")
+                except Exception:
+                    body = f"## {tag}\n\n更新内容获取失败，请前往下载页面查看详情。"
 
-            # 选择对应源的下载链接
-            download_url = all_urls.get(src_cfg['url_key']) or all_urls.get('update_url')
+                result['ok'] = True
+                result['tag'] = tag
+                result['body'] = body
+                result['download_url'] = download_url
 
-            # 3. 请求对应源 API 获取 release 内容（markdown）
-            body = ""
-            try:
-                api_url = src_cfg['api'].format(tag=tag)
-                req2 = urllib.request.Request(api_url, headers={"User-Agent": "MTK-PortTool", "Accept": "application/json"})
-                with urllib.request.urlopen(req2, timeout=self.UPDATE_TIMEOUT) as resp2:
-                    release_data = json.loads(resp2.read().decode("utf-8"))
-                    body = release_data.get("body", "") or ""
-                    if not download_url:
-                        download_url = release_data.get("html_url", "")
-            except Exception:
-                body = f"## {tag}\n\n更新内容获取失败，请前往下载页面查看详情。"
-
-            self.after(0, lambda: self._on_update_success(tag, body, download_url))
-
-        except urllib.error.URLError as e:
-            reason = "网络超时" if "timed out" in str(e).lower() else f"网络错误: {e}"
-            self.after(0, lambda: self._on_update_failed(reason))
         except Exception as e:
-            self.after(0, lambda: self._on_update_failed(f"未知错误: {e}"))
+            err_str = str(e).lower()
+            if "timed out" in err_str or "timeout" in err_str:
+                result['reason'] = "网络超时"
+            else:
+                result['reason'] = f"网络错误: {e}"
+
+        # 调度到主线程更新 UI
+        try:
+            if result['ok']:
+                # 静默模式下，版本相同则不弹窗
+                if silent and result['tag'] == tool_version:
+                    pass
+                else:
+                    self.after(0, lambda r=result: self._on_update_success(r['tag'], r['body'], r['download_url']))
+            else:
+                # 静默模式下失败不弹提示
+                if not silent:
+                    self.after(0, lambda r=result: self._on_update_failed(r['reason']))
+        except Exception:
+            # 如果 after 调度失败（极端情况），非静默模式下直接在后台线程尝试恢复按钮
+            if not silent:
+                try:
+                    self._check_update_btn.config(text="检查更新", state="normal")
+                except Exception:
+                    pass
 
     def _on_update_success(self, tag, body, download_url):
         """检查更新成功（主线程）"""
@@ -568,19 +611,6 @@ class MyUI(ttk.Labelframe):
         # 3秒后恢复按钮文字
         self.after(3000, lambda: self._check_update_btn.config(text="检查更新"))
 
-    def _on_already_latest(self, tag):
-        """已是最新版本（主线程）"""
-        self._check_update_btn.config(text="检查更新", state="normal")
-        win = Toplevel(self)
-        win.title("检查更新")
-        win.geometry("320x140")
-        win.resizable(False, False)
-        win.transient(self.winfo_toplevel())
-        win.grab_set()
-        ttk.Label(win, text="当前已是最新版本", font=('Microsoft YaHei', 12, 'bold')).pack(pady=(25, 5))
-        ttk.Label(win, text=f"版本号：{tag}", font=('Microsoft YaHei', 10)).pack(pady=5)
-        ttk.Button(win, text="确定", command=win.destroy, width=10).pack(pady=15)
-
     def _show_update_dialog(self, tag, body, download_url):
         """显示更新内容弹窗（markdown 格式 + 标题右侧前往下载按钮）"""
         win = Toplevel(self)
@@ -592,7 +622,8 @@ class MyUI(ttk.Labelframe):
         # 标题栏：左侧标题 + 右侧前往下载按钮
         header_frame = ttk.Frame(win)
         header_frame.pack(fill='x', padx=12, pady=(10, 5))
-        ttk.Label(header_frame, text=f"发现新版本：{tag}", font=('Microsoft YaHei', 12, 'bold')).pack(side='left')
+        title_text = f"当前已是最新版本：{tag}" if tag == tool_version else f"发现新版本：{tag}"
+        ttk.Label(header_frame, text=title_text, font=('Microsoft YaHei', 12, 'bold')).pack(side='left')
 
         def open_download():
             if download_url:
