@@ -1,0 +1,2 @@
+﻿latest_version=1.2-beta2
+update_url=https://github.com/LJY-33684/mtk-garbage-porttool-master/releases/download/1.2-beta2/mtk-garbage-porttool-master.zip
