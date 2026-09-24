@@ -201,15 +201,15 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 ## 软件截图 / Software Screenshots
 
-<img width="943" height="432" alt="主界面 / Main UI" src="assets/screenshot1.png" />
+<img width="678" height="316" alt="主界面 / Main UI" src="https://github.com/user-attachments/assets/4e5d2075-0369-40a0-b7ee-f8eec5314379" />
 
-<img width="943" height="458" alt="芯片方案列表 / Chip Preset List" src="assets/screenshot2.png" />
+<img width="677" height="318" alt="芯片方案列表 / Chip Preset List" src="https://github.com/user-attachments/assets/0f298a4a-4b6a-43b8-b6c0-e0d7ca4552a6" />
 
 ## 感谢[@affggh](https://github.com/affggh)分享的原文件，此移植工具基于原工具进行的改进 / Thanks to [@affggh](https://github.com/affggh) for sharing the original files. This porting tool is an improvement based on the original tool.
 
 原作者/Original Author [@affggh](https://github.com/affggh)
 
-## 基于原文件的主要改动 / Major Changes Based on the Original Files
+## 早期改动 / Early Changes
 
 1.修复了处理build.prop文件时遇到非utf-8字符导致报错
 
@@ -231,6 +231,10 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 5.Fixed the issue where repeated clicks on the "One-Click Porting" button would open multiple windows.
 
+6.符号链接丢失/GDT_CSUM校验和/inode bitmap/bootimg全局变量不重置（卡开机根因）等致命bug修复，硬件驱动配置全面适配现代MTK设备（vendor分区）
+
+6.Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
+
 **近期更新 / Recent Updates：**
 - 1.2-beta6（自 beta5 之后的所有改动 / all changes after beta5）：SDAT 卡刷包结构修复（block_image_update 脚本/contexts 回退/raw 先行转 sparse）；刷机脚本分区自动解析（不再硬编码，支持 boot-only）；kernel-only + ZIP 坏包拦截；mt6572/mt6580 补 wifi 替换与缺失路径跳过提示；权限推断增强（bin/xbin 精确匹配+suid）；配置收窄与去重（wifi vendor/firmware 通配、libcam_utils/libstagefrighthw 白名单、auto modem 固件保留）；底层模块与工具启动系列修复（ext4/大小换算/xattr、imgextractor 分块/容错、proputil BOM、Magisk 旧版 apk、fscheck 包导入、配置路径基于文件定位、更新检查线程安全）；boot-only 卡刷与 BootPatcher 友好阻断
   - 1.2-beta6: SDAT package structure fix (block_image_update script / contexts fallback / raw-then-sparse); automatic partition parsing in updater scripts (no more hardcoding, boot-only supported); kernel-only + ZIP bad-package guard; wifi replacement added for mt6572/mt6580 with skip notice for missing paths; permission inference refined (exact bin/xbin + suid); config narrowing & dedup (wifi vendor/firmware wildcards, libcam_utils/libstagefrighthw whitelist, auto modem firmware preserved); low-level & tooling fixes (ext4/size/xattr, imgextractor chunked IO/robustness, proputil BOM, legacy Magisk APK, fscheck package import, config paths relative to file, thread-safe update check); BootPatcher friendly abort.
@@ -238,8 +242,6 @@ This tool is intended only for technical learning and exchange regarding ROM por
   - 1.2-beta5: Added mt6797 (Helio X20/X25) preset with dual-arch drivers; fixed G79 no-sound issue (audio/TFA amp drivers); enhanced auto mode (lib64/egl/TFA); auto info reading & log optimization; preset renaming & ordering; UI improvements (wheel scrolling fix & speed, tri-state select-all showing "-" for partial); version bump.
 - 1.2-beta4：更新检查（GitHub/Gitee双源、静默启动检查、30s超时）；base缓存与“完成后清除base目录”选项；API版本检测与跨大版本/VNDK警告；sparse镜像支持；仅移植内核只输出boot；左下角版本号显示、Magisk选择按钮
   - 1.2-beta4: Update check (GitHub/Gitee sources, silent startup check, 30s timeout); base cache & "clear base after completion" option; API version detection with cross-version/VNDK warnings; sparse image support; kernel-only outputs boot only; version label at bottom-left, Magisk picker button.
-- 早期修复：符号链接丢失/GDT_CSUM校验和/inode bitmap/bootimg全局变量不重置（卡开机根因）等致命bug修复，硬件驱动配置全面适配现代MTK设备（vendor分区）
-  - Earlier fixes: fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
 ## 改进者QQ/邮箱 / Improver's QQ/Email
 
