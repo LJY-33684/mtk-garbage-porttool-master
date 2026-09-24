@@ -137,7 +137,7 @@ def parse_bootimg(bootimg):
         Note: padding_size is not equal to page_size in HuaWei C8600
     """
 
-    bootinfo = open('bootinfo.txt', 'w')
+    bootinfo = open('bootinfo.txt', 'w', encoding='utf-8')
     #check_mtk_head(bootimg, bootinfo)
 
     (magic,
@@ -585,7 +585,7 @@ def repack_bootimg(_base=None, _cmdline=None, _page_size=None, _padding_size=Non
         padding_size = int(str(_padding_size), 16)
 
     if os.path.exists('bootinfo.txt'):
-        bootinfo = open('bootinfo.txt', 'r')
+        bootinfo = open('bootinfo.txt', 'r', encoding='utf-8-sig')
         parse_bootinfo(bootinfo)
         bootinfo.close()
 
@@ -623,7 +623,7 @@ def repack_bootimg(_base=None, _cmdline=None, _page_size=None, _padding_size=Non
     write_bootimg(**options)
     tmp.close()
     if os.path.exists('bootinfo.txt'):
-        bootinfo = open('bootinfo.txt', 'r')
+        bootinfo = open('bootinfo.txt', 'r', encoding='utf-8-sig')
         output = open('boot.img', 'wb')
         tmp = open('boot.img.tmp', 'rb')
         if try_add_head(tmp, output, bootinfo):
@@ -837,7 +837,7 @@ def repack_ramdisk(cpiolist=None):
     #info.close()
 
     tmp = open('ramdisk.cpio.gz.tmp', 'rb')
-    info = open(cpiolist, 'r')
+    info = open(cpiolist, 'r', encoding='utf-8-sig')
     if try_add_head(tmp, out, info):
         while True:
             data = tmp.read(65536)

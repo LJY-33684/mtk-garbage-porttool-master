@@ -27,7 +27,7 @@ def rm(*files):
                 unlink(i)
 
 def grep_prop(key, file) -> str:
-    with open(file, 'r') as f:
+    with open(file, 'r', encoding='utf-8-sig') as f:
         for i in iter(f.readline, ""):
             if key in i:
                 return i.split("=")[1].rstrip("\n")

@@ -102,7 +102,7 @@ class Extractor(object):
         return name
 
     def __appendf(self, msg, log_file):
-        with open(log_file, 'a', newline='\n') as file:
+        with open(log_file, 'a', newline='\n', encoding='utf-8') as file:
             print(msg, file=file)
 
     def __getperm(self, arg):

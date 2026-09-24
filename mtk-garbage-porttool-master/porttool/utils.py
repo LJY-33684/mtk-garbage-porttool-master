@@ -484,7 +484,7 @@ class bootutil:
     
     def repack(self):
         chdir(self.bootdir)
-        with open("bootinfo.txt", encoding='ascii') as f:
+        with open("bootinfo.txt", encoding='utf-8-sig') as f:
             (
                 base,
                 ramdisk_addr,
@@ -723,7 +723,7 @@ class portutils:
                 case 'selinux_permissive':
                     print(f"【移植项】开启SELinux宽容模式...", file=self.std)
                     if portdir.joinpath("bootinfo.txt").exists():
-                        with portdir.joinpath("bootinfo.txt").open("r+") as f:
+                        with portdir.joinpath("bootinfo.txt").open("r+", encoding="utf-8-sig") as f:
                             lines = [i.rstrip() for i in f.readlines()]
                             if any("androidboot.selinux=permissive" in line for line in lines):
                                 print(f"  - 已开启SELinux宽容模式，无需重复操作", file=self.std)
@@ -1239,7 +1239,7 @@ class portutils:
             # 清理文件上下文配置
             fc_path = config_dir.joinpath("system_file_contexts")
             if fc_path.exists():
-                with fc_path.open('r+') as fc:
+                with fc_path.open('r+', encoding='utf-8-sig') as fc:
                     fc_info = list(dict.fromkeys([i.rstrip() for i in fc]))
                     fc.seek(0, 0)
                     fc.truncate()
@@ -1277,7 +1277,7 @@ class portutils:
                         fs_files.append(unix_path)
             
             # 写入文件系统配置
-            with config_dir.joinpath("system_fs_config").open('w') as f:
+            with config_dir.joinpath("system_fs_config").open('w', encoding='utf-8') as f:
                 for fs in sorted(fs_label):
                     f.write(" ".join(fs) + '\n')
             print(f"  - 生成文件系统配置：{len(fs_label)} 条记录", file=self.std)
@@ -1465,11 +1465,11 @@ class portutils:
         
         # 生成配置文件
         print(f"【配置生成】写入权限配置文件...", file=self.std)
-        with config_dir.joinpath("system_fs_config").open('w') as f:
+        with config_dir.joinpath("system_fs_config").open('w', encoding='utf-8') as f:
             for fs in sorted(fs_label):
                 f.write(" ".join(filter(None, fs)) + '\n')
         
-        with config_dir.joinpath("system_file_contexts").open('w') as f:
+        with config_dir.joinpath("system_file_contexts").open('w', encoding='utf-8') as f:
             for fc in sorted(fc_label):
                 f.write(" ".join(fc) + '\n')
         print(f"  - 配置文件已写入到 tmp/config 目录", file=self.std)

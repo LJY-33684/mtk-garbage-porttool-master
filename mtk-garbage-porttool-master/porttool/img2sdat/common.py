@@ -1604,7 +1604,7 @@ fi
         not init_rc_file.endswith('.rc')):
       continue
 
-    with open(os.path.join(init_rc_dir, init_rc_file)) as f:
+    with open(os.path.join(init_rc_dir, init_rc_file), encoding='utf-8-sig') as f:
       for line in f:
         m = re.match(r"^service flash_recovery /system/(\S+)\s*$", line)
         if m:
