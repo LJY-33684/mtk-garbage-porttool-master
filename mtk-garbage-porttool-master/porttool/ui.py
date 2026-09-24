@@ -339,9 +339,25 @@ class MyUI(ttk.Labelframe):
     def __setup_widgets(self):
         """初始化主UI的所有组件"""
         def __scroll_event(event):
-            """移植条目滚动事件处理"""
-            scroll_num = int(-event.delta / 2)
+            """移植条目滚动事件处理（Windows滚轮）"""
+            # 每格滚动 2 行（约44px）；触控板/高精度滚轮 delta 为 120 的倍数，自动放大
+            lines = max(1, abs(event.delta) // 120) * 2
+            scroll_num = -lines if event.delta > 0 else lines
             actcanvas.yview_scroll(scroll_num, 'units')
+        
+        def __scroll_up(event):
+            actcanvas.yview_scroll(-2, 'units')
+        
+        def __scroll_down(event):
+            actcanvas.yview_scroll(2, 'units')
+
+        def __bind_wheel(widget):
+            """递归绑定滚轮事件：修复鼠标悬停在复选框上时滚轮失效的问题"""
+            widget.bind("<MouseWheel>", __scroll_event)
+            widget.bind("<Button-4>", __scroll_up)   # Linux 滚轮上
+            widget.bind("<Button-5>", __scroll_down)  # Linux 滚轮下
+            for child in widget.winfo_children():
+                __bind_wheel(child)
         
         def __scroll_func(event):
             """更新滚动区域"""
@@ -353,6 +369,31 @@ class MyUI(ttk.Labelframe):
             actcanvas.create_window(0, 0, window=self.actcvframe, anchor='nw')
             self.actcvframe.bind("<Configure>", __scroll_func)
             actcanvas.update()
+        
+        def __sync_select_all():
+            """条目勾选变化时同步全选框状态（三态：✓全选 / -部分 / 空全不选）"""
+            vals = [v.get() for _, v in self.item]
+            if all(vals):
+                self.select_all_var.set(True)
+                self.select_all_box.state(['!alternate'])
+            elif not any(vals):
+                self.select_all_var.set(False)
+                self.select_all_box.state(['!alternate'])
+            else:
+                # 部分选中：框内显示 "-"
+                self.select_all_var.set(False)
+                self.select_all_box.state(['alternate'])
+        
+        def __toggle_select_all():
+            """全选/全不选：空或部分选中时点击 -> 全部勾选(✓)；全选状态下点击 -> 全部取消(空)"""
+            vals = [v.get() for _, v in self.item]
+            if all(vals):
+                for _, v in self.item:
+                    v.set(False)
+            else:
+                for _, v in self.item:
+                    v.set(True)
+            __sync_select_all()
         
         def __load_port_item(select):
             """加载选中芯片类型对应的移植条目"""
@@ -373,13 +414,18 @@ class MyUI(ttk.Labelframe):
                     ttk.Checkbutton(
                         self.actcvframe, 
                         text=item_key, 
-                        variable=self.item[index][1]
+                        variable=self.item[index][1],
+                        command=__sync_select_all
                     )
                 )
             
             # 布局移植条目复选框
             for checkbox in self.itembox:
                 checkbox.pack(side='top', fill='x', padx=5)
+            
+            # 递归绑定滚轮，确保鼠标在复选框/全选框上时也能滚动
+            __bind_wheel(self.actcvframe)
+            __sync_select_all()
         
         # ========== 左侧配置区域 ==========
         optframe = ttk.Frame(self)
@@ -396,14 +442,25 @@ class MyUI(ttk.Labelframe):
         ).pack(side='left', fill='x', padx=5, pady=5)
         optlabel.pack(side='top', fill='x')
         
-        # 移植条目滚动区域
-        actframe = ttk.Labelframe(optframe, text="支持的移植条目", height=180)
+        # 移植条目滚动区域（标题右侧带全选复选框）
+        actframe = ttk.Labelframe(optframe, height=180)
+        actframe_header = ttk.Frame(actframe)
+        ttk.Label(actframe_header, text="支持的移植条目").pack(side='left', padx=(0, 6))
+        self.select_all_var = BooleanVar(value=False)
+        self.select_all_box = ttk.Checkbutton(
+            actframe_header,
+            text="全选",
+            variable=self.select_all_var,
+            command=__toggle_select_all
+        )
+        self.select_all_box.pack(side='left')
+        actframe.configure(labelwidget=actframe_header)
         actcanvas = Canvas(actframe)
         actscroll = ttk.Scrollbar(actframe, orient='vertical', command=actcanvas.yview)
         actcanvas.configure(
             yscrollcommand=actscroll.set, 
             scrollregion=(0, 0, 300, 180), 
-            yscrollincrement=1
+            yscrollincrement=22  # 1个单位≈1行复选框高度，滚动按行计
         )
         actcanvas.bind("<MouseWheel>", __scroll_event)  # 绑定鼠标滚轮
         actscroll.pack(side='right', fill='y')

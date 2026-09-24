@@ -25,6 +25,10 @@ from .img2sdat import main as img2sdat
 
 from .boot_patch import BootPatcher, parseMagiskApk
 import glob
+import contextlib
+import sys
+import gzip
+import zlib
 
 if osname == 'nt':
     from ctypes import windll, wintypes
@@ -54,7 +58,202 @@ def _rmtree(path):
     rmtree(str(path), onerror=_onerror)
 
 
-tool_author = 'affggh'; tool_version = '1.2-beta4'
+def _fmt_size(nbytes):
+    """格式化文件大小（字节 -> 可读文本）。"""
+    if nbytes >= 1024 ** 3:
+        return f"{nbytes / 1024 ** 3:.2f} GB"
+    if nbytes >= 1024 ** 2:
+        return f"{nbytes / 1024 ** 2:.1f} MB"
+    return f"{nbytes / 1024:.1f} KB"
+
+
+# ---------- 移植信息读取（移植流程中自动读取并打印，无独立入口） ----------
+_LINUX_VER_RE = re.compile(rb'Linux version\s+([^\x00\n\r]+)')
+_LINUX_LOOSE_RE = re.compile(rb'Linux[ \t]+(?:version|kernel)[ \t]*([^\x00\n\r]+)')
+_GCC_RE = re.compile(r'gcc version\s+([^\s\)]+)')
+
+
+def _extract_linux_ver(kernel_path):
+    """从内核文件提取 Linux 版本与 GCC 版本。
+
+    支持未压缩 Image、gzip 内核，以及 32 位自解压 zImage
+    （版本字符串藏在 gzip/LZMA/xz 压缩 payload 内，需先解压再搜索）。
+    """
+    p = Path(kernel_path)
+    if not p.exists():
+        return None, None
+    raw = p.read_bytes()
+    if raw[:2] == b'\x1f\x8b':  # 直接是 gzip
+        try:
+            raw = gzip.decompress(raw)
+        except Exception:
+            pass
+    m = _LINUX_VER_RE.search(raw) or _LINUX_LOOSE_RE.search(raw)
+    if not m:
+        payload = _decompress_zimage_payload(raw)
+        if payload:
+            m = _LINUX_VER_RE.search(payload) or _LINUX_LOOSE_RE.search(payload)
+    if not m:
+        return None, None
+    ver = m.group(1).decode('latin-1', errors='replace').strip()
+    gm = _GCC_RE.search(ver)
+    return ver, (gm.group(1) if gm else None)
+
+
+def _decompress_zimage_payload(raw):
+    """尝试从自解压 zImage 中解压出真实 vmlinux（支持 gzip / xz / lzma-alone）。"""
+    # gzip payload（zImage 最常见）
+    idx = 0
+    while True:
+        pos = raw.find(b'\x1f\x8b\x08', idx)
+        if pos == -1:
+            break
+        try:
+            d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            out = d.decompress(raw[pos:])
+            if out and len(out) > 1024 * 1024:  # 排除误匹配的小块
+                return out
+        except Exception:
+            pass
+        idx = pos + 3
+    # xz payload
+    idx = 0
+    while True:
+        pos = raw.find(b'\xfd7zXZ\x00', idx)
+        if pos == -1:
+            break
+        try:
+            d = lzma.LZMADecompressor(format=lzma.FORMAT_XZ)
+            out = d.decompress(raw[pos:])
+            if out and len(out) > 1024 * 1024:
+                return out
+        except Exception:
+            pass
+        idx = pos + 1
+    # lzma-alone payload（MTK 老内核常用）
+    idx = 0
+    while True:
+        pos = raw.find(b'\x5d\x00\x00\x00', idx)
+        if pos == -1:
+            break
+        try:
+            d = lzma.LZMADecompressor(format=lzma.FORMAT_ALONE)
+            out = d.decompress(raw[pos:])
+            if out and len(out) > 1024 * 1024:
+                return out
+        except Exception:
+            pass
+        idx = pos + 1
+    return None
+
+
+def _read_bootinfo(bootinfo_path):
+    """读取 bootimg 解包生成的 bootinfo.txt（base/ramdisk_addr/name/cmdline 等）。"""
+    p = Path(bootinfo_path)
+    if not p.exists():
+        return {}
+    info = {}
+    for line in p.read_text(encoding='ascii', errors='ignore').splitlines():
+        if ':' in line:
+            k, v = line.strip().split(':', 1)
+            info[k.strip()] = v.strip()
+    return info
+
+
+def _read_build_prop(prop_path):
+    """读取 build.prop 全部有效键值（自动检测编码，跳过注释行）。"""
+    p = Path(prop_path)
+    if not p.exists():
+        return {}
+    raw = p.read_bytes()
+    enc = 'utf-8'
+    for enc_cand in ('utf-8', 'gbk', 'latin-1', 'gb18030'):
+        try:
+            raw.decode(enc_cand)
+            enc = enc_cand
+            break
+        except UnicodeDecodeError:
+            continue
+    info = {}
+    for line in raw.decode(enc, errors='replace').splitlines():
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            k, v = line.split('=', 1)
+            info[k.strip()] = v.strip()
+    return info
+
+
+# build.prop 字段 -> 中文标签（按展示顺序）
+_SYSTEM_INFO_KEYS = (
+    ('ro.build.version.release', 'Android版本'),
+    ('ro.build.version.sdk', 'SDK/API'),
+    ('ro.build.version.security_patch', '安全补丁'),
+    ('ro.product.model', '产品型号'),
+    ('ro.product.device', '设备代号'),
+    ('ro.product.board', '主板/芯片'),
+    ('ro.product.manufacturer', '制造商'),
+    ('ro.product.brand', '品牌'),
+    ('ro.mediatek.platform', 'MTK平台'),
+    ('ro.hardware', 'hardware'),
+    ('ro.product.cpu.abi', 'CPU ABI'),
+    ('ro.product.cpu.abilist', 'CPU ABI列表'),
+    ('ro.build.display.id', '构建ID'),
+    ('ro.build.fingerprint', '构建指纹'),
+)
+
+
+def _system_info_rows(prop_path, sys_dir):
+    """整理 system 信息（build.prop 摘要 + 目录布局），返回 (标签, 值) 列表。"""
+    rows = []
+    info = _read_build_prop(prop_path)
+    for key, label in _SYSTEM_INFO_KEYS:
+        val = info.get(key)
+        if val:
+            rows.append((label, val))
+    d = Path(sys_dir)
+    if d.exists():
+        # 架构判定：优先 build.prop 的 ABI，辅以 lib64 实际库数（避免空壳 lib64 误判）
+        abi = info.get('ro.product.cpu.abi', '')
+        lib64 = d / 'lib64'
+        n64 = 0
+        if lib64.is_dir():
+            try:
+                n64 = sum(1 for _ in lib64.glob('*.so'))
+            except Exception:
+                n64 = 0
+        if 'arm64' in abi or 'x86_64' in abi:
+            arch = '64位(arm64)'
+        elif 'arm64' in info.get('ro.product.cpu.abilist', '') or 'x86_64' in info.get('ro.product.cpu.abilist', ''):
+            arch = '64位(arm64)'
+        elif n64 >= 10:
+            arch = f'64位(arm64)，lib64含{n64}个库'
+        elif n64 > 0:
+            arch = f'32位为主（lib64仅{n64}个库）'
+        else:
+            arch = '32位(arm)'
+        rows.append(('系统架构', arch))
+        has_vendor = (d / 'vendor').is_dir()
+        rows.append(('Vendor目录', '存在' if has_vendor else '不存在'))
+        try:
+            n_files = sum(1 for _ in d.rglob('*') if _.is_file())
+            rows.append(('文件总数', f'{n_files} 个'))
+        except Exception:
+            pass
+    return rows
+
+
+def _print_rows(std, title, rows):
+    """以树形缩进打印信息区块。"""
+    if not rows:
+        print(f"{title}：未读取到有效信息", file=std)
+        return
+    print(f"{title}：", file=std)
+    for i, (k, v) in enumerate(rows):
+        prefix = "  ├─ " if i < len(rows) - 1 else "  └─ "
+        print(f"{prefix}{k}：{v}", file=std)
+
+
+tool_author = 'affggh'; tool_version = '1.2-beta5'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -204,7 +403,14 @@ class bootutil:
     
     def unpack(self):
         chdir(self.bootdir)
-        unpack_bootimg(self.bootpath)
+        # 屏蔽 bootimg.py 的英文诊断噪音（base/arguments 等），失败时还原以便排查
+        err_buf = StringIO()
+        try:
+            with contextlib.redirect_stderr(err_buf):
+                unpack_bootimg(self.bootpath)
+        except Exception:
+            sys.stderr.write(err_buf.getvalue())
+            raise
         chdir(self.retcwd)
     
     def repack(self):
@@ -220,7 +426,13 @@ class bootutil:
                 cmdline,
                 padding_size,
             ) = [i.lstrip("\x00").rstrip().split(':')[1] for i in iter(f.readline, "")]
-        repack_bootimg(base, cmdline, page_size, padding_size, None)
+        err_buf = StringIO()
+        try:
+            with contextlib.redirect_stderr(err_buf):
+                repack_bootimg(base, cmdline, page_size, padding_size, None)
+        except Exception:
+            sys.stderr.write(err_buf.getvalue())
+            raise
         chdir(self.retcwd)
     
     def __enter__(self):
@@ -271,6 +483,29 @@ class portutils:
     def _flag(self, item: str) -> bool:
         """读取移植项开关。优先顶层键（UI 设置方式），回退到 flags 字典。"""
         return bool(self.items.get(item, self.items.get('flags', {}).get(item, False)))
+
+    def __print_boot_info(self, label: str, bootdir: Path):
+        """自动读取并打印 boot 镜像信息（内核版本/GCC/boot头参数）。"""
+        rows = []
+        for kname in ("kernel", "kernel.gz"):
+            if bootdir.joinpath(kname).exists():
+                lv, gcc = _extract_linux_ver(bootdir.joinpath(kname))
+                if lv:
+                    rows.append(("内核版本", lv + (f"（GCC {gcc}）" if gcc else "")))
+                break
+        bi = _read_bootinfo(bootdir.joinpath("bootinfo.txt"))
+        for key, label2 in (("base", "base地址"), ("ramdisk_addr", "ramdisk地址"),
+                            ("second_addr", "second地址"), ("tags_addr", "tags地址"),
+                            ("page_size", "页大小"), ("name", "boot名称"),
+                            ("cmdline", "cmdline")):
+            if bi.get(key):
+                rows.append((label2, bi[key]))
+        _print_rows(self.std, f"【信息】{label} boot.img", rows)
+
+    def __print_system_info(self, label: str, prop_path: str, sys_dir: str):
+        """自动读取并打印 system 镜像信息（build.prop 关键字段 + 目录布局）。"""
+        _print_rows(self.std, f"【信息】{label} system.img",
+                    _system_info_rows(prop_path, sys_dir))
 
     def execv(self, cmd, verbose=False):
         """
@@ -368,6 +603,10 @@ class portutils:
         bootutil(str(base)).unpack()
         print(f"【解包boot.img】正在解包移植源boot.img...", file=self.std)
         bootutil(str(port)).unpack()
+
+        # 自动读取并打印底包/移植源 boot 信息
+        self.__print_boot_info("底包", basedir)
+        self.__print_boot_info("移植源", portdir)
         
         # 执行boot移植逻辑
         print(f"【开始移植】执行boot.img移植逻辑...", file=self.std)
@@ -399,6 +638,14 @@ class portutils:
                 case 'replace_fstab':
                     print(f"【移植项】替换分区表文件...", file=self.std)
                     for i in self.items['replace']['fstab']:
+                        if basedir.joinpath(i).exists():
+                            print(f"  - 替换 {i}", file=self.std)
+                            __replace(basedir.joinpath(i), portdir.joinpath(i))
+                        else:
+                            print(f"  - 跳过 {i}（底包中不存在）", file=self.std)
+                case 'replace_init':
+                    print(f"【移植项】替换ramdisk init配置文件...", file=self.std)
+                    for i in self.items['replace']['init']:
                         if basedir.joinpath(i).exists():
                             print(f"  - 替换 {i}", file=self.std)
                             __replace(basedir.joinpath(i), portdir.joinpath(i))
@@ -473,10 +720,22 @@ class portutils:
                 for file in glob.glob(op.join(str(base_prefix), val)):
                     relfile = op.relpath(file, str(base_prefix))
                     dst2 = port_prefix.joinpath(relfile)
-                    dst2.parent.mkdir(parents=True, exist_ok=True)
-                    _clear_attrs(dst2)
-                    dst2.write_bytes(base_prefix.joinpath(relfile).read_bytes())
-                    print(f"  - 替换通配文件 {file}", file=self.std)
+                    src_file = base_prefix.joinpath(relfile)
+                    if op.isdir(src_file):
+                        # 通配命中目录：整体目录替换
+                        if dst2.exists():
+                            if dst2.is_dir():
+                                _rmtree(dst2)
+                            else:
+                                _clear_attrs(dst2)
+                                dst2.unlink()
+                        copytree(src_file, dst2)
+                        print(f"  - 替换通配目录 {file}", file=self.std)
+                    else:
+                        dst2.parent.mkdir(parents=True, exist_ok=True)
+                        _clear_attrs(dst2)
+                        dst2.write_bytes(src_file.read_bytes())
+                        print(f"  - 替换通配文件 {file}", file=self.std)
             elif src.is_dir():
                 if dst.exists():
                     if dst.is_dir():
@@ -535,9 +794,14 @@ class portutils:
             Extractor().main("tmp/rom/system.img", "tmp/rom/system")
             print(f"【解包完成】移植源system.img解包完毕", file=self.std)
 
+        # 自动读取并打印底包/移植源 system 信息
+        self.__print_system_info("底包", "base/system/build.prop", "base/system")
+        self.__print_system_info("移植源", "tmp/rom/system/build.prop", "tmp/rom/system")
+
         # === API 版本检测与跨大版本警告 ===
-        _API_VER = {26: "8.0", 27: "8.1", 28: "9", 29: "10", 30: "11",
-                    31: "12", 32: "12L", 33: "13", 34: "14", 35: "15"}
+        _API_VER = {19: "4.4", 20: "4.4W", 21: "5.0", 22: "5.1", 23: "6.0",
+                    24: "7.0", 25: "7.1", 26: "8.0", 27: "8.1", 28: "9",
+                    29: "10", 30: "11", 31: "12", 32: "12L", 33: "13", 34: "14", 35: "15"}
         def _read_sdk(prop_path):
             p = Path(prop_path)
             if not p.exists():
@@ -595,6 +859,10 @@ class portutils:
                 # 音频配置文件
                 "etc/audio_effects.conf", "vendor/etc/audio_effects.conf",
                 "vendor/etc/audio_policy.conf", "vendor/etc/audio_device.xml",
+                # GPU egl（arm64 双架构）
+                "vendor/lib64/egl", "lib64/egl",
+                # TFA 功放常见目录（NXP 外放功放）
+                "etc/tfa98xx", "etc/tfa9895", "etc/tfa9897", "vendor/etc/tfa98xx",
                 # GPS 配置
                 "vendor/etc/agps_profiles_conf2.xml",
                 # 键盘布局
@@ -608,8 +876,8 @@ class portutils:
                     __replace(d)
                     auto_count += 1
 
-            # 2. HAL 模块目录（所有 .so 全替换）
-            for hwdir in ["lib/hw", "vendor/lib/hw"]:
+            # 2. HAL 模块目录（所有 .so 全替换，含 arm64 双架构）
+            for hwdir in ["lib/hw", "vendor/lib/hw", "lib64/hw", "vendor/lib64/hw"]:
                 src_dir = base_prefix.joinpath(hwdir)
                 if src_dir.is_dir():
                     for sofile in src_dir.glob("*.so"):
@@ -629,10 +897,10 @@ class portutils:
                 'librilutils', 'libvia-ril', 'libviagpsrpc', 'libgpu',
                 'libmtkcam', 'libcam', 'libmhal', 'libmtkjpeg',
                 'libjpg', 'libswjpg', 'libhardware_legacy', 'libwpa',
-                'libwifi', 'libnetd', 'libdrm', 'libsecure',
+                'libwifi', 'libnetd', 'libdrm', 'libsecure', 'tfa',
             ]
-            # 只扫描 vendor/lib（vendor 分区的硬件驱动库），不扫 /lib 根目录（系统框架库不能换）
-            for libdir in ["vendor/lib"]:
+            # 只扫描 vendor/lib 与 vendor/lib64（vendor 分区的硬件驱动库），不扫 /lib 根目录（系统框架库不能换）
+            for libdir in ["vendor/lib", "vendor/lib64"]:
                 src_dir = base_prefix.joinpath(libdir)
                 if src_dir.is_dir():
                     for sofile in src_dir.glob("*.so"):
@@ -656,29 +924,31 @@ class portutils:
                     __replace(rel)
                     auto_count += 1
 
-            # 3b. 非 Treble 主路径：/system/lib 硬件库白名单（前缀匹配，安全项与手动方案同源）
+            # 3b. 非 Treble 主路径：/system/lib 与 /system/lib64 硬件库白名单（前缀匹配，安全项与手动方案同源）
             legacy_lib_prefixes = [
                 'libcam.', 'libcamalgo', 'libcamdrv', 'libcameracustom',
                 'lib3a', 'libfeatureio', 'libimageio', 'libmhal', 'libmtkjpeg', 'libjpg',
                 'librilmtk', 'libmtkril', 'librilutils', 'libvia-ril',
                 'libmtkomx', 'libstagefrighthw', 'libudf', 'libmtk_vt',
                 'libmali', 'libgles_mali', 'libshowlogo',
+                'libaudiocomp', 'libaudioroute', 'libaudiocust', 'libtfa',
             ]
             LEGACY_EXCLUDE = (
                 'libstagefright', 'libdrm', 'libbinder', 'libc.so',
                 'libandroid_runtime', 'libcameraservice', 'libaudioflinger',
                 'libmedia', 'libnetd', 'libwilhelm',
             )
-            src_dir = base_prefix.joinpath("lib")
-            if src_dir.is_dir():
-                for sofile in src_dir.glob("*.so"):
-                    name = sofile.name.lower()
-                    if (any(name.startswith(p) for p in legacy_lib_prefixes)
-                            and not any(x in name for x in LEGACY_EXCLUDE)):
-                        rel = str(sofile.relative_to(base_prefix)).replace("\\", "/")
-                        __replace(rel)
-                        auto_count += 1
-                        print(f"  - 替换 {rel}", file=self.std)
+            for libdir in ["lib", "lib64"]:
+                src_dir = base_prefix.joinpath(libdir)
+                if src_dir.is_dir():
+                    for sofile in src_dir.glob("*.so"):
+                        name = sofile.name.lower()
+                        if (any(name.startswith(p) for p in legacy_lib_prefixes)
+                                and not any(x in name for x in LEGACY_EXCLUDE)):
+                            rel = str(sofile.relative_to(base_prefix)).replace("\\", "/")
+                            __replace(rel)
+                            auto_count += 1
+                            print(f"  - 替换 {rel}", file=self.std)
 
             # 4. 硬件守护进程关键词匹配（只扫 vendor/bin，/bin 是系统工具不替换）
             hw_bin_keywords = [
@@ -810,6 +1080,23 @@ class portutils:
                                 else:
                                     print(f"  - 跳过 {key}（底包中未找到）", file=self.std)
                         print(f"  - 设备型号信息同步完成", file=self.std)
+                    else:
+                        print(f"  - 跳过（未找到build.prop）", file=self.std)
+                case 'change_platform':
+                    print(f"【移植项】同步底包平台/WLAN信息...", file=self.std)
+                    keys = ['ro.mediatek.platform', 'mediatek.wlan.chip', 'mediatek.wlan.module.postfix', 'ro.hardware']
+                    port_prop = port_prefix.joinpath("build.prop")
+                    base_prop = base_prefix.joinpath("build.prop")
+                    if port_prop.exists() and base_prop.exists():
+                        with proputil(str(port_prop)) as pp, proputil(str(base_prop)) as bp:
+                            for key in keys:
+                                value = bp.getprop(key)
+                                if value:
+                                    pp.setprop(key, value)
+                                    print(f"  - 设置 {key} = {value}", file=self.std)
+                                else:
+                                    print(f"  - 跳过 {key}（底包中未找到）", file=self.std)
+                        print(f"  - 平台/WLAN信息同步完成", file=self.std)
                     else:
                         print(f"  - 跳过（未找到build.prop）", file=self.std)
         
@@ -1210,7 +1497,16 @@ class portutils:
         print(f"【开始移植】MTK低端机移植工具启动...", file=self.std)
         print(f"  ├─ 工具版本：{tool_version}", file=self.std)
         print(f"  ├─ 输出类型：{'img镜像' if self.genimg else 'zip卡刷包'}", file=self.std)
-        print(f"  └─ 移植源类型：{'zip卡刷包' if self.source_type == 'zip' else '单独img镜像'}", file=self.std)
+        print(f"  ├─ 移植源类型：{'zip卡刷包' if self.source_type == 'zip' else '单独img镜像'}", file=self.std)
+        # 输入文件概览（路径 + 大小）
+        print(f"  ├─ 底包 boot：{self.bootimg}（{_fmt_size(Path(self.bootimg).stat().st_size)}）", file=self.std)
+        print(f"  ├─ 底包 system：{self.sysimg}（{_fmt_size(Path(self.sysimg).stat().st_size)}）", file=self.std)
+        if self.source_type == 'zip':
+            print(f"  └─ 移植包：{self.port_source}（{_fmt_size(Path(self.port_source).stat().st_size)}）", file=self.std)
+        else:
+            pb, ps = self.port_source
+            print(f"  ├─ 移植用 boot：{pb}（{_fmt_size(Path(pb).stat().st_size)}）", file=self.std)
+            print(f"  └─ 移植用 system：{ps}（{_fmt_size(Path(ps).stat().st_size)}）", file=self.std)
         
         try:
             self.__decompress_portzip()

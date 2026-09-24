@@ -5,10 +5,10 @@ import struct
 import traceback
 import shutil
 import re
-import mmap
 from . import ext4
 
-EXT4_HEADER_MAGIC = 0xED26FF3A
+SPARSE_HEADER_MAGIC = 0xED26FF3A   # Android sparse image 魔数（位于文件偏移 0）
+EXT4_SUPER_MAGIC = 0xEF53          # ext4 文件系统魔数（位于超级块偏移 0x438）
 EXT4_SPARSE_HEADER_LEN = 28
 EXT4_CHUNK_HEADER_SIZE = 12
 
@@ -32,6 +32,37 @@ class ext4_chunk_header(object):
          self.reserved,
          self.chunk_size,
          self.total_size) = struct.unpack('<2H2I', buf)
+
+
+def is_sparse_image(target):
+    """
+    严格判断文件是否为 Android sparse image。
+    sparse 魔数必须位于文件偏移 0，并校验版本/块大小/头部大小等关键字段，
+    避免把内容中偶然出现 0xED26FF3A 字节序列的 raw ext4 镜像误判为 sparse。
+    """
+    try:
+        with open(target, "rb") as f:
+            buf = f.read(EXT4_SPARSE_HEADER_LEN)
+        if len(buf) < EXT4_SPARSE_HEADER_LEN:
+            return False
+        hdr = ext4_file_header(buf)
+        if hdr.magic != SPARSE_HEADER_MAGIC:
+            return False
+        if hdr.major != 1:
+            return False
+        if hdr.file_header_size < EXT4_SPARSE_HEADER_LEN:
+            return False
+        if hdr.chunk_header_size < EXT4_CHUNK_HEADER_SIZE:
+            return False
+        bs = hdr.block_size
+        # block_size 必须是 512~65536 之间的 2 的幂
+        if bs < 512 or bs > 65536 or (bs & (bs - 1)) != 0:
+            return False
+        if hdr.total_blocks == 0 or hdr.total_chunks == 0:
+            return False
+        return True
+    except Exception:
+        return False
 
 
 class Extractor(object):
@@ -508,53 +539,47 @@ class Extractor(object):
                 self.__appendf('\n'.join(self.context), contexts) #11.05.18
 
     def __converSimgToImg(self, target):
+        """将 Android sparse image 转换为 raw ext4 image"""
+        out_target = target.replace(".img", ".raw.img")
         with open(target, "rb") as img_file:
-            if self.sign_offset > 0:
-                img_file.seek(self.sign_offset, 0)
-            header = ext4_file_header(img_file.read(28))
-            total_chunks = header.total_chunks
+            header = ext4_file_header(img_file.read(EXT4_SPARSE_HEADER_LEN))
+            # 文件头大小非标准时，跳过多余的头部字节
             if header.file_header_size > EXT4_SPARSE_HEADER_LEN:
                 img_file.seek(header.file_header_size - EXT4_SPARSE_HEADER_LEN, 1)
-            with open(target.replace(".img", ".raw.img"), "wb") as raw_img_file:
-                sector_base = 82528
-                output_len = 0
-                while total_chunks > 0:
-                    chunk_header = ext4_chunk_header(img_file.read(EXT4_CHUNK_HEADER_SIZE))
-                    sector_size = (chunk_header.chunk_size * header.block_size) >> 9
-                    chunk_data_size = chunk_header.total_size - header.chunk_header_size
-                    if chunk_header.type == 0xCAC1:  # CHUNK_TYPE_RAW
+            with open(out_target, "wb") as raw_out:
+                while header.total_chunks > 0:
+                    chunk = ext4_chunk_header(img_file.read(EXT4_CHUNK_HEADER_SIZE))
+                    chunk_data_size = chunk.total_size - header.chunk_header_size
+                    out_bytes = chunk.chunk_size * header.block_size
+                    if chunk.type == 0xCAC1:      # CHUNK_TYPE_RAW：原样复制数据
                         if header.chunk_header_size > EXT4_CHUNK_HEADER_SIZE:
                             img_file.seek(header.chunk_header_size - EXT4_CHUNK_HEADER_SIZE, 1)
-                        data = img_file.read(chunk_data_size)
-                        len_data = len(data)
-                        if len_data == (sector_size << 9):
-                            raw_img_file.write(data)
-                            output_len += len_data
-                            sector_base += sector_size
-                    else:
-                        if chunk_header.type == 0xCAC2:  # CHUNK_TYPE_FILL
-                            if header.chunk_header_size > EXT4_CHUNK_HEADER_SIZE:
-                                img_file.seek(header.chunk_header_size - EXT4_CHUNK_HEADER_SIZE, 1)
-                            data = img_file.read(chunk_data_size)
-                            len_data = sector_size << 9
-                            raw_img_file.write(struct.pack("B", 0) * len_data)
-                            output_len += len(data)
-                            sector_base += sector_size
-                        else:
-                            if chunk_header.type == 0xCAC3:  # CHUNK_TYPE_DONT_CARE
-                                if header.chunk_header_size > EXT4_CHUNK_HEADER_SIZE:
-                                    img_file.seek(header.chunk_header_size - EXT4_CHUNK_HEADER_SIZE, 1)
-                                data = img_file.read(chunk_data_size)
-                                len_data = sector_size << 9
-                                raw_img_file.write(struct.pack("B", 0) * len_data)
-                                output_len += len(data)
-                                sector_base += sector_size
-                            else:
-                                len_data = sector_size << 9
-                                raw_img_file.write(struct.pack("B", 0) * len_data)
-                                sector_base += sector_size
-                    total_chunks -= 1
-        self.OUTPUT_IMAGE_FILE = target.replace(".img", ".raw.img")
+                        raw_out.write(img_file.read(chunk_data_size))
+                    elif chunk.type == 0xCAC2:    # CHUNK_TYPE_FILL：用 4 字节填充值重复填满
+                        if header.chunk_header_size > EXT4_CHUNK_HEADER_SIZE:
+                            img_file.seek(header.chunk_header_size - EXT4_CHUNK_HEADER_SIZE, 1)
+                        fill = img_file.read(4)
+                        if chunk_data_size > 4:
+                            img_file.read(chunk_data_size - 4)
+                        repeats = out_bytes // 4
+                        raw_out.write(fill * repeats)
+                        rem = out_bytes % 4
+                        if rem:
+                            raw_out.write(fill[:rem])
+                    elif chunk.type == 0xCAC3:    # CHUNK_TYPE_DONT_CARE：输出 0
+                        if header.chunk_header_size > EXT4_CHUNK_HEADER_SIZE:
+                            img_file.seek(header.chunk_header_size - EXT4_CHUNK_HEADER_SIZE, 1)
+                        if chunk_data_size:
+                            img_file.read(chunk_data_size)
+                        raw_out.write(b'\x00' * out_bytes)
+                    else:                        # CHUNK_TYPE_CRC32 / 未知类型：跳过输入数据，输出 0
+                        if header.chunk_header_size > EXT4_CHUNK_HEADER_SIZE:
+                            img_file.seek(header.chunk_header_size - EXT4_CHUNK_HEADER_SIZE, 1)
+                        if chunk_data_size:
+                            img_file.read(chunk_data_size)
+                        raw_out.write(b'\x00' * out_bytes)
+                    header.total_chunks -= 1
+        self.OUTPUT_IMAGE_FILE = out_target
     
     def fixmoto(self, input_file):
         if os.path.exists(input_file) == False:
@@ -590,27 +615,16 @@ class Extractor(object):
         except:
                 pass
 
-    def checkSignOffset(self, file):
-        size=os.stat(file.name).st_size
-        if size <= 52428800:
-            mm = mmap.mmap(file.fileno(),0 , access=mmap.ACCESS_READ)
-        else:
-            mm = mmap.mmap(file.fileno(),52428800 , access=mmap.ACCESS_READ)  # 52428800=50Mb
-        offset = mm.find(struct.pack('<L', EXT4_HEADER_MAGIC))
-        return offset
-
     def __getTypeTarget(self, target):
-        filename, file_extension = os.path.splitext(target)
-        if file_extension == '.img':
-            with open(target, "rb") as img_file:
-                setattr(self, 'sign_offset', self.checkSignOffset(img_file))
-                if self.sign_offset > 0:
-                    img_file.seek(self.sign_offset, 0)
-                header = ext4_file_header(img_file.read(28))
-                if header.magic != EXT4_HEADER_MAGIC:
-                    return 'img'
-                else:
-                    return 'simg'
+        """
+        检测镜像类型：
+          'simg' -> Android sparse image（解包前需先转 raw）
+          'img'  -> raw ext4 image
+        """
+        _, file_extension = os.path.splitext(target)
+        if file_extension == '.img' and is_sparse_image(target):
+            return 'simg'
+        return 'img'
 
     def main(self, target, output_dir):
         self.BASE_DIR = (os.path.realpath(os.path.dirname(target)) + os.sep)
@@ -620,8 +634,7 @@ class Extractor(object):
         self.OUTPUT_MYIMAGE_FILE = os.path.basename(target)
         self.MYFileName = os.path.basename(self.OUTPUT_IMAGE_FILE).replace(".img", "")
         self.FileName = self.__file_name(os.path.basename(target))
-        #target_type = self.__getTypeTarget(target)
-        target_type = 'img'
+        target_type = self.__getTypeTarget(target)
         if sys.argv.__len__() == 3:
             self.CONFING_DIR = sys.argv[2] + os.sep + 'config'
         else:
@@ -638,6 +651,13 @@ class Extractor(object):
             print(".....Extraction from %s to %s" % (os.path.basename(target), os.path.basename(self.EXTRACT_DIR)))
             self.__ext4extractor()
             print(".....Done! All extraction in %s" % (os.path.basename(self.EXTRACT_DIR)))
+            # 清理 sparse 转换生成的中间 raw 镜像（与源镜像同级，避免残留）
+            _intermediate = os.path.abspath(self.OUTPUT_IMAGE_FILE)
+            if _intermediate != os.path.abspath(target) and os.path.exists(_intermediate):
+                try:
+                    os.remove(_intermediate)
+                except Exception:
+                    pass
         if target_type == 'img':
             with open(os.path.abspath(self.OUTPUT_IMAGE_FILE), 'rb') as f:
                 data = f.read(500000)
