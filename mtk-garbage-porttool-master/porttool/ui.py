@@ -326,7 +326,10 @@ class MyUI(ttk.Labelframe):
                     ).start
                     port_process()  # 执行移植
                 except Exception as e:
+                    import traceback
                     print(f"【移植异常】执行过程出错：{str(e)}", file=self.log)
+                    # 打印完整堆栈，便于定位问题（只给一行 str(e) 很难排查）
+                    print(traceback.format_exc(), file=self.log)
                 finally:
                     # 无论成功/失败，都重置状态+启用按钮
                     self.is_running = False
@@ -338,7 +341,9 @@ class MyUI(ttk.Labelframe):
             
         except Exception as e:
             # 捕获所有异常，确保状态重置
+            import traceback
             print(f"【执行异常】{str(e)}", file=self.log)
+            print(traceback.format_exc(), file=self.log)
             self.is_running = False
             self.port_button.config(state='normal')
     
