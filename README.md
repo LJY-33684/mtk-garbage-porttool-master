@@ -201,9 +201,11 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 ## 软件截图 / Software Screenshots
 
-<img width="1356" height="621" alt="screenshot1" src="https://github.com/user-attachments/assets/9713dcca-c0d8-42ba-8fd8-4cdb341237f1" />
+<img width="678" height="316" alt="image" src="https://github.com/user-attachments/assets/4e5d2075-0369-40a0-b7ee-f8eec5314379" />
 
-<img width="1417" height="688" alt="screenshot2" src="https://github.com/user-attachments/assets/e8076809-449d-4d14-bb4a-8527851eb1f7" />
+<img width="677" height="318" alt="image" src="https://github.com/user-attachments/assets/0f298a4a-4b6a-43b8-b6c0-e0d7ca4552a6" />
+
+
 
 
 
