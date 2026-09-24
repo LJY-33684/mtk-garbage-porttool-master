@@ -1,6 +1,8 @@
-from os import getcwd
 import os.path as op
 from . import archdetect
+
+# 仓库根目录（基于本文件定位，避免依赖当前工作目录；configs.py 位于 <根>/porttool/ 下）
+_ROOT = op.dirname(op.dirname(op.abspath(__file__)))
 
 import json
 
@@ -38,6 +40,7 @@ support_chipset_portstep = {
             'change_model': True,
             'change_timezone': True,
             'change_locale': True,
+            'replace_wifi': False,
             'use_custom_update-binary': True
         },
         'replace': {
@@ -168,8 +171,15 @@ support_chipset_portstep = {
             ],
             'thermal': [
                 'vendor/etc/.tp'
-            ]
-        }
+            ],
+            'wifi': [
+                'bin/wpa_supplicant',
+                'bin/hostapd',
+                'bin/wpa_cli',
+                'etc/wifi',
+                'lib/libwpa_client.so',
+                'lib/libwifi-service.so'
+            ],        }
     },
     'G79 (mt6735/mt6735m/mt6737) kernel-3.18.19': {
         'partitions': {
@@ -510,6 +520,7 @@ support_chipset_portstep = {
             'change_model': True,
             'change_timezone': True,
             'change_locale': True,
+            'replace_wifi': False,
             'use_custom_update-binary': True
         },
         'replace': {
@@ -633,8 +644,15 @@ support_chipset_portstep = {
                 'lib/libJpgEncPipe.so',
                 'lib/libmtkjpeg.so',
                 'vendor/lib/hw/camera.*'
-            ]
-        }
+            ],
+            'wifi': [
+                'bin/wpa_supplicant',
+                'bin/hostapd',
+                'bin/wpa_cli',
+                'etc/wifi',
+                'lib/libwpa_client.so',
+                'lib/libwifi-service.so'
+            ],        }
     },
     'mt8163/mt8127/mt8167 (平板, Android 5.1-7.1.2)': {
         'partitions': {
@@ -1473,11 +1491,12 @@ support_chipset_portstep = {
     }
 }
 
-if op.isfile("configs.json"):
-    with open("configs.json", 'r') as c:
+_configs_path = op.join(_ROOT, "configs.json")
+if op.isfile(_configs_path):
+    with open(_configs_path, 'r') as c:
         support_chipset_portstep = json.load(c)
 else:
-    with open("configs.json", 'w') as c:
+    with open(_configs_path, 'w') as c:
         json.dump(support_chipset_portstep, c, indent=4)
 
 support_chipset = list(support_chipset_portstep.keys())
@@ -1486,7 +1505,7 @@ ostype, arch = archdetect.retTypeAndMachine()
 ext_ext = '.exe' if ostype == 'win' else ''
 
 # binarys
-make_ext4fs_bin = op.join(getcwd(), "bin", ostype, arch, "make_ext4fs"+ext_ext)
-magiskboot_bin = op.join(getcwd(), "bin", ostype, arch, "magiskboot"+ext_ext)
-simg2img_bin = op.join(getcwd(), "bin", ostype, arch, "simg2img"+ext_ext)
-img2simg_bin = op.join(getcwd(), "bin", ostype, arch, "img2simg"+ext_ext)
+make_ext4fs_bin = op.join(_ROOT, "bin", ostype, arch, "make_ext4fs"+ext_ext)
+magiskboot_bin = op.join(_ROOT, "bin", ostype, arch, "magiskboot"+ext_ext)
+simg2img_bin = op.join(_ROOT, "bin", ostype, arch, "simg2img"+ext_ext)
+img2simg_bin = op.join(_ROOT, "bin", ostype, arch, "img2simg"+ext_ext)

@@ -6,12 +6,10 @@
 4. 目录项 file_type 与 inode 类型一致
 """
 import sys, struct, ctypes
-sys.path.insert(0, r'C:\Users\pc\Desktop\MTK porttool')
-sys.path.insert(0, r'C:\Users\pc\Desktop\MTK porttool\porttool')
-from ext4 import Volume, InodeType, ext4_inode, ext4_extent, ext4_extent_idx, ext4_extent_header
+from porttool.ext4 import Volume, InodeType, ext4_inode, ext4_extent, ext4_extent_idx, ext4_extent_header
 from porttool.symlink_fix import verify_gd_checksums, MARKER
 
-IMG = sys.argv[1] if len(sys.argv) > 1 else r'C:\Users\pc\Desktop\MTK porttool\out\system.img'
+IMG = sys.argv[1] if len(sys.argv) > 1 else 'out/system.img'
 
 f = open(IMG, 'rb')
 v = Volume(f)

@@ -307,6 +307,13 @@ class MyUI(ttk.Labelframe):
             newdict['target_arch'] = self.target_arch.get()
             newdict['clean_base_after'] = self.clean_base_after.get()
             
+            # 校验：kernel-only 模式仅支持 img 输出（zip 输出会生成无 system 内容的坏包）
+            if newdict.get('kernel_only_mode') and self.pack_type.get() == 'zip':
+                print("错误：仅移植内核模式（kernel-only）仅支持 img 输出，请将输出类型切换为 img！", file=self.log)
+                self.is_running = False
+                self.port_button.config(state='normal')
+                return
+
             # 确定输出类型（zip→genimg=False，img→genimg=True）
             genimg = True if self.pack_type.get() == 'img' else False
             
@@ -569,6 +576,9 @@ class MyUI(ttk.Labelframe):
         # 初始加载移植条目
         __load_port_item(self.chipset_select.get())
 
+        # 更新结果事件绑定（后台线程通过 event_generate 通知主线程刷新 UI）
+        self.bind('<<UpdateResult>>', self._on_update_result_event)
+
         # 启动时静默检查更新（仅发现新版本时弹窗，失败/已是最新均不提示）
         threading.Thread(target=lambda: self._fetch_update_worker(silent=True), daemon=True).start()
 
@@ -591,23 +601,31 @@ class MyUI(ttk.Labelframe):
             source = self.update_source.get()
             result = fetch_update_info(source)
 
-        # 调度到主线程更新 UI
+        # 调度到主线程更新 UI（Tkinter 非线程安全：后台线程只暂存结果并产生事件，由主线程处理）
         try:
-            def _apply():
-                if result.ok:
-                    if not (silent and result.tag == tool_version):
-                        self._on_update_success(result.tag, result.body, result.download_url)
-                else:
-                    if not silent:
-                        self._on_update_failed(result.reason)
-            self.after(0, _apply)
+            self._update_result = result
+            self._update_silent = silent
+            self.event_generate('<<UpdateResult>>')
         except Exception:
-            # 如果 after 调度失败（极端情况），非静默模式下直接在后台线程尝试恢复按钮
+            # 如果事件调度失败（极端情况），非静默模式下直接在后台线程尝试恢复按钮
             if not silent:
                 try:
                     self._check_update_btn.config(text="检查更新", state="normal")
                 except Exception:
                     pass
+
+    def _on_update_result_event(self, _event=None):
+        """主线程处理更新结果（由后台线程 event_generate 触发）"""
+        result = getattr(self, '_update_result', None)
+        if result is None:
+            return
+        silent = getattr(self, '_update_silent', False)
+        if result.ok:
+            if not (silent and result.tag == tool_version):
+                self._on_update_success(result.tag, result.body, result.download_url)
+        else:
+            if not silent:
+                self._on_update_failed(result.reason)
 
     def _on_update_success(self, tag, body, download_url):
         """检查更新成功（主线程）"""

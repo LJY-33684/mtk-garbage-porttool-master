@@ -31,7 +31,8 @@
             "change_model": true,
             "change_timezone": true,
             "change_locale": true,
-            "use_custom_update-binary": true
+            "use_custom_update-binary": true,
+            "replace_wifi": false
         },
         "replace": {
             "kernel": [
@@ -161,6 +162,14 @@
             ],
             "thermal": [
                 "vendor/etc/.tp"
+            ],
+            "wifi": [
+                "bin/wpa_supplicant",
+                "bin/hostapd",
+                "bin/wpa_cli",
+                "etc/wifi",
+                "lib/libwpa_client.so",
+                "lib/libwifi-service.so"
             ]
         }
     },
@@ -376,8 +385,10 @@
                 "lib64/libwpa_client.so",
                 "lib/libwifi-service.so",
                 "lib64/libwifi-service.so",
-                "etc/wifi",
-                "vendor/firmware",
+                "etc/wifi/wpa_supplicant.conf",
+                "etc/wifi/p2p_supplicant.conf",
+                "vendor/firmware/wifi*",
+                "vendor/firmware/WIFI*",
                 "vendor/bin/netdiag",
                 "vendor/lib/libem_wifi_jni.so",
                 "vendor/lib64/libem_wifi_jni.so"
@@ -472,7 +483,7 @@
             ]
         }
     },
-    "mt6580/mt8321 (\u901a\u7528, Android 5.1-7.1.2)": {
+    "mt6580/mt8321 (通用, Android 5.1-7.1.2)": {
         "partitions": {},
         "flags": {
             "generate_script": false,
@@ -495,13 +506,15 @@
             "replace_bluetooth": false,
             "replace_vibrator": false,
             "replace_thermal": false,
+            "replace_camera": false,
             "single_simcard": false,
             "dual_simcard": false,
             "fit_density": true,
             "change_model": true,
             "change_timezone": true,
             "change_locale": true,
-            "use_custom_update-binary": true
+            "use_custom_update-binary": true,
+            "replace_wifi": false
         },
         "replace": {
             "kernel": [
@@ -624,10 +637,18 @@
                 "lib/libJpgEncPipe.so",
                 "lib/libmtkjpeg.so",
                 "vendor/lib/hw/camera.*"
+            ],
+            "wifi": [
+                "bin/wpa_supplicant",
+                "bin/hostapd",
+                "bin/wpa_cli",
+                "etc/wifi",
+                "lib/libwpa_client.so",
+                "lib/libwifi-service.so"
             ]
         }
     },
-    "mt8163/mt8127/mt8167 (\u5e73\u677f, Android 5.1-7.1.2)": {
+    "mt8163/mt8127/mt8167 (平板, Android 5.1-7.1.2)": {
         "partitions": {},
         "flags": {
             "generate_script": false,
@@ -643,9 +664,7 @@
             "replace_mtk-kpd": false,
             "replace_gralloc": true,
             "replace_hwcomposer": true,
-            "replace_ril": false,
             "replace_sensors": false,
-            "replace_gps": false,
             "replace_power": false,
             "replace_bluetooth": false,
             "replace_vibrator": false,
@@ -771,9 +790,11 @@
                 "vendor/etc/.tp"
             ],
             "wifi": [
-                "etc/wifi",
+                "etc/wifi/wpa_supplicant.conf",
+                "etc/wifi/p2p_supplicant.conf",
                 "vendor/etc/wifi",
-                "vendor/firmware"
+                "vendor/firmware/wifi*",
+                "vendor/firmware/WIFI*"
             ],
             "camera": [
                 "lib/hw/camera.*",
@@ -794,7 +815,8 @@
                 "lib64/libmtkjpeg.so",
                 "vendor/lib/hw/camera.*",
                 "vendor/lib64/hw/camera.*"
-            ]
+            ],
+            "init": []
         }
     },
     "mt6797 (Helio X20/X25) kernel-3.18 (Android 5.1-7.1.2)": {
@@ -1026,8 +1048,10 @@
                 "lib64/libwpa_client.so",
                 "lib/libwifi-service.so",
                 "lib64/libwifi-service.so",
-                "etc/wifi",
-                "vendor/firmware",
+                "etc/wifi/wpa_supplicant.conf",
+                "etc/wifi/p2p_supplicant.conf",
+                "vendor/firmware/wifi*",
+                "vendor/firmware/WIFI*",
                 "vendor/bin/netdiag",
                 "vendor/lib/libem_wifi_jni.so",
                 "vendor/lib64/libem_wifi_jni.so"
@@ -1122,7 +1146,7 @@
             ]
         }
     },
-    "\u672a\u5217\u82af\u7247 (\u540c\u5e73\u53f0\u81ea\u52a8\u8bc6\u522b)": {
+    "未列芯片 (同平台自动识别)": {
         "partitions": {},
         "flags": {
             "generate_script": false,
@@ -1337,7 +1361,6 @@
                 "lib/libwifi-service.so",
                 "lib64/libwifi-service.so",
                 "etc/wifi",
-                "vendor/firmware",
                 "vendor/bin/netdiag",
                 "vendor/lib/libem_wifi_jni.so",
                 "vendor/lib64/libem_wifi_jni.so"
@@ -1432,29 +1455,19 @@
             ]
         }
     },
-    "\u4ec5\u79fb\u690d\u5185\u6838 (\u53ea\u8f93\u51faboot)": {
+    "仅移植内核 (只输出boot)": {
         "partitions": {},
         "flags": {
             "generate_script": false,
             "kernel_only_mode": true,
             "replace_kernel": true,
             "selinux_permissive": true,
-            "enable_adb": true,
-            "replace_firmware": true,
-            "replace_mddb": true
+            "enable_adb": true
         },
         "replace": {
             "kernel": [
                 "kernel",
                 "kernel.gz"
-            ],
-            "firmware": [
-                "etc/firmware",
-                "vendor/firmware"
-            ],
-            "mddb": [
-                "etc/mddb",
-                "vendor/etc/mddb"
             ]
         }
     }

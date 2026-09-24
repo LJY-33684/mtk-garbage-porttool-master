@@ -160,7 +160,10 @@ class Extractor(object):
                         os.makedirs(dir_target)
                     if os.name == 'posix':
                         os.chmod(dir_target, int(mode, 8))
-                        os.chown(dir_target, uid, gid)
+                        try:
+                            os.chown(dir_target, uid, gid)
+                        except (PermissionError, OSError):
+                            pass
                     scan_dir(entry_inode, entry_inode_path)
                     if cap == '' and con == '':
                         tmppath=self.DIR + entry_inode_path
@@ -227,7 +230,7 @@ class Extractor(object):
                                     tmppath=tmppath.replace(fuk_symb, '\\'+fuk_symb)
                                 self.context.append('/%s %s' % (tmppath, con))
                 elif entry_inode.is_file:
-                    raw = entry_inode.open_read().read()
+                    src = entry_inode.open_read()
                     wdone = None
                     if os.name == 'nt':
                         if entry_name.endswith('/'):
@@ -236,15 +239,26 @@ class Extractor(object):
                         if not os.path.isdir(os.path.dirname(file_target)):
                             os.makedirs(os.path.dirname(file_target))
                         with open(file_target, 'wb') as out:
-                            out.write(raw)
+                            while True:
+                                chunk = src.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                out.write(chunk)
                     if os.name == 'posix':
                         file_target = self.EXTRACT_DIR + entry_inode_path.replace(' ','_').replace('"','')
                         if not os.path.isdir(os.path.dirname(file_target)):
                             os.makedirs(os.path.dirname(file_target))
                         with open(file_target, 'wb') as out:
-                            out.write(raw)
+                            while True:
+                                chunk = src.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                out.write(chunk)
                         os.chmod(file_target, int(mode, 8))
-                        os.chown(file_target, uid, gid)
+                        try:
+                            os.chown(file_target, uid, gid)
+                        except (PermissionError, OSError):
+                            pass
                     if cap == '' and con == '':
                         tmppath=self.DIR + entry_inode_path
                         if (tmppath).find(' ',1,len(tmppath))>0:
@@ -343,7 +357,7 @@ class Extractor(object):
                                 else:    
                                     self.fsconfig.append('%s %s %s %s %s' % (self.DIR + entry_inode_path, uid, gid, mode, link_target))
                                 for fuk_symb in fuking_symbols:
-                                    tmppath=tmppath=tmppath.replace(fuk_symb, '\\'+fuk_symb)
+                                    tmppath=tmppath.replace(fuk_symb, '\\'+fuk_symb)
                                 self.context.append('/%s %s' % (tmppath, con))
                             else:
                                 if con == '':

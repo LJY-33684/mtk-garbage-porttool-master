@@ -78,9 +78,17 @@ def parseMagiskApk(apk: str, arch:["arm64", "arm", "x86", "x86_64"]="arm64", log
                     chmod("bin/magiskboot", 0o755)
 
             if f"lib/{arch}/libmagiskinit.so" in l.filename:
-                saveto(z.read(f"lib/{archto32(arch)}/libmagisk32.so"), "magisk32")
+                magisk32_path = f"lib/{archto32(arch)}/libmagisk32.so"
+                if magisk32_path in z.namelist():
+                    saveto(z.read(magisk32_path), "magisk32")
+                else:
+                    print(f"  - 警告：apk 中未找到 {magisk32_path}，跳过 magisk32（请使用完整版 Magisk apk）", file=log)
                 if arch in ["arm64-v8a", "x86_64"]:
-                    saveto(z.read(f"lib/{arch}/libmagisk64.so"), "magisk64")
+                    magisk64_path = f"lib/{arch}/libmagisk64.so"
+                    if magisk64_path in z.namelist():
+                        saveto(z.read(magisk64_path), "magisk64")
+                    else:
+                        print(f"  - 警告：apk 中未找到 {magisk64_path}，跳过 magisk64", file=log)
                 saveto(z.read(f"lib/{arch}/libmagiskinit.so"), "magiskinit")
 
 class BootPatcher(object):
@@ -106,13 +114,14 @@ class BootPatcher(object):
 
         self.log = log
 
-        self.__check()
+        self._check_ok = self.__check()
         self.__prepare_env()
 
     def __check(self):
         if not isfile(self.magiskboot):
             print("- magiskboot文件不存在，无法完成初始化", file=self.log)
             return False
+        return True
 
     def __prepare_env(self):
         bool2str = lambda x: "true" if x else "false"
@@ -154,6 +163,10 @@ class BootPatcher(object):
         return ret.returncode, ret.stdout.decode()
     
     def patch(self, bootimg:str) -> bool:
+        # #37：magiskboot 缺失时直接阻断，避免 subprocess 崩溃
+        if not self._check_ok:
+            print("- magiskboot缺失，跳过Magisk修补", file=self.log)
+            return False
         # Check bootimg exist
         if not isfile(bootimg):
             print("- boot 镜像不存在", file=self.log)

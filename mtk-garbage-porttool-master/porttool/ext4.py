@@ -579,7 +579,7 @@ class Inode:
             7: "system.",
             8: "system.richacl"
         }
-        prefixes.update(prefixes)
+        prefixes.update(prefix_override)
 
         # Iterator over ext4_xattr_entry structures
         i = 0
@@ -645,7 +645,7 @@ class Inode:
                 current_path = "/".join(relative_path[:i])
                 raise Ext4Error("{current_path!r:s} (Inode {inode:d}) is not a directory.".format(
                     current_path=current_path,
-                    inode=inode_idx
+                    inode=current_inode.inode_idx
                 ))
 
             file_name, inode_idx, file_type = next(
@@ -812,7 +812,8 @@ class Inode:
             return "{0:d} bytes".format(self.inode.i_size) if self.inode.i_size != 1 else "1 byte"
         else:
             units = ["KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"]
-            unit_idx = min(int(math.log(self.inode.i_size, 1024)), len(units))
+            # units[0]='KiB' 对应 log=1，单位索引 = log-1；+1e-9 防御浮点下偏（如 1024^k 边界）
+            unit_idx = max(1, min(int(math.log(self.inode.i_size, 1024) + 1e-9), len(units)))
 
             return "{size:.2f} {unit:s}".format(
                 size=self.inode.i_size / (1024 ** unit_idx),
@@ -856,12 +857,16 @@ class Inode:
                         pass        
 
             if xattrs_header.h_blocks != 1:
-                raise Ext4Error(
-                    "Invalid number of xattr blocks at offset 0x{xattrs_block_start:X} of inode {inode:d}: {xattrs_header:d} (expected 1)".format(
-                        inode=self.inode_idx,
-                        xattrs_header=xattrs_header.h_blocks,
-                        xattrs_block_start=xattrs_block_start
-                    ))
+                try:
+                    raise Ext4Error(
+                        "Invalid number of xattr blocks at offset 0x{xattrs_block_start:X} of inode {inode:d}: {xattrs_header:d} (expected 1)".format(
+                            inode=self.inode_idx,
+                            xattrs_header=xattrs_header.h_blocks,
+                            xattrs_block_start=xattrs_block_start
+                        ))
+                except Ext4Error:
+                    # 与其余分支一致：罕见 xattr 块数非 1 时吞掉继续，不中断解包
+                    pass
 
             offset = 4 * ((ctypes.sizeof(
                 ext4_xattr_header) + 3) // 4)  # The ext4_xattr_entry following the header is aligned on a 4-byte boundary
@@ -920,11 +925,16 @@ class BlockReader:
         end_block_idx = (self.cursor + byte_len - 1) // self.volume.block_size
         end_of_stream_check = byte_len
 
-        blocks = [self.read_block(i) for i in range(start_block_idx, end_block_idx - start_block_idx + 1)]
+        blocks = [self.read_block(i) for i in range(start_block_idx, end_block_idx + 1)]
 
         start_offset = self.cursor % self.volume.block_size
         if start_offset != 0: blocks[0] = blocks[0][start_offset:]
-        byte_len = (byte_len + start_offset - self.volume.block_size - 1) % self.volume.block_size + 1
+        if start_block_idx == end_block_idx:
+            # 单块内 partial read：头部截取后直接保留请求长度
+            byte_len = min(end_of_stream_check, self.volume.block_size - start_offset)
+        else:
+            # 跨块读取：末块按其在块内位置截取
+            byte_len = (byte_len + start_offset - self.volume.block_size - 1) % self.volume.block_size + 1
         blocks[-1] = blocks[-1][:byte_len]
 
         result = b"".join(blocks)

@@ -78,7 +78,8 @@ def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE):
     else:
         print('Unknown Android version!\n')
 
-    # Don't clobber existing files to avoid accidental data loss
+    # 输出镜像是工具生成的中间产物，直接覆盖写入
+    # （旧版 "Don't clobber" 注释与 'wb' 覆盖行为矛盾，且 EEXIST 分支实际不可达，已修正）
     try:
         output_img = open(OUTPUT_IMAGE_FILE, 'wb')
     except IOError as e:
