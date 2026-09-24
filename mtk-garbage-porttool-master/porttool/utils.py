@@ -3,6 +3,7 @@ from io import StringIO
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 from os import walk, getcwd, chdir, symlink, readlink, name as osname, stat, unlink, chmod
+import os
 import os.path as op
 from shutil import rmtree, copytree
 from stat import S_IWRITE
@@ -253,7 +254,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.2-beta6'
+tool_author = 'affggh'; tool_version = '1.2-beta6p1'
 
 class proputil:
     def __init__(self, propfile: str):
