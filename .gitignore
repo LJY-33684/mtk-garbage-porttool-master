@@ -1,0 +1,16 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.class
+
+# 工具运行产物
+tmp/
+base/
+out/
+*.bak
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
