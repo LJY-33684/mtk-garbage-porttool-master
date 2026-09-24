@@ -33,6 +33,8 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 - Porting items support select-all / tri-state select-all (partial selection shows "-"), with smooth wheel scrolling.
 - 结构化日志：清晰显示每一步操作（如“解包boot.img”“替换内核文件”），便于排查问题
 - Structured logging: Clearly displays each operation step (e.g., "Unpacking boot.img", "Replacing kernel files") for easier troubleshooting.
+- 左下角版本号右侧新增 GitHub / Gitee 仓库图标，点击直接跳转对应仓库
+- GitHub / Gitee repo icons added to the right of the version label (bottom-left); click to open the corresponding repository.
 
 **4. 多方案与自动识别 / Presets & Auto Mode：**
 - 内置7套预设方案：mt6572/mt6582/mt6592、G79(mt6735/mt6737)、mt6580/mt8321、mt8163平板、**mt6797(Helio X20/X25)** 等
@@ -236,8 +238,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 5.Fixed the issue where repeated clicks on the "One-Click Porting" button would open multiple windows.
 
 **近期更新 / Recent Updates：**
-- 1.2-beta5（自 beta4 之后的所有改动 / all changes after beta4）：新增mt6797(Helio X20/X25)方案与双架构驱动补齐；G79外放无声根治（音频/TFA功放驱动）；auto模式增强（lib64/egl/TFA）；移植信息自动读取与日志优化；方案改名与排序；UI交互优化（移植条目滚轮修复与滚动速度优化、三态全选，部分选中显示“-”）；版本号更新
-  - 1.2-beta5: Added mt6797 (Helio X20/X25) preset with dual-arch drivers; fixed G79 no-sound issue (audio/TFA amp drivers); enhanced auto mode (lib64/egl/TFA); auto info reading & log optimization; preset renaming & ordering; UI improvements (wheel scrolling fix & speed, tri-state select-all showing "-" for partial); version bump.
+- 1.2-beta5（自 beta4 之后的所有改动 / all changes after beta4）：新增mt6797(Helio X20/X25)方案与双架构驱动补齐；G79外放无声根治（音频/TFA功放驱动）；auto模式增强（lib64/egl/TFA）；移植信息自动读取与日志优化；方案改名与排序；UI交互优化（移植条目滚轮修复与滚动速度优化、三态全选，部分选中显示“-”、左下角仓库图标快捷入口）；版本号更新
+  - 1.2-beta5: Added mt6797 (Helio X20/X25) preset with dual-arch drivers; fixed G79 no-sound issue (audio/TFA amp drivers); enhanced auto mode (lib64/egl/TFA); auto info reading & log optimization; preset renaming & ordering; UI improvements (wheel scrolling fix & speed, tri-state select-all showing "-" for partial, repo icons quick entry at bottom-left); version bump.
 - 1.2-beta4：更新检查（GitHub/Gitee双源、静默启动检查、30s超时）；base缓存与“完成后清除base目录”选项；API版本检测与跨大版本/VNDK警告；sparse镜像支持；仅移植内核只输出boot；左下角版本号显示、Magisk选择按钮
   - 1.2-beta4: Update check (GitHub/Gitee sources, silent startup check, 30s timeout); base cache & "clear base after completion" option; API version detection with cross-version/VNDK warnings; sparse image support; kernel-only outputs boot only; version label at bottom-left, Magisk picker button.
 - 早期修复：符号链接丢失/GDT_CSUM校验和/inode bitmap/bootimg全局变量不重置（卡开机根因）等致命bug修复，硬件驱动配置全面适配现代MTK设备（vendor分区）
