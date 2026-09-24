@@ -562,13 +562,13 @@ class MyUI(ttk.Labelframe):
             'raw': 'https://raw.githubusercontent.com/LJY-33684/mtk-garbage-porttool-master/main/latest_version.txt',
             'api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/releases/tags/{tag}',
             'contents_api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/contents/latest_version.txt',
-            'notes': 'https://raw.githubusercontent.com/LJY-33684/mtk-garbage-porttool-master/main/update_notes/{tag}.md',
+            'notes_api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/contents/update_notes/{tag}.md',
             'url_key': 'update_url_1',
         },
         'Gitee': {
             'raw': 'https://gitee.com/Q3368436451/mtk-garbage-porttool-master/raw/main/latest_version.txt',
             'api': 'https://gitee.com/api/v5/repos/Q3368436451/mtk-garbage-porttool-master/releases/tags/{tag}',
-            'notes': 'https://gitee.com/Q3368436451/mtk-garbage-porttool-master/raw/main/update_notes/{tag}.md',
+            'notes_api': 'https://gitee.com/api/v5/repos/Q3368436451/mtk-garbage-porttool-master/contents/update_notes/{tag}.md',
             'url_key': 'update_url_2',
         },
     }
@@ -626,11 +626,12 @@ class MyUI(ttk.Labelframe):
                 # 3. 获取更新内容：优先仓库内 update_notes/{tag}.md（raw 通道，与 latest_version.txt 同链路），失败降级 releases API
                 body = ""
                 try:
-                    notes_url = src_cfg.get('notes', '').format(tag=tag)
+                    notes_url = src_cfg.get('notes_api', '').format(tag=tag)
                     if notes_url:
-                        req_n = urllib.request.Request(notes_url, headers={"User-Agent": "MTK-PortTool"})
+                        req_n = urllib.request.Request(notes_url, headers={"User-Agent": "MTK-PortTool", "Accept": "application/vnd.github+json"})
                         with urllib.request.urlopen(req_n, timeout=self.UPDATE_TIMEOUT) as resp_n:
-                            body = resp_n.read().decode("utf-8-sig").strip()
+                            notes_data = json.loads(resp_n.read().decode("utf-8"))
+                            body = base64.b64decode(notes_data['content']).decode("utf-8-sig").strip()
                 except Exception:
                     body = ""
                 if not body:
