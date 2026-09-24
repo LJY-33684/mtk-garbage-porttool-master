@@ -1493,11 +1493,11 @@ support_chipset_portstep = {
 
 _configs_path = op.join(_ROOT, "configs.json")
 if op.isfile(_configs_path):
-    with open(_configs_path, 'r') as c:
+    with open(_configs_path, 'r', encoding='utf-8-sig') as c:
         support_chipset_portstep = json.load(c)
 else:
-    with open(_configs_path, 'w') as c:
-        json.dump(support_chipset_portstep, c, indent=4)
+    with open(_configs_path, 'w', encoding='utf-8') as c:
+        json.dump(support_chipset_portstep, c, indent=4, ensure_ascii=False)
 
 support_chipset = list(support_chipset_portstep.keys())
 support_packtype = ['zip', 'img']
