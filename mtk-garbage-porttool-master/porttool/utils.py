@@ -859,7 +859,7 @@ class portutils:
         if Path("tmp/rom/system.new.dat").exists():
             print(f"【格式转换】检测到system.new.dat，转换为img格式...", file=self.std)
             self.sdat = True
-            with open("tmp/rom/system.transfer.list") as t:
+            with open("tmp/rom/system.transfer.list", encoding='utf-8-sig') as t:
                 self.sdat_ver = int(t.readline().rstrip())
             sdat2img("tmp/rom/system.transfer.list", "tmp/rom/system.new.dat", "tmp/rom/system.img")
             print(f"【转换完成】system.new.dat已转为system.img", file=self.std)

@@ -204,7 +204,7 @@ class SparseImage(object):
     remaining = self.care_map
     self.file_map = out = {}
 
-    with open(fn) as f:
+    with open(fn, encoding='utf-8-sig') as f:
       for line in f:
         fn, ranges = line.split(None, 1)
         ranges = rangelib.RangeSet.parse(ranges)

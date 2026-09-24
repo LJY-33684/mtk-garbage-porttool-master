@@ -243,7 +243,7 @@ class BootPatcher(object):
         
         if stub:
             self.__execv(["compress=xz", "stub.apk", "stub.xz"])
-        with open("config", 'w') as config:
+        with open("config", 'w', encoding='utf-8') as config:
             config.write(
                 f"KEEPVERITY={self.env['KEEPVERITY']}" + "\n" +
                 f"KEEPFORCEENCRYPT={self.env['KEEPFORCEENCRYPT']}" + "\n" +

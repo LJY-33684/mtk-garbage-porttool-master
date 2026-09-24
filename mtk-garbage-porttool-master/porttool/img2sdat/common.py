@@ -139,7 +139,7 @@ def LoadInfoDict(input_file, input_dir=None):
     else:
       path = os.path.join(input_file, *fn.split("/"))
       try:
-        with open(path) as f:
+        with open(path, encoding='utf-8-sig') as f:
           return f.read()
       except IOError as e:
         if e.errno == errno.ENOENT:
@@ -446,17 +446,17 @@ def _BuildBootableImage(sourcedir, fs_config_file, info_dict=None,
   fn = os.path.join(sourcedir, "cmdline")
   if os.access(fn, os.F_OK):
     cmd.append("--cmdline")
-    cmd.append(open(fn).read().rstrip("\n"))
+    cmd.append(open(fn, encoding='utf-8-sig').read().rstrip("\n"))
 
   fn = os.path.join(sourcedir, "base")
   if os.access(fn, os.F_OK):
     cmd.append("--base")
-    cmd.append(open(fn).read().rstrip("\n"))
+    cmd.append(open(fn, encoding='utf-8-sig').read().rstrip("\n"))
 
   fn = os.path.join(sourcedir, "pagesize")
   if os.access(fn, os.F_OK):
     cmd.append("--pagesize")
-    cmd.append(open(fn).read().rstrip("\n"))
+    cmd.append(open(fn, encoding='utf-8-sig').read().rstrip("\n"))
 
   args = info_dict.get("mkbootimg_args", None)
   if args and args.strip():
@@ -967,7 +967,7 @@ class PasswordManager(object):
     if not self.editor or not self.pwfile:
       return self.PromptResult(current)
 
-    f = open(self.pwfile, "w")
+    f = open(self.pwfile, "w", encoding='utf-8')
     os.chmod(self.pwfile, 0o600)
     f.write("# Enter key passwords between the [[[ ]]] brackets.\n")
     f.write("# (Additional spaces are harmless.)\n\n")
@@ -991,7 +991,7 @@ class PasswordManager(object):
     if self.pwfile is None:
       return result
     try:
-      f = open(self.pwfile, "r")
+      f = open(self.pwfile, "r", encoding='utf-8-sig')
       for line in f:
         line = line.strip()
         if not line or line[0] == '#':
