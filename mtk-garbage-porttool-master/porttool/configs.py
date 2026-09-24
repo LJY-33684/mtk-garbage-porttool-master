@@ -412,7 +412,271 @@ support_chipset_portstep = {
                 "vendor/lib/libSwJpgCodec.so"
             ]
         },
+    
+    'mt6580/mt8321 (通用, Android 5.1-7.1.2)': {
+        'partitions': {
+        },
+        'flags': {
+            'generate_script': False,
+            'replace_kernel': True,
+            'replace_fstab': False,
+            'selinux_permissive': True,
+            'enable_adb': True,
+            'replace_firmware': True,
+            'replace_mddb': True,
+            'replace_malidriver': True,
+            'replace_audiodriver': True,
+            'replace_libshowlogo': False,
+            'replace_mtk-kpd': False,
+            'replace_gralloc': True,
+            'replace_hwcomposer': True,
+            'replace_ril': False,
+            'replace_sensors': False,
+            'replace_gps': False,
+            'replace_power': False,
+            'replace_bluetooth': False,
+            'replace_vibrator': False,
+            'replace_thermal': False,
+            'single_simcard': False,
+            'dual_simcard': False,
+            'fit_density': True,
+            'change_model': True,
+            'change_timezone': True,
+            'change_locale': True,
+            'use_custom_update-binary': True
+        },
+        'replace': {
+            'kernel': [
+                'kernel'
+            ],
+            'fstab': [
+                'initrd/fstab',
+                'initrd/fstab.mt6580'
+            ],
+            'firmware': [
+                'etc/firmware',
+                'vendor/firmware'
+            ],
+            'mddb': [
+                'etc/mddb',
+                'vendor/etc/mddb'
+            ],
+            'malidriver': [
+                'lib/libMali.so',
+                'vendor/lib/libMali.so',
+                'vendor/lib/egl',
+                'vendor/lib/hw/vulkan.*',
+                'vendor/lib/libIMGegl.so',
+                'vendor/lib/libpvrANDROID_WSEGL.so',
+                'vendor/lib/libgpu_aux.so'
+            ],
+            'audiodriver': [
+                'lib/hw/audio.primary.*',
+                'vendor/lib/hw/audio.primary.*',
+                'etc/audio_effects.conf',
+                'vendor/etc/audio_effects.conf',
+                'vendor/etc/audio_policy.conf',
+                'vendor/etc/audio_param',
+                'vendor/etc/audio_device.xml'
+            ],
+            'libshowlogo': [
+                'lib/libshowlogo.so',
+                'vendor/lib/libshowlogo.so'
+            ],
+            'mtk-kpd': [
+                'usr/keylayout/mtk-kpd.kl'
+            ],
+            'ril': [
+                'bin/ccci_fsd',
+                'bin/ccci_mdinit',
+                'bin/gsm0710muxd',
+                'bin/rild',
+                'vendor/bin/mtkfusionrild',
+                'lib/librilmtk.so',
+                'lib/librilutils.so',
+                'lib/mtk-ril.so',
+                'vendor/lib/libccci_util.so'
+            ],
+            'gralloc': [
+                'lib/hw/gralloc.*',
+                'vendor/lib/hw/gralloc.*',
+                'vendor/lib/libgralloc_extra.so'
+            ],
+            'hwcomposer': [
+                'lib/hw/hwcomposer.*',
+                'vendor/lib/hw/hwcomposer.*'
+            ],
+            'sensors': [
+                'lib/hw/sensors.*',
+                'vendor/lib/hw/sensors.*',
+                'vendor/lib/hw/lights.*',
+                'vendor/lib/libksensor.so',
+                'vendor/lib/librgbwlightsensor.so'
+            ],
+            'gps': [
+                'lib/hw/gps.*',
+                'vendor/lib/hw/gps.*',
+                'vendor/etc/agps_profiles_conf2.xml',
+                'vendor/lib/libviagpsrpc.so'
+            ],
+            'power': [
+                'lib/hw/power.*',
+                'vendor/lib/hw/power.*'
+            ],
+            'bluetooth': [
+                'lib/hw/bluetooth.*',
+                'vendor/lib/libbluetooth_mtk.so',
+                'vendor/lib/libbt-vendor.so',
+                'vendor/lib/libbluetooth_relayer.so',
+                'etc/bluetooth'
+            ],
+            'vibrator': [
+                'lib/hw/vibrator.*',
+                'vendor/lib/hw/vibrator.*'
+            ],
+            'thermal': [
+                'vendor/etc/.tp'
+            ],
+            'camera': [
+                'lib/hw/camera.*',
+                'lib/lib3a.so',
+                'lib/libcamalgo.so',
+                'lib/libcamdrv.so',
+                'lib/libcameracustom.so',
+                'lib/libfeatureio.so',
+                'lib/libimageio.so',
+                'lib/libJpgDecPipe.so',
+                'lib/libJpgEncPipe.so',
+                'lib/libmtkjpeg.so',
+                'vendor/lib/hw/camera.*'
+            ]
+        }
     },
+    'mt8163/mt8127/mt8167 (平板, Android 5.1-7.1.2)': {
+        'partitions': {
+        },
+        'flags': {
+            'generate_script': False,
+            'replace_kernel': True,
+            'replace_fstab': False,
+            'selinux_permissive': True,
+            'enable_adb': True,
+            'replace_firmware': True,
+            'replace_mddb': True,
+            'replace_malidriver': True,
+            'replace_audiodriver': True,
+            'replace_libshowlogo': False,
+            'replace_mtk-kpd': False,
+            'replace_gralloc': True,
+            'replace_hwcomposer': True,
+            'replace_ril': False,
+            'replace_sensors': False,
+            'replace_gps': False,
+            'replace_power': False,
+            'replace_bluetooth': False,
+            'replace_vibrator': False,
+            'replace_thermal': False,
+            'replace_wifi': True,
+            'replace_camera': True,
+            'single_simcard': False,
+            'dual_simcard': False,
+            'fit_density': True,
+            'change_model': True,
+            'change_timezone': True,
+            'change_locale': True,
+            'use_custom_update-binary': True
+        },
+        'replace': {
+            'kernel': [
+                'kernel'
+            ],
+            'fstab': [
+                'initrd/fstab',
+                'initrd/fstab.mt8163',
+                'initrd/fstab.mt8127',
+                'initrd/fstab.mt8167'
+            ],
+            'firmware': [
+                'etc/firmware',
+                'vendor/firmware'
+            ],
+            'mddb': [
+                'etc/mddb',
+                'vendor/etc/mddb'
+            ],
+            'malidriver': [
+                'lib/libMali.so',
+                'vendor/lib/libMali.so',
+                'vendor/lib/egl',
+                'lib/egl',
+                'vendor/lib/hw/vulkan.*'
+            ],
+            'audiodriver': [
+                'lib/hw/audio.primary.*',
+                'vendor/lib/hw/audio.primary.*',
+                'etc/audio_effects.conf',
+                'vendor/etc/audio_effects.conf',
+                'vendor/etc/audio_policy.conf',
+                'vendor/etc/audio_param',
+                'vendor/etc/audio_device.xml'
+            ],
+            'libshowlogo': [
+                'lib/libshowlogo.so',
+                'vendor/lib/libshowlogo.so'
+            ],
+            'mtk-kpd': [
+                'usr/keylayout/mtk-kpd.kl'
+            ],
+            'gralloc': [
+                'lib/hw/gralloc.*',
+                'vendor/lib/hw/gralloc.*',
+                'vendor/lib/libgralloc_extra.so'
+            ],
+            'hwcomposer': [
+                'lib/hw/hwcomposer.*',
+                'vendor/lib/hw/hwcomposer.*'
+            ],
+            'sensors': [
+                'lib/hw/sensors.*',
+                'vendor/lib/hw/sensors.*',
+                'vendor/lib/hw/lights.*'
+            ],
+            'power': [
+                'lib/hw/power.*',
+                'vendor/lib/hw/power.*'
+            ],
+            'bluetooth': [
+                'lib/hw/bluetooth.*',
+                'vendor/lib/libbluetooth_mtk.so',
+                'vendor/lib/libbt-vendor.so',
+                'etc/bluetooth'
+            ],
+            'vibrator': [
+                'lib/hw/vibrator.*',
+                'vendor/lib/hw/vibrator.*'
+            ],
+            'thermal': [
+                'vendor/etc/.tp'
+            ],
+            'wifi': [
+                'etc/wifi',
+                'vendor/etc/wifi',
+                'vendor/firmware'
+            ],
+            'camera': [
+                'lib/hw/camera.*',
+                'lib/lib3a.so',
+                'lib/libcamalgo.so',
+                'lib/libcamdrv.so',
+                'lib/libcameracustom.so',
+                'lib/libfeatureio.so',
+                'lib/libimageio.so',
+                'lib/libmtkjpeg.so',
+                'vendor/lib/hw/camera.*'
+            ]
+        }
+    },
+},
 }
 
 if op.isfile("configs.json"):

@@ -54,7 +54,7 @@ def _rmtree(path):
     rmtree(str(path), onerror=_onerror)
 
 
-tool_author = 'affggh'; tool_version = '1.2-beta3'
+tool_author = 'affggh'; tool_version = '1.2-beta4'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -385,6 +385,17 @@ class portutils:
                             __replace(basedir.joinpath(i), portdir.joinpath(i))
                         else:
                             print(f"  - 跳过 {i}（底包中不存在）", file=self.std)
+                    # 底包只有一种内核格式时，清掉移植源残留的另一格式，防止 repack 误选
+                    if basedir.joinpath('kernel').exists() and not basedir.joinpath('kernel.gz').exists():
+                        stale = portdir.joinpath('kernel.gz')
+                        if stale.exists():
+                            print("  - 移除移植源残留的 kernel.gz（底包为未压缩内核）", file=self.std)
+                            stale.unlink()
+                    if basedir.joinpath('kernel.gz').exists() and not basedir.joinpath('kernel').exists():
+                        stale = portdir.joinpath('kernel')
+                        if stale.exists():
+                            print("  - 移除移植源残留的 kernel（底包为压缩内核）", file=self.std)
+                            stale.unlink()
                 case 'replace_fstab':
                     print(f"【移植项】替换分区表文件...", file=self.std)
                     for i in self.items['replace']['fstab']:
@@ -523,7 +534,45 @@ class portutils:
             print(f"【解包system.img】正在解包移植源system.img到 tmp/rom/system...", file=self.std)
             Extractor().main("tmp/rom/system.img", "tmp/rom/system")
             print(f"【解包完成】移植源system.img解包完毕", file=self.std)
-        
+
+        # === API 版本检测与跨大版本警告 ===
+        _API_VER = {26: "8.0", 27: "8.1", 28: "9", 29: "10", 30: "11",
+                    31: "12", 32: "12L", 33: "13", 34: "14", 35: "15"}
+        def _read_sdk(prop_path):
+            p = Path(prop_path)
+            if not p.exists():
+                return None
+            try:
+                with proputil(str(p)) as pp:
+                    s = pp.getprop('ro.build.version.sdk')
+                return int(s) if s else None
+            except Exception:
+                return None
+
+        base_sdk = _read_sdk("base/system/build.prop")
+        port_sdk = _read_sdk("tmp/rom/system/build.prop")
+        if base_sdk is not None:
+            ver = _API_VER.get(base_sdk, f"API {base_sdk}")
+            print(f"【版本检测】底包 Android {ver}（API {base_sdk}）", file=self.std)
+        if port_sdk is not None:
+            ver = _API_VER.get(port_sdk, f"API {port_sdk}")
+            print(f"【版本检测】移植源 Android {ver}（API {port_sdk}）", file=self.std)
+
+        # 高版本警告：Android 8.0+ 可能引入 Treble/VNDK，文件替换移植不一定适用
+        for label, sdk in (("底包", base_sdk), ("移植源", port_sdk)):
+            if sdk is not None and sdk > 25:
+                ver = _API_VER.get(sdk, f"API {sdk}")
+                print(f"【警告】{label} 为 Android {ver}（API {sdk}），可能已启用 Treble/VNDK", file=self.std)
+                print(f"  本工具面向无 VNDK 的老设备（Android 7.1.2 及以下）", file=self.std)
+                print(f"  有 VNDK 的设备建议直接刷 GSI，文件替换移植可能导致硬件不工作", file=self.std)
+
+        # 跨大版本警告：底包与移植源 API 差异 >=3 视为跨大版本
+        if base_sdk is not None and port_sdk is not None and abs(base_sdk - port_sdk) >= 3:
+            bv = _API_VER.get(base_sdk, f"API {base_sdk}")
+            pv = _API_VER.get(port_sdk, f"API {port_sdk}")
+            print(f"【警告】跨大版本移植：底包 Android {bv} → 移植源 Android {pv}", file=self.std)
+            print(f"  跨大版本 HAL 接口可能不兼容，建议同平台同 Android 大版本移植", file=self.std)
+
         # 执行system移植逻辑
         print(f"【开始移植】执行system.img移植逻辑...", file=self.std)
         base_prefix = Path("base/system")
@@ -538,12 +587,24 @@ class portutils:
             auto_dirs = [
                 "vendor/firmware", "etc/firmware",
                 "vendor/etc/mddb", "etc/mddb",
-                "vendor/etc/audio_param", "vendor/etc/.tp",
-                "vendor/lib/egl",
+                "vendor/etc/audio_param", "etc/audio_param",
+                "vendor/etc/.tp",
+                "vendor/lib/egl", "lib/egl",
                 "etc/wifi", "etc/bluetooth",
+                "etc/ht120_mtc",
+                # 音频配置文件
+                "etc/audio_effects.conf", "vendor/etc/audio_effects.conf",
+                "vendor/etc/audio_policy.conf", "vendor/etc/audio_device.xml",
+                # GPS 配置
+                "vendor/etc/agps_profiles_conf2.xml",
+                # 键盘布局
+                "usr/keylayout",
+                # /system/bin 下 RIL 守护进程（同平台替换安全）
+                "bin/ccci_fsd", "bin/ccci_mdinit", "bin/gsm0710muxd", "bin/rild",
             ]
             for d in auto_dirs:
-                if base_prefix.joinpath(d).is_dir():
+                p = base_prefix.joinpath(d)
+                if p.is_dir() or p.is_file():
                     __replace(d)
                     auto_count += 1
 
@@ -567,7 +628,7 @@ class portutils:
                 'mtkfusion', 'libbt-vendor', 'libem_wifi', 'libccci',
                 'librilutils', 'libvia-ril', 'libviagpsrpc', 'libgpu',
                 'libmtkcam', 'libcam', 'libmhal', 'libmtkjpeg',
-                'libJpg', 'libSwJpg', 'libhardware_legacy', 'libwpa',
+                'libjpg', 'libswjpg', 'libhardware_legacy', 'libwpa',
                 'libwifi', 'libnetd', 'libdrm', 'libsecure',
             ]
             # 只扫描 vendor/lib（vendor 分区的硬件驱动库），不扫 /lib 根目录（系统框架库不能换）
@@ -588,11 +649,36 @@ class portutils:
                 "lib/libwifi-service.so",
                 "lib/libreference-ril.so",
                 "lib/libril.so",
+                "lib/mtk-ril.so",
             ]
             for rel in lib_hw_specific:
                 if base_prefix.joinpath(rel).exists():
                     __replace(rel)
                     auto_count += 1
+
+            # 3b. 非 Treble 主路径：/system/lib 硬件库白名单（前缀匹配，安全项与手动方案同源）
+            legacy_lib_prefixes = [
+                'libcam.', 'libcamalgo', 'libcamdrv', 'libcameracustom',
+                'lib3a', 'libfeatureio', 'libimageio', 'libmhal', 'libmtkjpeg', 'libjpg',
+                'librilmtk', 'libmtkril', 'librilutils', 'libvia-ril',
+                'libmtkomx', 'libstagefrighthw', 'libudf', 'libmtk_vt',
+                'libmali', 'libgles_mali', 'libshowlogo',
+            ]
+            LEGACY_EXCLUDE = (
+                'libstagefright', 'libdrm', 'libbinder', 'libc.so',
+                'libandroid_runtime', 'libcameraservice', 'libaudioflinger',
+                'libmedia', 'libnetd', 'libwilhelm',
+            )
+            src_dir = base_prefix.joinpath("lib")
+            if src_dir.is_dir():
+                for sofile in src_dir.glob("*.so"):
+                    name = sofile.name.lower()
+                    if (any(name.startswith(p) for p in legacy_lib_prefixes)
+                            and not any(x in name for x in LEGACY_EXCLUDE)):
+                        rel = str(sofile.relative_to(base_prefix)).replace("\\", "/")
+                        __replace(rel)
+                        auto_count += 1
+                        print(f"  - 替换 {rel}", file=self.std)
 
             # 4. 硬件守护进程关键词匹配（只扫 vendor/bin，/bin 是系统工具不替换）
             hw_bin_keywords = [
