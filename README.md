@@ -235,7 +235,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 6.Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
-**近期更新 / Recent Updates：**
+## 近期更新 / Recent Updates
 - 1.2-beta6（自 beta5 之后的所有改动 / all changes after beta5）：SDAT 卡刷包结构修复（block_image_update 脚本/contexts 回退/raw 先行转 sparse）；刷机脚本分区自动解析（不再硬编码，支持 boot-only）；kernel-only + ZIP 坏包拦截；mt6572/mt6580 补 wifi 替换与缺失路径跳过提示；权限推断增强（bin/xbin 精确匹配+suid）；配置收窄与去重（wifi vendor/firmware 通配、libcam_utils/libstagefrighthw 白名单、auto modem 固件保留）；底层模块与工具启动系列修复（ext4/大小换算/xattr、imgextractor 分块/容错、proputil BOM、Magisk 旧版 apk、fscheck 包导入、配置路径基于文件定位、更新检查线程安全）；boot-only 卡刷与 BootPatcher 友好阻断
   - 1.2-beta6: SDAT package structure fix (block_image_update script / contexts fallback / raw-then-sparse); automatic partition parsing in updater scripts (no more hardcoding, boot-only supported); kernel-only + ZIP bad-package guard; wifi replacement added for mt6572/mt6580 with skip notice for missing paths; permission inference refined (exact bin/xbin + suid); config narrowing & dedup (wifi vendor/firmware wildcards, libcam_utils/libstagefrighthw whitelist, auto modem firmware preserved); low-level & tooling fixes (ext4/size/xattr, imgextractor chunked IO/robustness, proputil BOM, legacy Magisk APK, fscheck package import, config paths relative to file, thread-safe update check); BootPatcher friendly abort.
 - 1.2-beta5（自 beta4 之后的所有改动 / all changes after beta4）：新增mt6797(Helio X20/X25)方案与双架构驱动补齐；G79外放无声根治（音频/TFA功放驱动）；auto模式增强（lib64/egl/TFA）；移植信息自动读取与日志优化；方案改名与排序；UI交互优化（移植条目滚轮修复与滚动速度优化、三态全选，部分选中显示“-”）；版本号更新
