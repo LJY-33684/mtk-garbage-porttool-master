@@ -843,15 +843,21 @@ class portutils:
         need_unpack = not md5path.exists() or md5path.read_text().strip() != sysmd5 or not Path("base/system").exists()
         if need_unpack:
             unpack_flag = True
-            md5path.parent.mkdir(parents=True, exist_ok=True)
-            md5path.write_text(sysmd5)
             if Path("base/system").exists():
                 print(f"【清理缓存】删除旧的base/system目录", file=self.std)
                 _rmtree("base/system")
 
         if unpack_flag:
             print(f"【解包system.img】正在解包底包system.img到 base/system...", file=self.std)
-            Extractor().main(self.sysimg, "base/system")
+            _extractor = Extractor()
+            _extractor.main(self.sysimg, "base/system")
+            for _w in _extractor.warnings:
+                print(f"  - {_w}", file=self.std)
+            # MD5 必须等解包【成功之后】再写入。
+            # 若在解包前写入，一旦解包中途失败，下次运行会因 MD5 一致而跳过解包，
+            # 静默使用不完整的 base/system（会导致底包文件被误判为"不存在"而跳过替换）。
+            md5path.parent.mkdir(parents=True, exist_ok=True)
+            md5path.write_text(sysmd5)
             print(f"【解包完成】底包system.img解包完毕", file=self.std)
         else:
             print(f"【使用缓存】base/system目录已存在且MD5一致，跳过解包", file=self.std)

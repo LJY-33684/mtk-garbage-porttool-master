@@ -57,6 +57,22 @@ class ext4_struct(ctypes.LittleEndianStructure):
             ctypes.LittleEndianStructure.__setattr__(self, name, value)
 
 
+def _decode_dirent_name(raw):
+    """解码 ext4 目录项文件名。
+
+    ext4 规范要求文件名是 UTF-8，但实际镜像里可能出现 GBK 编码的中文名
+    （国内 ROM 常见），镜像损坏时甚至可能整块是随机字节。这里做多级回退，
+    保证单个异常名字不会中断整个解析流程。
+    """
+    for enc in ("utf-8", "gbk"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            pass
+    # 最后兜底：替换非法字节，保证返回值一定可写入文件系统
+    return raw.decode("utf-8", "replace").replace("\x00", "")
+
+
 class ext4_dir_entry_2(ext4_struct):
     _fields_ = [
         ("inode", ctypes.c_uint),  # 0x0
@@ -504,6 +520,15 @@ class Volume:
         return 1 << (10 + self.superblock.s_log_block_size)
 
     def get_inode(self, inode_idx, file_type=InodeType.UNKNOWN):
+        # 防御：损坏的目录项可能带着越界的 inode 号（例如随机字节被当成
+        # inode 字段），这里直接给出明确错误，避免抛出难懂的 IndexError。
+        inode_count = self.superblock.s_inodes_count
+        if not (1 <= inode_idx <= inode_count):
+            raise Ext4Error(
+                "Invalid inode index {inode_idx:d} (valid range: 1..{inode_count:d})".format(
+                    inode_idx=inode_idx, inode_count=inode_count
+                ))
+
         group_idx, inode_table_entry_idx = self.get_inode_group(inode_idx)
 
         inode_table_offset = self.group_descriptors[group_idx].bg_inode_table * self.block_size
@@ -601,11 +626,11 @@ class Inode:
 
             if xattr_entry.e_value_inum != 0:
                 # external xattr
-                xattr_inode = self.volume.get_inode(xattr.e_value_inum, InodeType.FILE)
+                xattr_inode = self.volume.get_inode(xattr_entry.e_value_inum, InodeType.FILE)
 
                 if not self.volume.ignore_flags and (xattr_inode.inode.i_flags & ext4_inode.EXT4_EA_INODE_FL) != 0:
                     raise Ext4Error(
-                        "Inode {value_indoe:d} associated with the extended attribute {xattr_name!r:s} of inode {inode:d} is not marked as large extended attribute value.".format(
+                        "Inode {value_inode:d} associated with the extended attribute {xattr_name!r:s} of inode {inode:d} is not marked as large extended attribute value.".format(
                             inode=self.inode_idx,
                             value_inode=xattr_inode.inode_idx,
                             xattr_name=xattr_name
@@ -748,7 +773,7 @@ class Inode:
     def open_dir(self, decode_name=None):
         # Parse args
         if decode_name == None:
-            decode_name = lambda raw: raw.decode("utf8")
+            decode_name = _decode_dirent_name
 
         if not self.volume.ignore_flags and not self.is_dir:
             raise Ext4Error("Inode ({inode:d}) is not a directory.".format(inode=self.inode_idx))
@@ -761,8 +786,25 @@ class Inode:
         raw_data = self.open_read().read()
         offset = 0
 
-        while offset < len(raw_data):
+        entry_fixed_size = ctypes.sizeof(ext4_dir_entry_2)
+        block_size = self.volume.block_size
+
+        # 注意循环条件用 offset + entry_fixed_size：否则末尾残留不足一个
+        # 目录项头部时会抛 IndexError
+        while offset + entry_fixed_size <= len(raw_data):
             dirent = ext4_dir_entry_2._from_buffer_copy(raw_data, offset, platform64=self.volume.platform64)
+
+            # 目录项合法性校验。
+            # 镜像损坏时（典型表现：整个目录块是随机数据），rec_len / name_len
+            # 会变成垃圾值。若不拦截，会以错误偏移继续解析出大量不存在的条目，
+            # 并抛出难以定位的异常（如 UnicodeDecodeError / IndexError）。
+            # 这里直接停止解析本目录，交由上层按"空目录"处理。
+            if (dirent.rec_len < entry_fixed_size
+                    or dirent.rec_len % 4 != 0
+                    or offset + dirent.rec_len > len(raw_data)
+                    or (offset % block_size) + dirent.rec_len > block_size
+                    or dirent.name_len > dirent.rec_len - entry_fixed_size):
+                break
 
             if dirent.file_type != InodeType.CHECKSUM:
                 yield (decode_name(dirent.name), dirent.inode, dirent.file_type)

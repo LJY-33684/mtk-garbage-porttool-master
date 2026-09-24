@@ -75,6 +75,7 @@ class Extractor(object):
         self.TYPE_IMG = 'system'
         self.context = []
         self.fsconfig = []
+        self.warnings = []   # 记录解包过程中跳过/异常的目录，供上层展示
 
     def __remove(self, path):
         if os.path.isfile(path):
@@ -134,11 +135,32 @@ class Extractor(object):
         fuking_symbols='\\^$.|?*+(){}[]'
         contexts = self.CONFING_DIR + os.sep + self.FileName + "_file_contexts" #08.05.18
         def scan_dir(root_inode, root_path=""):
-            for entry_name, entry_inode_idx, entry_type in root_inode.open_dir():
+            try:
+                entries = list(root_inode.open_dir())
+            except Exception as e:
+                # 单个目录读不出来不应该中断整个移植
+                self.warnings.append(
+                    f"跳过无法读取的目录 {root_path or '/'}：{type(e).__name__}: {e}")
+                return
+            # ext4 目录至少包含 '.' 和 '..'；i_size > 0 却解析不出任何条目，
+            # 说明该目录的数据块已损坏（例如整块为随机数据）
+            if not entries and root_inode.inode.i_size > 0:
+                self.warnings.append(
+                    f"跳过已损坏的目录 {root_path or '/'}"
+                    f"（数据块无法解析，原大小 {root_inode.inode.i_size} 字节）")
+                return
+            for entry_name, entry_inode_idx, entry_type in entries:
                 if entry_name in ['.', '..'] or entry_name.endswith(' (2)'):
                     continue
-                entry_inode = root_inode.volume.get_inode(entry_inode_idx, entry_type)
                 entry_inode_path = root_path + '/' + entry_name
+                try:
+                    entry_inode = root_inode.volume.get_inode(entry_inode_idx, entry_type)
+                except Exception as e:
+                    # inode 号越界等异常条目：跳过该条目，不中断整个解包
+                    self.warnings.append(
+                        f"跳过无效目录项 {entry_inode_path}"
+                        f"（inode {entry_inode_idx}）：{type(e).__name__}: {e}")
+                    continue
                 mode = self.__getperm(entry_inode.mode_str)
                 uid = entry_inode.inode.i_uid
                 gid = entry_inode.inode.i_gid
