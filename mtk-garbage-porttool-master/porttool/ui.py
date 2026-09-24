@@ -562,11 +562,13 @@ class MyUI(ttk.Labelframe):
             'raw': 'https://raw.githubusercontent.com/LJY-33684/mtk-garbage-porttool-master/main/latest_version.txt',
             'api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/releases/tags/{tag}',
             'contents_api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/contents/latest_version.txt',
+            'notes': 'https://raw.githubusercontent.com/LJY-33684/mtk-garbage-porttool-master/main/update_notes/{tag}.md',
             'url_key': 'update_url_1',
         },
         'Gitee': {
             'raw': 'https://gitee.com/Q3368436451/mtk-garbage-porttool-master/raw/main/latest_version.txt',
             'api': 'https://gitee.com/api/v5/repos/Q3368436451/mtk-garbage-porttool-master/releases/tags/{tag}',
+            'notes': 'https://gitee.com/Q3368436451/mtk-garbage-porttool-master/raw/main/update_notes/{tag}.md',
             'url_key': 'update_url_2',
         },
     }
@@ -621,17 +623,28 @@ class MyUI(ttk.Labelframe):
                 # 选择对应源的下载链接
                 download_url = all_urls.get(src_cfg['url_key']) or all_urls.get('update_url')
 
-                # 3. 请求对应源 API 获取 release 内容（markdown）
+                # 3. 获取更新内容：优先仓库内 update_notes/{tag}.md（raw 通道，与 latest_version.txt 同链路），失败降级 releases API
                 body = ""
                 try:
-                    api_url = src_cfg['api'].format(tag=tag)
-                    req2 = urllib.request.Request(api_url, headers={"User-Agent": "MTK-PortTool", "Accept": "application/json"})
-                    with urllib.request.urlopen(req2, timeout=self.UPDATE_TIMEOUT) as resp2:
-                        release_data = json.loads(resp2.read().decode("utf-8"))
-                        body = release_data.get("body", "") or ""
-                        if not download_url:
-                            download_url = release_data.get("html_url", "")
+                    notes_url = src_cfg.get('notes', '').format(tag=tag)
+                    if notes_url:
+                        req_n = urllib.request.Request(notes_url, headers={"User-Agent": "MTK-PortTool"})
+                        with urllib.request.urlopen(req_n, timeout=self.UPDATE_TIMEOUT) as resp_n:
+                            body = resp_n.read().decode("utf-8-sig").strip()
                 except Exception:
+                    body = ""
+                if not body:
+                    try:
+                        api_url = src_cfg['api'].format(tag=tag)
+                        req2 = urllib.request.Request(api_url, headers={"User-Agent": "MTK-PortTool", "Accept": "application/json"})
+                        with urllib.request.urlopen(req2, timeout=self.UPDATE_TIMEOUT) as resp2:
+                            release_data = json.loads(resp2.read().decode("utf-8"))
+                            body = release_data.get("body", "") or ""
+                            if not download_url:
+                                download_url = release_data.get("html_url", "")
+                    except Exception:
+                        pass
+                if not body:
                     body = f"## {tag}\n\n更新内容获取失败，请前往下载页面查看详情。"
 
                 result['ok'] = True
@@ -680,7 +693,7 @@ class MyUI(ttk.Labelframe):
     def _show_update_dialog(self, tag, body, download_url):
         """显示更新内容弹窗（markdown 格式 + 标题右侧前往下载按钮）"""
         win = Toplevel(self)
-        win.title(f"发现新版本 - {tag}")
+        win.title(f"当前已是最新版本 - {tag}" if tag == tool_version else f"发现新版本 - {tag}")
         win.geometry("640x480")
         win.transient(self.winfo_toplevel())
         win.grab_set()
