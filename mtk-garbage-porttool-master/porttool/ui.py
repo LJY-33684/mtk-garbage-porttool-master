@@ -9,6 +9,7 @@ from tkinter import (
     BooleanVar,
     Canvas,
     Text,
+    PhotoImage,
     END,
     WORD,
 )
@@ -536,8 +537,26 @@ class MyUI(ttk.Labelframe):
 
         buttonlabel.pack(side='top', padx=5, pady=5, fill='x', expand='yes')
 
-        # 版本号（左下角，修补面具选项下面）
-        ttk.Label(optframe, text=f"版本号：{tool_version}", font=('Microsoft YaHei', 8), foreground='gray').pack(side='bottom', anchor='w', padx=8, pady=(0, 5))
+        # 版本号行（左下角，修补面具选项下面）：左侧版本号，右侧 GitHub / Gitee 仓库图标
+        bottom_row = ttk.Frame(optframe)
+        bottom_row.pack(side='bottom', fill='x', padx=8, pady=(0, 5))
+        ttk.Label(bottom_row, text=f"版本号：{tool_version}", font=('Microsoft YaHei', 8), foreground='gray').pack(side='left')
+
+        # 仓库图标（点击跳转对应仓库，靠右显示）
+        _icon_dir = Path(__file__).resolve().parent
+        _repos = [
+            (_icon_dir / 'icon_github.png', 'https://github.com/LJY-33684/mtk-garbage-porttool-master'),
+            (_icon_dir / 'icon_gitee.png', 'https://gitee.com/Q3368436451/mtk-garbage-porttool-master'),
+        ]
+        for _icon_path, _repo_url in _repos:
+            try:
+                _img = PhotoImage(file=str(_icon_path))
+                _lbl = ttk.Label(bottom_row, image=_img, cursor='hand2')
+                _lbl.image = _img  # 防止被垃圾回收
+                _lbl.pack(side='right', padx=(0, 3))
+                _lbl.bind('<Button-1>', lambda e, url=_repo_url: webbrowser.open(url))
+            except Exception:
+                pass  # 图标文件缺失时静默跳过，不阻塞启动
 
         optframe.pack(side='left', padx=5, pady=5, fill='y', expand='no')
         
