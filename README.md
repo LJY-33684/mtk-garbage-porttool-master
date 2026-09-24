@@ -201,9 +201,11 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 ## 软件截图 / Software Screenshots
 
-<img width="943" height="432" alt="主界面 / Main UI" src="assets/screenshot1.png" />
+<img width="1356" height="621" alt="screenshot1" src="https://github.com/user-attachments/assets/9713dcca-c0d8-42ba-8fd8-4cdb341237f1" />
 
-<img width="943" height="458" alt="芯片方案列表 / Chip Preset List" src="assets/screenshot2.png" />
+<img width="1417" height="688" alt="screenshot2" src="https://github.com/user-attachments/assets/e8076809-449d-4d14-bb4a-8527851eb1f7" />
+
+
 
 ## 感谢[@affggh](https://github.com/affggh)分享的原文件，此移植工具基于原工具进行的改进 / Thanks to [@affggh](https://github.com/affggh) for sharing the original files. This porting tool is an improvement based on the original tool.
 
