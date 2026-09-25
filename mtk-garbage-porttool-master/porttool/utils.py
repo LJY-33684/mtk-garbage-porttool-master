@@ -1,4 +1,4 @@
-import re
+﻿import re
 from io import StringIO
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -256,7 +256,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = 'P2'
+tool_author = 'affggh'; tool_version = '1.2-beta6p2'
 
 class proputil:
     def __init__(self, propfile: str):
