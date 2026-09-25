@@ -41,7 +41,9 @@ def _clear_attrs(path):
         if osname == 'nt':
             windll.kernel32.SetFileAttributesW(str(path), 0x80)  # FILE_ATTRIBUTE_NORMAL
         else:
-            chmod(path, S_IWRITE)
+            # POSIX：保留原有权限，仅确保可写。
+            # 不能直接 chmod(path, S_IWRITE)（=0200 只写），否则后续读取文件会 PermissionError 中断移植。
+            chmod(path, stat(path).st_mode | 0o222)
     except Exception:
         pass
 
@@ -254,7 +256,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.2-beta6p1'
+tool_author = 'affggh'; tool_version = 'P2'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -1102,6 +1104,7 @@ class portutils:
                             if dpi_value:
                                 pp.setprop('ro.sf.lcd_density', dpi_value)
                                 print(f"  - 同步DPI值：{dpi_value}", file=self.std)
+                                print(f"  - 提示：ro. 属性只写一次，若被更早来源（ramdisk/cust/lk）先设置，build.prop 中的值会被忽略，开机后请核实实际生效密度", file=self.std)
                             else:
                                 print(f"  - 跳过（底包中未找到ro.sf.lcd_density）", file=self.std)
                     else:
@@ -1172,6 +1175,7 @@ class portutils:
                                 else:
                                     print(f"  - 跳过 {key}（底包中未找到）", file=self.std)
                         print(f"  - 设备型号信息同步完成", file=self.std)
+                        print(f"  - 提示：ro. 属性只写一次，若被更早来源（ramdisk/cust/lk）先设置，build.prop 中的值会被忽略，开机后请核实实际生效值", file=self.std)
                     else:
                         print(f"  - 跳过（未找到build.prop）", file=self.std)
                 case 'change_platform':
@@ -1638,6 +1642,9 @@ class portutils:
         
             print(f"\n【流程结束】移植工具执行完毕！", file=self.std)
         finally:  # 新增finally：无论成功/失败都执行清理
+            # 异常冒泡到 finally 时，真正的失败点在上面最后一条执行日志附近（先清理后报错只是顺序问题）
+            if sys.exc_info()[0] is not None:
+                print(f"\n【异常清理】检测到错误：真正的失败点在上面最后一条执行日志附近，以下为清理日志", file=self.std)
             self.clean()
     def clean(self):
         """清理临时文件；base/ 缓存默认保留，勾选"完成后清除base目录"时删除"""

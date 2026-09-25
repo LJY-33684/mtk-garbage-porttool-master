@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.2-beta6**
+> 当前版本 / Current version：**P2**
 
 ## 项目介绍 / Project Introduction
 
@@ -236,6 +236,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 6.Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
 ## 近期更新 / Recent Updates
+- P2（自 beta6p1 之后的所有改动 / all changes after beta6p1）：解包健壮性全面修复——底包缓存 MD5 写入时序（解包成功后才写，杜绝静默使用残缺底包产出错误镜像）；ext4 目录名 GBK 解码回退、损坏目录块与越界 inode 防御、xattr 两处崩溃修复；单个坏目录不再中断整个移植并输出警告；异常日志补全完整堆栈；Linux 下临时文件权限清理修复；DPI/型号同步增加“ro.* 属性可能被更早来源覆盖”提示；移除 sdat2img Python 2 死代码
+  - P2: comprehensive extraction robustness fixes — base cache MD5 written only after successful unpack (prevents silently using a partial base and producing broken images); ext4 dir-name GBK fallback, corrupt block & out-of-range inode guards, two xattr crash fixes; a single bad directory no longer aborts the whole port (warnings logged); full traceback on errors; Linux temp-file permission cleanup fix; DPI/model sync now hints that ro.* props may be overridden by earlier sources; removed sdat2img Python 2 dead code.
 - 1.2-beta6（自 beta5 之后的所有改动 / all changes after beta5）：SDAT 卡刷包结构修复（block_image_update 脚本/contexts 回退/raw 先行转 sparse）；刷机脚本分区自动解析（不再硬编码，支持 boot-only）；kernel-only + ZIP 坏包拦截；mt6572/mt6580 补 wifi 替换与缺失路径跳过提示；权限推断增强（bin/xbin 精确匹配+suid）；配置收窄与去重（wifi vendor/firmware 通配、libcam_utils/libstagefrighthw 白名单、auto modem 固件保留）；底层模块与工具启动系列修复（ext4/大小换算/xattr、imgextractor 分块/容错、proputil BOM、Magisk 旧版 apk、fscheck 包导入、配置路径基于文件定位、更新检查线程安全）；boot-only 卡刷与 BootPatcher 友好阻断
   - 1.2-beta6: SDAT package structure fix (block_image_update script / contexts fallback / raw-then-sparse); automatic partition parsing in updater scripts (no more hardcoding, boot-only supported); kernel-only + ZIP bad-package guard; wifi replacement added for mt6572/mt6580 with skip notice for missing paths; permission inference refined (exact bin/xbin + suid); config narrowing & dedup (wifi vendor/firmware wildcards, libcam_utils/libstagefrighthw whitelist, auto modem firmware preserved); low-level & tooling fixes (ext4/size/xattr, imgextractor chunked IO/robustness, proputil BOM, legacy Magisk APK, fscheck package import, config paths relative to file, thread-safe update check); BootPatcher friendly abort.
 - 1.2-beta5（自 beta4 之后的所有改动 / all changes after beta4）：新增mt6797(Helio X20/X25)方案与双架构驱动补齐；G79外放无声根治（音频/TFA功放驱动）；auto模式增强（lib64/egl/TFA）；移植信息自动读取与日志优化；方案改名与排序；UI交互优化（移植条目滚轮修复与滚动速度优化、三态全选，部分选中显示“-”）；版本号更新

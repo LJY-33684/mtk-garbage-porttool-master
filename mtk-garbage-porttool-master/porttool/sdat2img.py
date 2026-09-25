@@ -12,15 +12,7 @@ import sys, os, errno
 def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE):
     __version__ = '1.2'
 
-    if sys.hexversion < 0x02070000:
-        print >> sys.stderr, "Python 2.7 or newer is required."
-        try:
-            input = raw_input
-        except NameError: pass
-        input('Press ENTER to exit...')
-        sys.exit(1)
-    else:
-        print('sdat2img binary - version: {}\n'.format(__version__))
+    print('sdat2img binary - version: {}\n'.format(__version__))
 
     def rangeset(src):
         src_set = src.split(',')
