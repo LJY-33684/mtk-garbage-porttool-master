@@ -61,7 +61,7 @@ python porttool_cli.py port \
 | 参数 | 必填 | 说明 |
 |---|---|---|
 | `--chipset` | 是 | 方案名，必须与 `--chipsets` 输出完全一致 |
-| `--base-boot` | 是 | 底包 boot.img（recovery 方案为底包 recovery 镜像；lk 方案为固件目录） |
+| `--base-boot` | 是 | 底包 boot.img（recovery 方案为底包 recovery 镜像） |
 | `--base-system` | 视模式 | 底包 system.img；**普通移植必填**；kernel-only / recovery-only 模式省略 |
 | `--donor-boot` | img 源必填 | 移植用 boot.img（recovery 方案为移植用 recovery 镜像） |
 | `--donor-system` | 普通模式必填 | 移植用 system.img |
@@ -153,8 +153,7 @@ python porttool_cli.py check-update --url <latest_version.txt的URL> [--log-file
 
 - 远程文件格式（兼容有/无引号）：`latest_version=tag`（必填）+ 下载地址（任选其一可解析）
   - `update_url_1=<GitHub 下载直链>` / `update_url_2=<Gitee 下载直链>` / `update_url=<通用链接>`
-- 输出本地 / 远程版本对比；相同输出"已是最新"，不同输出"发现新版本 + 下载地址"
-- 输出本地 / 远程版本对比；相同输出"已是最新"，不同输出"发现新版本 + 下载地址"
+- - 输出本地 / 远程版本对比；相同输出"已是最新"，不同输出"发现新版本 + 下载地址"
 - 网络异常 / 解析失败：退出码 `2`，日志 `【更新检查】失败：...`
 - 壳可据此实现"检查更新"按钮（30s 超时已内置）
 

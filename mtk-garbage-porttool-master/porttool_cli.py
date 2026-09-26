@@ -100,6 +100,9 @@ def cmd_port(a, log):
         print(f"【参数错误】未知方案：{chipset}（可用方案见 --chipsets）", file=log)
         return 1
     lk_mode, rec_mode, ker_mode = mode_flags(chipset)
+    if lk_mode:
+        print(f"【参数错误】方案「{chipset}」为 LK 修补方案，请使用 lk 子命令（lk scan/patch/verify/restore --folder ...）", file=log)
+        return 1
 
     # ---- 移植源 ----
     if a.donor_zip:
@@ -278,8 +281,8 @@ def main(argv=None):
     sl = sub.add_parser('lk', help='LK 去警告')
     sl.add_argument('lk_op', metavar='op', choices=['scan', 'patch', 'verify', 'restore'], help='操作')
     sl.add_argument('--folder', required=True, help='固件目录（GeekFlashTool readback 目录）')
-    sl.add_argument('--patch-a', action='store_true', help='patch：处理 A 槽警告')
-    sl.add_argument('--patch-b', action='store_true', help='patch：处理 B 槽警告')
+    sl.add_argument('--patch-a', action='store_true', help='patch：补丁A（去橙/红警告并追加5秒延时）')
+    sl.add_argument('--patch-b', action='store_true', help='patch：补丁B（清空警告文本）')
     sl.add_argument('--auto-backup', action='store_true', help='patch：自动备份原镜像')
     sl.add_argument('--gen-report', action='store_true', help='patch：生成补丁报告')
     sl.add_argument('--inplace', action='store_true', help='patch：原地写入（默认输出到 out/）')
