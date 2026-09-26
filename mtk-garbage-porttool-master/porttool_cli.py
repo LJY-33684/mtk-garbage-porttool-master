@@ -167,6 +167,10 @@ def cmd_port(a, log):
                         {'patch_magisk': a.patch_magisk, 'magisk_apk': a.magisk_apk,
                          'target_arch': a.target_arch, 'clean_base_after': a.clean_base})
 
+    # #70：img 输出无卡刷脚本概念，generate_script 会被自动忽略——显式提示，避免静默
+    if genimg and items.get('generate_script'):
+        print("【提示】generate_script 仅 zip 输出生效，img 输出下该条目将被忽略（非错误）", file=log)
+
     print(f"【CLI】方案：{chipset}", file=log)
     print(f"【CLI】输出：{'img镜像' if genimg else 'zip卡刷包'} / 移植源：{source_type}", file=log)
     try:
@@ -194,6 +198,9 @@ def cmd_lk(a, log):
     if op == 'scan':
         ok = LKPatch.scan_report(folder, log)
     elif op == 'patch':
+        if not a.patch_a and not a.patch_b:
+            print("【参数错误】请至少指定 --patch-a 或 --patch-b（补丁A=去橙/红警告并追加5秒延时；补丁B=清空警告文本）", file=log)
+            return 1
         ok = LKPatch.patch_files(folder, log,
                                  patch_a=a.patch_a, patch_b=a.patch_b,
                                  auto_backup=a.auto_backup, gen_report=a.gen_report,
@@ -278,12 +285,12 @@ def main(argv=None):
     sp.add_argument('--donor-boot', default='', help='移植用 boot.img（img 源必填；lk 模式为固件目录）')
     sp.add_argument('--donor-system', default='', help='移植用 system.img（img 源；recovery/kernel-only 可省）')
     sp.add_argument('--donor-zip', default='', help='移植用 zip 卡刷包（zip 源；输出 zip 时必填）')
-    sp.add_argument('--out-type', choices=['img', 'zip'], default='img', help='输出类型（默认 img）')
+    sp.add_argument('--out-type', choices=['img', 'zip'], default='img', help='输出类型（默认 img；注意 GUI 默认 zip，壳侧请显式指定）')
     sp.add_argument('--item', action='append', default=[], metavar='KEY', help='开启移植条目（可多次）')
     sp.add_argument('--no-item', action='append', default=[], metavar='KEY', help='关闭移植条目（可多次）')
     sp.add_argument('--patch-magisk', action='store_true', help='修补 Magisk')
     sp.add_argument('--magisk-apk', default='', help='Magisk APK 路径')
-    sp.add_argument('--target-arch', default='arm', help='目标架构（默认 arm）')
+    sp.add_argument('--target-arch', default='arm64', help='目标架构（默认 arm64，与 GUI 一致；arm64→arm64-v8a，arm→armeabi-v7a）')
     sp.add_argument('--clean-base', action='store_true', help='完成后清除 base 缓存目录')
     sp.add_argument('--log-file', default='', help='额外日志文件（stdout 照常输出）')
 
@@ -293,7 +300,7 @@ def main(argv=None):
     sl.add_argument('--folder', required=True, help='固件目录（GeekFlashTool readback 目录）')
     sl.add_argument('--patch-a', action='store_true', help='patch：补丁A（去橙/红警告并追加5秒延时）')
     sl.add_argument('--patch-b', action='store_true', help='patch：补丁B（清空警告文本）')
-    sl.add_argument('--auto-backup', action='store_true', help='patch：自动备份原镜像')
+    sl.add_argument('--auto-backup', action='store_true', help='patch：自动备份原镜像（CLI 默认不备份，建议显式开启；GUI 默认开启）')
     sl.add_argument('--gen-report', action='store_true', help='patch：生成补丁报告')
     sl.add_argument('--inplace', action='store_true', help='patch：原地写入（默认输出到 out/）')
     sl.add_argument('--log-file', default='', help='额外日志文件')

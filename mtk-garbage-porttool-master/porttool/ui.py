@@ -481,6 +481,10 @@ class MyUI(ttk.Labelframe):
                 return
             # 确定输出类型（zip→genimg=False，img→genimg=True）
             genimg = True if self.pack_type.get() == 'img' else False
+
+            # #61：img 输出下 generate_script 不生效（仅 zip 输出走脚本生成）——显式提示，避免静默空转（与 CLI #70 对齐）
+            if genimg and newdict.get('generate_script'):
+                print('【提示】generate_script 仅 zip 输出生效，img 输出下该条目将被忽略（非错误）', file=self.log)
             
             # 定义移植进程的执行函数（封装逻辑，确保流程结束后重置状态）
             def run_port_process():

@@ -13,13 +13,11 @@ UPDATE_SOURCES = {
         'raw': 'https://raw.githubusercontent.com/LJY-33684/mtk-garbage-porttool-master/main/latest_version.txt',
         'api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/releases/tags/{tag}',
         'contents_api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/contents/latest_version.txt',
-        'notes_api': 'https://api.github.com/repos/LJY-33684/mtk-garbage-porttool-master/contents/update_notes/{tag}.md',
         'url_key': 'update_url_1',
     },
     'Gitee': {
         'raw': 'https://gitee.com/Q3368436451/mtk-garbage-porttool-master/raw/main/latest_version.txt',
         'api': 'https://gitee.com/api/v5/repos/Q3368436451/mtk-garbage-porttool-master/releases/tags/{tag}',
-        'notes_api': 'https://gitee.com/api/v5/repos/Q3368436451/mtk-garbage-porttool-master/contents/update_notes/{tag}.md',
         'url_key': 'update_url_2',
     },
 }
@@ -82,7 +80,7 @@ def fetch_update_info(source, timeout=UPDATE_TIMEOUT):
         else:
             # 选择对应源的下载链接
             download_url = all_urls.get(src_cfg['url_key']) or all_urls.get('update_url')
-            # 3. 获取更新内容：优先仓库内 update_notes/{tag}.md（contents API 通道，与 latest_version.txt 同链路），失败降级 releases API
+            # 3. 获取更新内容：直接走 releases API（#73：不依赖仓库内 update_notes/ 目录，避免结构约束与无效 404 请求）
             body = fetch_release_body(src_cfg, tag, timeout)
             result.ok = True
             result.tag = tag
@@ -99,26 +97,16 @@ def fetch_update_info(source, timeout=UPDATE_TIMEOUT):
 
 
 def fetch_release_body(src_cfg, tag, timeout=UPDATE_TIMEOUT):
-    """获取更新内容（markdown）：notes_api -> releases API -> 兜底提示"""
+    """获取更新内容（markdown）：直接走 releases API（#73：已移除 notes_api 尝试，更新内容完全来自发行版描述）"""
     body = ""
     try:
-        notes_url = src_cfg.get('notes_api', '').format(tag=tag)
-        if notes_url:
-            req_n = urllib.request.Request(notes_url, headers={"User-Agent": _UA, "Accept": "application/vnd.github+json"})
-            with urllib.request.urlopen(req_n, timeout=timeout) as resp_n:
-                notes_data = json.loads(resp_n.read().decode("utf-8"))
-                body = base64.b64decode(notes_data['content']).decode("utf-8-sig").strip()
+        api_url = src_cfg['api'].format(tag=tag)
+        req2 = urllib.request.Request(api_url, headers={"User-Agent": _UA, "Accept": "application/json"})
+        with urllib.request.urlopen(req2, timeout=timeout) as resp2:
+            release_data = json.loads(resp2.read().decode("utf-8"))
+            body = release_data.get("body", "") or ""
     except Exception:
-        body = ""
-    if not body:
-        try:
-            api_url = src_cfg['api'].format(tag=tag)
-            req2 = urllib.request.Request(api_url, headers={"User-Agent": _UA, "Accept": "application/json"})
-            with urllib.request.urlopen(req2, timeout=timeout) as resp2:
-                release_data = json.loads(resp2.read().decode("utf-8"))
-                body = release_data.get("body", "") or ""
-        except Exception:
-            pass
+        pass
     if not body:
         body = f"## {tag}\n\n更新内容获取失败，请前往下载页面查看详情。"
     return body

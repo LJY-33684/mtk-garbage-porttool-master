@@ -212,7 +212,11 @@ def parse_bootimg(bootimg):
     bootinfo.write('cmdline:%s\n' % cmdline.decode('latin').strip('\x00'))
 
     while True:
-        if bootimg.read(page_size) == struct.pack('%ds' % page_size, b''):
+        # #69：损坏/截断 boot 在 EOF 处会短读/空读（≠ 零页），直接 seek 回退会与零页 continue 构成死循环
+        data = bootimg.read(page_size)
+        if not data or len(data) < page_size:
+            raise ValueError('boot 镜像损坏或已截断（页对齐读取不足 %d 字节）' % page_size)
+        if data == struct.pack('%ds' % page_size, b''):
             continue
         bootimg.seek(-page_size, 1)
         # 有 MTK 头等前缀时，tell() 是绝对偏移，需减去前缀长度才是对齐基准
