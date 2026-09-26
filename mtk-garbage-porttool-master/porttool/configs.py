@@ -684,7 +684,6 @@ support_chipset_portstep = {
             'replace_camera': True,
             'replace_audioengine': True,
             'replace_tfa': True,
-            'replace_init': False,
             'change_platform': False,
             'single_simcard': False,
             'dual_simcard': False,
@@ -698,9 +697,6 @@ support_chipset_portstep = {
             'kernel': [
                 'kernel'
             ],
-            'init': [
-
-        ],
         'fstab': [
                 'initrd/fstab',
                 'initrd/fstab.mt8163',
@@ -1546,8 +1542,11 @@ if op.isfile(_configs_path):
     with open(_configs_path, 'r', encoding='utf-8-sig') as c:
         support_chipset_portstep = json.load(c)
 else:
-    with open(_configs_path, 'w', encoding='utf-8') as c:
-        json.dump(support_chipset_portstep, c, indent=4, ensure_ascii=False)
+    try:
+        with open(_configs_path, 'w', encoding='utf-8') as c:
+            json.dump(support_chipset_portstep, c, indent=4, ensure_ascii=False)
+    except OSError:
+        pass  # #65：只读目录等部署边界——降级使用内嵌字典，不中断导入
 
 support_chipset = list(support_chipset_portstep.keys())
 support_packtype = ['zip', 'img']

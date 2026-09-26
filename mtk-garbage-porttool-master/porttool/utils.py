@@ -257,7 +257,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta2p1'
+tool_author = 'affggh'; tool_version = '1.3-beta2p2'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -314,10 +314,14 @@ class proputil:
         self.save()
 
 def _infer_fs_mode(unix_path: str, st_mode: int = 0) -> str:
-    """推断 fs_config 权限：bin/xbin 目录下按可执行(755)，其余 644；保留 suid 位"""
+    """推断 fs_config 权限：可执行文件按 755，其余 644；保留 suid 位。
+    #74：判定 = 真实 st_mode 执行位（Linux 解包保留）OR 路径位于 bin/xbin/vendor/bin
+    （Windows 落盘后无扩展名二进制的 st_mode 不带执行位，需路径兜底，否则 vendor/bin 全压 0644）"""
     suid = '4' if st_mode & 0o4000 else '0'
     parts = unix_path.lstrip('/').split('/')
-    is_exec = len(parts) > 2 and parts[0] == 'system' and parts[1] in ('bin', 'xbin')
+    path_exec = len(parts) > 2 and parts[0] == 'system' and (
+        parts[1] in ('bin', 'xbin') or (parts[1] == 'vendor' and parts[2] == 'bin'))
+    is_exec = bool(st_mode & 0o111) or path_exec
     return suid + ('755' if is_exec else '644')
 
 class updaterutil:
@@ -622,6 +626,12 @@ class portutils:
             print(f"【执行命令】{' '.join(cmd)}", file=self.std)
         
         creationflags = subprocess.CREATE_NO_WINDOW if osname == 'nt' else 0
+        # 防御：Linux 下 zip 解压可能丢失执行权限，执行前确保目标二进制可执行（#62）
+        if osname != 'nt' and cmd and isinstance(cmd[0], str):
+            try:
+                os.chmod(cmd[0], 0o755)
+            except OSError:
+                pass
         try:
             ret = subprocess.run(
                 cmd,
@@ -768,6 +778,10 @@ class portutils:
                         else:
                             print(f"  - 跳过 {i}（底包中不存在）", file=self.std)
                 case 'replace_init':
+                    # #76：空值守卫——方案 replace 未配置 init 条目时跳过，避免静默空转（与 #55补 对齐）
+                    if not self.items.get('replace', {}).get('init'):
+                        print("  - 跳过（当前方案 replace 配置无 init 条目）", file=self.std)
+                        continue
                     print(f"【移植项】替换ramdisk init配置文件...", file=self.std)
                     for i in self.items.get('replace', {}).get('init', []):
                         if basedir.joinpath(i).exists():
@@ -1116,7 +1130,7 @@ class portutils:
             if item.startswith("replace_"):
                 replace_type = item[len("replace_"):]
                 # auto 模式下手动选项优先：若 replace 字典有配置则用手动路径覆盖自动替换结果
-                if replace_type not in self.items.get('replace', {}):
+                if not self.items.get('replace', {}).get(replace_type):  # #55补：空值也跳过（防空转）
                     continue  # 该方案未配置此替换项的路径，跳过
                 print(f"【移植项】替换{replace_type}相关文件...", file=self.std)
                 for i in self.items['replace'][replace_type]:
@@ -1275,6 +1289,10 @@ class portutils:
                             version = self.items.get('version') or tool_version
                             new_script = updaterutil(f).generate(author, version, self.items['partitions'], self.sdat)
                             if new_script:
+                                # #68：非 sdat 且方案未配置分区路径（或移植源 updater-script 解析不到 system）时，
+                                # generate() 返回"仅刷写 boot"脚本，system 移植静默不生效——显式警告
+                                if '仅刷写 boot' in new_script:
+                                    print(f"【警告】未解析到 system 分区路径，生成的脚本仅刷写 boot，system 移植不会生效（该方案未配置分区路径，且移植源 updater-script 中未找到 system 分区信息）", file=self.std)
                                 f.seek(0, 0)
                                 f.truncate()
                                 f.write(new_script)
@@ -1412,6 +1430,12 @@ class portutils:
                 unlink("tmp/rom/system.img")
             print(f"  - SDAT格式转换完成", file=self.std)
         
+        # 非 sdat 移植源：tmp/rom/system.img 是解包遗留的 donor 原版（未移植），
+        # 脚本实际刷入的是 system/ 目录；残留会让产物 zip 内含陈旧镜像（#59），打包前删除
+        if not self.sdat and Path("tmp/rom/system.img").exists():
+            print(f"  - 清理解包遗留的 donor 原版 system.img（非 sdat 打包不引用）", file=self.std)
+            unlink("tmp/rom/system.img")
+
         # 最终打包zip
         print(f"【打包zip】正在压缩为卡刷包...", file=self.std)
         ziputil.compress(str(outpath), "tmp/rom/")
@@ -1493,12 +1517,20 @@ class portutils:
                         # 解析权限参数
                         uid, gid, mode, extra = '0', '0', '644', ''
                         selable = 'u:object_r:system_file:s0'
+                        mode_set = False
                         for idx, farg in enumerate(fargs):
                             match farg:
                                 case 'uid': uid = fargs[idx+1]
                                 case 'gid': gid = fargs[idx+1]
-                                case 'mode'|'fmode'|'dmode': 
-                                    mode = fargs[idx+1] if (dirmode and farg == 'dmode') else fargs[idx+1]
+                                case 'mode':
+                                    mode = fargs[idx+1]; mode_set = True
+                                case 'fmode':
+                                    mode = fargs[idx+1]; mode_set = True  # 文件权限优先（fs_config 逐文件语义）
+                                case 'dmode':
+                                    # #72：目录权限仅兜底——set_metadata_recursive 同时给 dmode/fmode 时，
+                                    # 以 fmode（文件权限）为准，避免后写参数覆盖先写
+                                    if not mode_set:
+                                        mode = fargs[idx+1]; mode_set = True
                                 case 'capabilities': 
                                     extra = 'capabilities=' + fargs[idx+1] if fargs[idx+1] != '0x0' else ''
                                 case 'selabel': selable = fargs[idx+1]
@@ -1695,11 +1727,11 @@ class portutils:
                 print(f"  └─ 移植包：{self.port_source}（{_fmt_size(Path(self.port_source).stat().st_size)}）", file=self.std)
             else:
                 pb, ps = self.port_source
-            print(f"  ├─ 移植用 boot：{pb}（{_fmt_size(Path(pb).stat().st_size)}）", file=self.std)
-            if ps:
-                print(f"  └─ 移植用 system：{ps}（{_fmt_size(Path(ps).stat().st_size)}）", file=self.std)
-            else:
-                print(f"  └─ 移植用 system：不参与（本方案无需 system）", file=self.std)
+                print(f"  ├─ 移植用 boot：{pb}（{_fmt_size(Path(pb).stat().st_size)}）", file=self.std)
+                if ps:
+                    print(f"  └─ 移植用 system：{ps}（{_fmt_size(Path(ps).stat().st_size)}）", file=self.std)
+                else:
+                    print(f"  └─ 移植用 system：不参与（本方案无需 system）", file=self.std)
         
         # kernel-only / recovery-only + zip 输出二次拦截：UI 已拦截，此处防绕过 UI 直接调用
         if self._flag('kernel_only_mode') and not self.genimg:

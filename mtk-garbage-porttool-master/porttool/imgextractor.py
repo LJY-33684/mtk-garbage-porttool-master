@@ -157,9 +157,13 @@ class Extractor(object):
                     entry_inode = root_inode.volume.get_inode(entry_inode_idx, entry_type)
                 except Exception as e:
                     # inode 号越界等异常条目：跳过该条目，不中断整个解包
+                    # #60：ext4 的 /lost+found 等空目录常带 inode 0 的越界条目，属已知噪音，
+                    # 有兜底不崩——提示用户可忽略，避免误判为移植失败
                     self.warnings.append(
                         f"跳过无效目录项 {entry_inode_path}"
-                        f"（inode {entry_inode_idx}）：{type(e).__name__}: {e}")
+                        f"（inode {entry_inode_idx}）：{type(e).__name__}: {e}"
+                        f"【提示】该报错多为 /lost+found 等目录的无效条目（inode 0 越界），"
+                        f"属解包已知噪音，不影响移植结果，可忽略")
                     continue
                 mode = self.__getperm(entry_inode.mode_str)
                 uid = entry_inode.inode.i_uid
@@ -348,7 +352,7 @@ class Extractor(object):
                 elif entry_inode.is_symlink:
                     try:
                         link_target = entry_inode.open_read().read().decode("utf8")
-                        target = self.EXTRACT_DIR + entry_inode_path.replace(' ', '_')
+                        target = self.EXTRACT_DIR + entry_inode_path.replace(' ', '_').replace('"','')
                         if cap == '' and con == '':
                             tmppath=self.DIR + entry_inode_path
                             if (tmppath).find(' ',1,len(tmppath))>0:
@@ -441,7 +445,7 @@ class Extractor(object):
                         try:
                             link_target_block = int.from_bytes(entry_inode.open_read().read(), "little")
                             link_target = root_inode.volume.read(link_target_block * root_inode.volume.block_size, entry_inode.inode.i_size).decode("utf8")
-                            target = self.EXTRACT_DIR + entry_inode_path.replace(' ', '_')
+                            target = self.EXTRACT_DIR + entry_inode_path.replace(' ', '_').replace('"','')
                             if link_target and all(c in string.printable for c in link_target):
                                 if cap == '' and con == '':
                                     tmppath=self.DIR + entry_inode_path

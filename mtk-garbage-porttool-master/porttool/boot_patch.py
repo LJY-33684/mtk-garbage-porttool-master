@@ -57,6 +57,12 @@ def parseMagiskApk(apk: str, arch: str = "arm64", log=stderr):
     def saveto(bytes, path):
         with open(path, 'wb') as f:
             f.write(bytes)
+        # #71：magisk32/64/init 等二进制与 magiskboot 一致设为可执行（zipfile 提取默认 0644，
+        # 若 magiskboot 在主机端 spawn 它们会 Permission denied）
+        try:
+            chmod(path, 0o755)
+        except OSError:
+            pass
 
     print("- 开始解压需要的文件...", file=log)
     arch = archconv(arch)
@@ -66,11 +72,13 @@ def parseMagiskApk(apk: str, arch: str = "arm64", log=stderr):
         pp = "arm64-v8a"
     elif p == "arm":
         pp = "armeabi-v7a"
+    stub_found = False
     with zipfile.ZipFile(apk) as z:
         for l in z.filelist:
             # 26.0+
             if "stub.apk" in l.filename:
                 saveto(z.read(l), "stub.apk")
+                stub_found = True
             # Save a platform magiskboot into bin if linux
             if os!='win' and osname !='nt':
                 if f"lib/{pp}/libmagiskboot.so" in l.filename:
@@ -90,6 +98,9 @@ def parseMagiskApk(apk: str, arch: str = "arm64", log=stderr):
                     else:
                         print(f"  - 警告：apk 中未找到 {magisk64_path}，跳过 magisk64", file=log)
                 saveto(z.read(f"lib/{arch}/libmagiskinit.so"), "magiskinit")
+
+    if not stub_found:
+        print("  - 警告：apk 中未找到 stub.apk，跳过 stub（部分 Magisk 版本可能无法正常启动）", file=log)
 
 class BootPatcher(object):
     def __init__(
@@ -258,7 +269,7 @@ class BootPatcher(object):
             "mkdir 0750 overlay.d/sbin",
             f"{skip32} add 0644 overlay.d/sbin/magisk32.xz magisk32.xz",
             f"{skip64} add 0644 overlay.d/sbin/magisk64.xz magisk64.xz",
-            "add 0644 overlay.d/sbin/stub.xz stub.xz" if stub else "",
+            *(["add 0644 overlay.d/sbin/stub.xz stub.xz"] if stub else []),
             "patch",
             f"{skip_backup} backup ramdisk.cpio.orig",
             "mkdir 000 .backup",

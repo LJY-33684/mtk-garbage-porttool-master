@@ -673,7 +673,6 @@
             "replace_camera": true,
             "replace_audioengine": true,
             "replace_tfa": true,
-            "replace_init": false,
             "change_platform": false,
             "single_simcard": false,
             "dual_simcard": false,
@@ -815,8 +814,7 @@
                 "lib64/libmtkjpeg.so",
                 "vendor/lib/hw/camera.*",
                 "vendor/lib64/hw/camera.*"
-            ],
-            "init": []
+            ]
         }
     },
     "mt6797 (Helio X20/X25) kernel-3.18 (Android 5.1-7.1.2)": {
