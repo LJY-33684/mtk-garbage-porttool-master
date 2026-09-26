@@ -369,29 +369,11 @@
                 "vendor/etc/.tp"
             ],
             "wifi": [
-                "bin/netcfg",
-                "bin/dhcpcd",
-                "bin/ifconfig",
-                "bin/hostap",
-                "bin/hostapd",
-                "bin/hostapd_bin",
-                "bin/pcscd",
-                "bin/wlan*",
-                "bin/wpa*",
-                "bin/netd",
-                "lib/libhardware_legacy.so",
-                "lib64/libhardware_legacy.so",
-                "lib/libwpa_client.so",
-                "lib64/libwpa_client.so",
-                "lib/libwifi-service.so",
-                "lib64/libwifi-service.so",
                 "etc/wifi/wpa_supplicant.conf",
                 "etc/wifi/p2p_supplicant.conf",
+                "vendor/etc/wifi",
                 "vendor/firmware/wifi*",
-                "vendor/firmware/WIFI*",
-                "vendor/bin/netdiag",
-                "vendor/lib/libem_wifi_jni.so",
-                "vendor/lib64/libem_wifi_jni.so"
+                "vendor/firmware/WIFI*"
             ],
             "camera": [
                 "lib/hw/camera.*",
@@ -1452,6 +1434,55 @@
                 "vendor/lib64/libfeatureiodrv.so",
                 "vendor/lib/libSwJpgCodec.so",
                 "vendor/lib64/libSwJpgCodec.so"
+            ]
+        }
+    },
+    "LK去警告 (兼容大多数安卓版本, 去Orange/Red警告+5s延时)": {
+        "partitions": {},
+        "flags": {
+            "lk_patch_mode": true
+        },
+        "replace": {}
+    },
+    "仅移植Recovery (只输出recovery)": {
+        "partitions": {},
+        "flags": {
+            "generate_script": false,
+            "recovery_only_mode": true,
+            "replace_kernel": true,
+            "selinux_permissive": true,
+            "enable_adb": true,
+            "replace_fstab": false,
+            "replace_init": false
+        },
+        "replace": {
+            "kernel": [
+                "kernel",
+                "kernel.gz"
+            ],
+            "fstab": [
+                "initrd/fstab",
+                "initrd/fstab.mt6572",
+                "initrd/fstab.mt6582",
+                "initrd/fstab.mt6580",
+                "initrd/fstab.mt6735",
+                "initrd/fstab.mt6737",
+                "initrd/fstab.mt6750",
+                "initrd/fstab.mt6755",
+                "initrd/fstab.mt6797",
+                "initrd/etc/recovery.fstab"
+            ],
+            "init": [
+                "initrd/init.rc",
+                "initrd/init.recovery.rc",
+                "initrd/init.mt6572.rc",
+                "initrd/init.mt6582.rc",
+                "initrd/init.mt6580.rc",
+                "initrd/init.mt6735.rc",
+                "initrd/init.mt6737.rc",
+                "initrd/init.mt6750.rc",
+                "initrd/init.mt6755.rc",
+                "initrd/init.mt6797.rc"
             ]
         }
     },
