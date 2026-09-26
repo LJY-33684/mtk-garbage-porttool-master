@@ -201,9 +201,12 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 ## 软件截图 / Software Screenshots
 
-<img width="678" height="316" alt="主界面 / Main UI" src="https://github.com/user-attachments/assets/4e5d2075-0369-40a0-b7ee-f8eec5314379" />
+<img width="1356" height="670" alt="image" src="https://github.com/user-attachments/assets/42c1f934-4bac-420e-8b2a-12f6ebea2713" />
 
-<img width="677" height="318" alt="芯片方案列表 / Chip Preset List" src="https://github.com/user-attachments/assets/0f298a4a-4b6a-43b8-b6c0-e0d7ca4552a6" />
+<img width="1353" height="669" alt="image" src="https://github.com/user-attachments/assets/5ef915a1-53e0-4795-a4e5-950bbb293998" />
+
+<img width="1509" height="619" alt="image" src="https://github.com/user-attachments/assets/0383b891-e021-4021-a738-aabd3137b60e" />
+
 
 ## 感谢[@affggh](https://github.com/affggh)分享的原文件，此移植工具基于原工具进行的改进 / Thanks to [@affggh](https://github.com/affggh) for sharing the original files. This porting tool is an improvement based on the original tool.
 
@@ -252,4 +255,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 ## 相关群聊 / Related Chat Group
 
-![qrcode_1770570404334](https://github.com/user-attachments/assets/3dbaaedb-818e-4b15-8df8-b423a63edd0e)
+<img width="1284" height="2280" alt="qrcode_1790395495264" src="https://github.com/user-attachments/assets/60010279-d11e-4c42-8148-3f69d9283a9a" />
+
+<img width="1284" height="2280" alt="qrcode_1790395471488" src="https://github.com/user-attachments/assets/4e67f913-927e-4108-8fad-6470730f57e1" />
+
+
