@@ -1,6 +1,6 @@
 ﻿# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta1p1**
+> 当前版本 / Current version：**1.3-beta2**
 
 ## 项目介绍 / Project Introduction
 
@@ -71,6 +71,19 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 - **8. 版本检测与警告 / Version Detection：**
 - 自动检测底包/移植源Android版本（API），Android 8.0+（可能启用Treble/VNDK）与跨大版本移植给出警告
 - Auto-detects base/donor Android version (API); warns on Android 8.0+ (possible Treble/VNDK) and cross-major-version porting.
+
+## CLI 桥接接口 / CLI Bridge Interface
+
+工具内置纯命令行桥接入口 `porttool_cli.py`（与 main.py 同级），供 **Java / C / C++ / Rust** 等其它平台的 UI 壳复用本工具能力：参数传入（方案、路径、条目开关、输出类型），日志与结果经 stdout 传出（可选 `--log-file` 落盘），退出码约定 **0=成功 / 1=参数·校验错误 / 2=执行失败**。
+
+The tool ships a pure command-line bridge entry `porttool_cli.py` (in the same directory as main.py), so UI shells on other platforms (**Java / C / C++ / Rust** ...) can reuse this tool's capabilities: parameters in (preset, paths, item toggles, output type), logs & results out via stdout (optional `--log-file`), exit codes **0=ok / 1=arg/validation error / 2=execution failure**.
+
+- 子命令：`port`（移植，普通 / kernel-only / recovery-only，img 或 zip 输出）、`lk`（LK 去警告：scan/patch/verify/restore）、`fscheck`（文件系统自查）、`check-update`（检查更新）；顶层查询：`--chipsets` / `--items` / `--version`
+- Subcommands: `port` (normal / kernel-only / recovery-only, img or zip output), `lk` (scan/patch/verify/restore), `fscheck` (filesystem integrity check), `check-update`; top-level queries: `--chipsets` / `--items` / `--version`.
+
+完整接口规范见同目录 [TASK_UI_SHELL.md](mtk-garbage-porttool-master/TASK_UI_SHELL.md)（该手册同时随发行版 zip 资产分发，仅下载发行版也能看到接口规范）。
+
+Full interface spec: [TASK_UI_SHELL.md](mtk-garbage-porttool-master/TASK_UI_SHELL.md) in the same directory (also shipped inside the release zip asset, so the spec is available even if you only download the release).
 
 ## 环境要求 / Environment Requirements
 
@@ -235,6 +248,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
 ## 近期更新 / Recent Updates
+- 1.3-beta2（自 1.3-beta1p1 之后的所有改动 / all changes after beta1p1）：新增 CLI 桥接接口 `porttool_cli.py` 与接口规范 `TASK_UI_SHELL.md`（供其它平台 UI 壳复用；接口/退出码/日志规范详见手册，手册同时随发行版 zip 资产分发）；修复 CLI lk 子命令参数崩溃、argparse 退出码统一、check-update 下载链解析；CLI 与手册随源码置于 `mtk-garbage-porttool-master/` 子目录（与 main.py 同级）
+  - 1.3-beta2: added the CLI bridge entry `porttool_cli.py` + interface spec `TASK_UI_SHELL.md` (for UI shells on other platforms; the spec is also shipped inside the release zip); fixed the lk subcommand argument crash, unified argparse exit codes, check-update download-URL parsing; CLI & manual live in `mtk-garbage-porttool-master/` alongside main.py.
 - 1.3-beta1p1（1.3-beta1 的紧急修补 / emergency patch for 1.3-beta1）：修复 LK 去警告跨会话备份查找失效——重启工具后「校验」「还原」「打开输出目录」找不到上次会话的备份/补丁（会话级全局变量问题），现改为扫描 out/ 下所有时间戳子目录查找 `<名字>_original_backup` / `<名字>_patched`，旧备份仍可识别
   - 1.3-beta1p1 (emergency patch for 1.3-beta1): fixed LK warning-patch cross-session backup lookup — after restarting the tool, "Verify" / "Restore" / "Open Output Dir" could not find previous backups/patched images (session-level global issue); now scans all timestamped subdirs under out/ for `<name>_original_backup` / `<name>_patched`, old backups remain recognizable.
 - 1.3-beta1（自 beta6 之后的所有改动 / all changes after beta6）：新增恢复模式移植（仅移植Recovery，独立 recovery.img 流程，参考 [Xxinn034/mtk-legacy-porttool](https://github.com/Xxinn034/mtk-legacy-porttool) 分支实现）；整合 LK 去警告工具（兼容大多数安卓版本，去Orange/Red警告+5s延时，整合自 [justistab3-bot/mtk-lk-warning-patch](https://github.com/justistab3-bot/mtk-lk-warning-patch)）；输出目录时间戳化（out/<时间戳>/，每次运行实时生成）+ 全方案“打开输出目录”按钮；单实例保护（同目录单实例、跳转至运行实例/清除状态锁/残留锁自动接管）；输出类型区 Labelframe 分组；LZ4 支持强化（内置 lz4.py、失败写日志）；kernel-only/Recovery 输出限制完善；系列整合修复
