@@ -1,4 +1,5 @@
-﻿import re
+import re
+import time
 from io import StringIO
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -256,7 +257,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.2-beta6p2'
+tool_author = 'affggh'; tool_version = '1.3-beta1'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -264,7 +265,7 @@ class proputil:
         if proppath.exists():
             self.propfile = propfile
             self.encoding = self.__detect_encoding(propfile)
-            self.propfd = Path(propfile).open('r+', encoding=self.encoding)
+            self.propfd = Path(propfile).open('r+', encoding=self.encoding.rstrip('-sig'))  # 写句柄去 sig，避免给无 BOM 文件注入 BOM
         else:
             raise FileNotFoundError(f"File {propfile} does not exist!")
         self.prop = self.__loadprop
@@ -521,9 +522,9 @@ class portutils:
         self.port_source = port_source  # zip路径 或 (boot.img, system.img)元组
         self.source_type = source_type  # 'zip' 或 'img'
         self.genimg = genimg  # True=输出img，False=输出zip
-        self.outdir = Path("out")
-        if not self.outdir.exists():
-            self.outdir.mkdir(parents=True)
+        # 输出统一放在 out/<时间戳>/ 子目录（点击开始移植时生成，Windows 目录名不允许冒号，用中文冒号）
+        self.outdir = Path("out") / time.strftime("%Y%m%d-%H：%M：%S")
+        self.outdir.mkdir(parents=True, exist_ok=True)
         self.std = stdlog if stdlog else stdout
         self.sdat = False  # 提前赋值，确保属性始终存在
         if not self.__check_exist:
@@ -532,6 +533,37 @@ class portutils:
     
     @property
     def __check_exist(self) -> bool:
+        # LK去警告 模式：只需 LK 镜像文件
+        if self._flag('lk_patch_mode'):
+            if not Path(self.bootimg).exists():
+                print(f"【缺失文件】LK镜像 {self.bootimg} 不存在", file=self.std)
+                return False
+            return True
+        # Recovery 模式：只需底包Recovery + 移植Recovery（无 system 参与）
+        if self._flag('recovery_only_mode'):
+            if not Path(self.bootimg).exists():
+                print(f"【缺失文件】底包Recovery镜像 {self.bootimg} 不存在", file=self.std)
+                return False
+            port_boot, _port_sys = self.port_source
+            if not Path(port_boot).exists():
+                print(f"【缺失文件】移植Recovery镜像 {port_boot} 不存在", file=self.std)
+                return False
+            return True
+        # kernel-only 模式：只需底包boot + 移植源boot（无 system 参与）
+        if self._flag('kernel_only_mode'):
+            if not Path(self.bootimg).exists():
+                print(f"【缺失文件】底包boot镜像 {self.bootimg} 不存在", file=self.std)
+                return False
+            if self.source_type == 'zip':
+                if not Path(self.port_source).exists():
+                    print(f"【缺失文件】移植包 {self.port_source} 不存在", file=self.std)
+                    return False
+            else:
+                port_boot, _port_sys = self.port_source
+                if not Path(port_boot).exists():
+                    print(f"【缺失文件】移植用boot.img {port_boot} 不存在", file=self.std)
+                    return False
+            return True
         # 检查底包
         for i in (self.sysimg, self.bootimg):
             if not Path(i).exists():
@@ -618,6 +650,22 @@ class portutils:
             _rmtree(outdir)
         outdir.mkdir(parents=True)
         
+        # Recovery 模式：无 system 参与，移植源 recovery 由 __port_boot 直接处理
+        if self._flag('recovery_only_mode'):
+            print(f"【Recovery模式】跳过 system 复制，移植源 recovery 直接进入移植流程", file=self.std)
+            return
+        # kernel-only 模式：无 system 参与，移植源仅需提供 boot
+        if self._flag('kernel_only_mode'):
+            if self.source_type == 'zip':
+                print(f"【解压移植包】正在解压 {self.port_source} 到 tmp/rom...", file=self.std)
+                ziputil.decompress(self.port_source, str(outdir))
+                print(f"【解压完成】移植包已解压到 tmp/rom", file=self.std)
+            else:
+                port_boot, _port_sys = self.port_source
+                Path(outdir.joinpath("boot.img")).write_bytes(Path(port_boot).read_bytes())
+                print(f"【kernel-only】仅复制移植源 boot.img（不处理 system）", file=self.std)
+            return
+
         if self.source_type == 'zip':
             print(f"【解压移植包】正在解压 {self.port_source} 到 tmp/rom...", file=self.std)
             ziputil.decompress(self.port_source, str(outdir))
@@ -649,10 +697,14 @@ class portutils:
         basedir.mkdir(parents=True)
         portdir.mkdir(parents=True)
         
-        # 复制底包boot.img并解包
-        print(f"【处理底包】复制底包boot.img到 tmp/base...", file=self.std)
-        basedir.joinpath("boot.img").write_bytes(Path(self.bootimg).read_bytes())
-        base = basedir.joinpath("boot.img")
+        # Recovery 模式处理 recovery.img，否则处理 boot.img
+        imgname = 'recovery.img' if self._flag('recovery_only_mode') else 'boot.img'
+        labelname = 'Recovery镜像' if self._flag('recovery_only_mode') else 'boot.img'
+        
+        # 复制底包镜像并解包
+        print(f"【处理底包】复制底包{labelname}到 tmp/base...", file=self.std)
+        basedir.joinpath(imgname).write_bytes(Path(self.bootimg).read_bytes())
+        base = basedir.joinpath(imgname)
         
         # 处理移植源boot.img
         if self.source_type == 'zip':
@@ -665,23 +717,23 @@ class portutils:
                 return False
         else:
             port_boot, _ = self.port_source
-            print(f"【复制boot.img】复制移植用boot.img到 tmp/port...", file=self.std)
-            Path("tmp/port/boot.img").write_bytes(Path(port_boot).read_bytes())
+            print(f"【复制{labelname}】复制移植用{labelname}到 tmp/port...", file=self.std)
+            Path("tmp/port").joinpath(imgname).write_bytes(Path(port_boot).read_bytes())
         
-        port = Path(portdir.joinpath("boot.img"))
+        port = Path(portdir.joinpath(imgname))
         
-        # 解包boot.img
-        print(f"【解包boot.img】正在解包底包boot.img...", file=self.std)
+        # 解包镜像（recovery 模式下为 recovery.img）
+        print(f"【解包{imgname}】正在解包底包{imgname}...", file=self.std)
         bootutil(str(base)).unpack()
-        print(f"【解包boot.img】正在解包移植源boot.img...", file=self.std)
+        print(f"【解包{imgname}】正在解包移植源{imgname}...", file=self.std)
         bootutil(str(port)).unpack()
 
         # 自动读取并打印底包/移植源 boot 信息
         self.__print_boot_info("底包", basedir)
         self.__print_boot_info("移植源", portdir)
         
-        # 执行boot移植逻辑
-        print(f"【开始移植】执行boot.img移植逻辑...", file=self.std)
+        # 执行移植逻辑（recovery 模式下为 recovery.img）
+        print(f"【开始移植】执行{imgname}移植逻辑...", file=self.std)
         for item in self.items['flags']:
             item_flag = self._flag(item)
             if not item_flag:
@@ -757,11 +809,11 @@ class portutils:
                     else:
                         print(f"  - 跳过（未找到default.prop）", file=self.std)
         
-        # 重新打包boot.img
-        print(f"【打包boot.img】正在重新打包移植后的boot.img...", file=self.std)
+        # 重新打包镜像
+        print(f"【打包{imgname}】正在重新打包移植后的{imgname}...", file=self.std)
         bootutil(str(port)).repack()
         outboot = Path(portdir.joinpath("boot-new.img"))
-        to = Path("tmp/rom/boot.img")
+        to = Path("tmp/rom").joinpath(imgname)
         __replace(outboot, to)
         
         # Magisk修补
@@ -780,7 +832,7 @@ class portutils:
             if self.items.get("patch_magisk"):
                 print(f"【Magisk修补】跳过（未找到magisk.apk）", file=self.std)
         
-        print(f"【boot移植完成】boot.img处理完毕", file=self.std)
+        print(f"【{'recovery移植完成' if self._flag('recovery_only_mode') else 'boot移植完成'}】{imgname}处理完毕", file=self.std)
         return True
 
     def __port_system(self):
@@ -1237,7 +1289,7 @@ class portutils:
             outname = f"MTK-Ported-{tool_version}.zip"
         else:
             outname = op.basename(self.port_source)
-        outpath = Path(f"out/{outname}")
+        outpath = self.outdir.joinpath(outname)
         if outpath.exists():
             print(f"【清理旧文件】删除已有 {outpath.name}", file=self.std)
             outpath.unlink()
@@ -1306,7 +1358,7 @@ class portutils:
                 '-C', str(config_dir.joinpath('system_fs_config')), 
                 '-S', str(config_dir.joinpath('system_file_contexts')),
                 '-L', 'system', '-a', 'system', 
-                "out/system_raw.img", "tmp/rom/system"
+                str(self.outdir.joinpath("system_raw.img")), "tmp/rom/system"
             ], verbose=False)
             
             if ret_code != 0:
@@ -1316,7 +1368,7 @@ class portutils:
             # 修复符号链接（支持 sparse/raw 两种格式）
             print(f"【符号链接修复】正在修复 system_raw.img 中的符号链接...", file=self.std)
             try:
-                fixed = fix_symlinks("out/system_raw.img", log=self.std)
+                fixed = fix_symlinks(str(self.outdir.joinpath("system_raw.img")), log=self.std)
                 print(f"  - 修复完成，共转换 {fixed} 个符号链接", file=self.std)
             except Exception as e:
                 print(f"  - 符号链接修复失败：{e}", file=self.std)
@@ -1324,7 +1376,7 @@ class portutils:
             # 修复 make_ext4fs 可能产生的 inode bitmap 未标记问题
             print(f"\n【inode bitmap 修复】正在检查并修复 inode bitmap...", file=self.std)
             try:
-                ib_fixed = fix_inode_bitmaps("out/system_raw.img", log=self.std)
+                ib_fixed = fix_inode_bitmaps(str(self.outdir.joinpath("system_raw.img")), log=self.std)
                 if ib_fixed > 0:
                     print(f"  - 修复完成，共修复 {ib_fixed} 个未标记 inode", file=self.std)
                 else:
@@ -1335,7 +1387,7 @@ class portutils:
             # 文件系统一致性自查
             print(f"【一致性自查】正在校验 system_raw.img 文件系统完整性...", file=self.std)
             try:
-                ok, errs = verify_image_integrity("out/system_raw.img", log=self.std)
+                ok, errs = verify_image_integrity(str(self.outdir.joinpath("system_raw.img")), log=self.std)
                 if ok:
                     print(f"  - 一致性自查通过", file=self.std)
                 else:
@@ -1345,7 +1397,7 @@ class portutils:
 
             # 转换为稀疏镜像
             print(f"【格式转换】将system_raw.img转为稀疏镜像...", file=self.std)
-            ret_code, _ = self.execv([img2simg_bin, "out/system_raw.img", "out/system.img"], verbose=False)
+            ret_code, _ = self.execv([img2simg_bin, str(self.outdir.joinpath("system_raw.img")), str(self.outdir.joinpath("system.img"))], verbose=False)
             if ret_code != 0:
                 print(f"【转换失败】稀疏镜像生成失败（返回码：{ret_code}）", file=self.std)
                 return
@@ -1353,7 +1405,7 @@ class portutils:
             # 转换为SDAT格式
             print(f"【格式转换】将system.img转为SDAT格式...", file=self.std)
             _rmtree("tmp/rom/system")
-            img2sdat("out/system.img", "tmp/rom", self.sdat_ver)
+            img2sdat(str(self.outdir.joinpath("system.img")), "tmp/rom", self.sdat_ver)
             # 注：img2sdat 的 OUTDIR 参数为文件名前缀（prefix + ".transfer.list"），
             # 三件套直接输出在 tmp/rom/ 根，zip 打包后即在 zip 根，无需移动
             if Path("tmp/rom/system.img").exists():
@@ -1380,16 +1432,30 @@ class portutils:
 
         # kernel-only 模式：只输出 boot.img，不打包 system.img
         if self._flag('kernel_only_mode'):
-            out_boot = Path("out/boot.img")
+            out_boot = self.outdir.joinpath("boot.img")
             out_boot.parent.mkdir(parents=True, exist_ok=True)
             src_boot = Path("tmp/rom/boot.img")
             if src_boot.exists():
                 out_boot.write_bytes(src_boot.read_bytes())
                 print(f"【kernel-only】仅输出 boot.img（不生成 system.img）", file=self.std)
-                print(f"  └─ boot.img：out/boot.img", file=self.std)
+                print(f"  └─ boot.img：{self.outdir.as_posix()}/boot.img", file=self.std)
             else:
                 print(f"【kernel-only】错误：未找到 tmp/rom/boot.img", file=self.std)
             print(f"\n【打包完成】kernel-only 模式，仅 boot.img", file=self.std)
+            return
+
+        # recovery-only 模式：只输出 recovery.img，不打包 system.img
+        if self._flag('recovery_only_mode'):
+            out_rec = self.outdir.joinpath("recovery.img")
+            out_rec.parent.mkdir(parents=True, exist_ok=True)
+            src_rec = Path("tmp/rom/recovery.img")
+            if src_rec.exists():
+                out_rec.write_bytes(src_rec.read_bytes())
+                print(f"【recovery-only】仅输出 recovery.img（不生成 system.img）", file=self.std)
+                print(f"  └─ recovery.img：{self.outdir.as_posix()}/recovery.img", file=self.std)
+            else:
+                print(f"【recovery-only】错误：未找到 tmp/rom/recovery.img", file=self.std)
+            print(f"\n【打包完成】recovery-only 模式，仅 recovery.img", file=self.std)
             return
 
         updater = Path("tmp/rom/META-INF/com/google/android/updater-script")
@@ -1500,7 +1566,7 @@ class portutils:
         print(f"  ├─ 权限配置：{config_dir}/system_fs_config", file=self.std)
         print(f"  ├─ SELinux上下文：{config_dir}/system_file_contexts", file=self.std)
         print(f"  ├─ 源目录：tmp/rom/system", file=self.std)
-        print(f"  └─ 输出路径：out/system.img", file=self.std)
+        print(f"  └─ 输出路径：{self.outdir.as_posix()}/system.img", file=self.std)
         
         print(f"\n【执行中】正在创建system.img文件系统...", file=self.std)
         make_ext4fs_cmd = [
@@ -1509,7 +1575,7 @@ class portutils:
             '-C', str(config_dir.joinpath('system_fs_config')),
             '-S', str(config_dir.joinpath('system_file_contexts')),
             '-L', 'system', '-a', 'system',
-            "out/system.img", "tmp/rom/system"
+            str(self.outdir.joinpath("system.img")), "tmp/rom/system"
         ]
         
         # 执行命令并获取输出
@@ -1533,13 +1599,13 @@ class portutils:
             print(f"【生成成功】system.img创建完成！", file=self.std)
             print(f"  ├─ 权限配置条目：{fs_config_count} 条", file=self.std)
             print(f"  ├─ 实际镜像大小：{actual_size_info}", file=self.std)
-            print(f"  └─ 输出路径：out/system.img", file=self.std)
+            print(f"  └─ 输出路径：{self.outdir.as_posix()}/system.img", file=self.std)
 
             # 修复符号链接：Windows 解包/打包会把符号链接打成 !<symlink> 标记文件，
             # 这里在 ext4 镜像上把标记文件转回真正的符号链接
             print(f"\n【符号链接修复】正在将 !<symlink> 标记转回真正的符号链接...", file=self.std)
             try:
-                fixed = fix_symlinks("out/system.img", log=self.std)
+                fixed = fix_symlinks(str(self.outdir.joinpath("system.img")), log=self.std)
                 print(f"  - 修复完成，共转换 {fixed} 个符号链接", file=self.std)
             except Exception as e:
                 print(f"  - 符号链接修复失败（不影响其它步骤，但建议检查镜像）：{e}", file=self.std)
@@ -1547,7 +1613,7 @@ class portutils:
             # 修复 make_ext4fs 可能产生的 inode bitmap 未标记问题
             print(f"\n【inode bitmap 修复】正在检查并修复 inode bitmap...", file=self.std)
             try:
-                ib_fixed = fix_inode_bitmaps("out/system.img", log=self.std)
+                ib_fixed = fix_inode_bitmaps(str(self.outdir.joinpath("system.img")), log=self.std)
                 if ib_fixed > 0:
                     print(f"  - 修复完成，共修复 {ib_fixed} 个未标记 inode", file=self.std)
                 else:
@@ -1558,7 +1624,7 @@ class portutils:
             # 文件系统一致性自查（组校验和 / 位图 / 目录项类型 / 标记残留）
             print(f"\n【一致性自查】正在校验 system.img 文件系统完整性...", file=self.std)
             try:
-                ok, errs = verify_image_integrity("out/system.img", log=self.std)
+                ok, errs = verify_image_integrity(str(self.outdir.joinpath("system.img")), log=self.std)
                 if ok:
                     print(f"  - 一致性自查通过", file=self.std)
                 else:
@@ -1573,12 +1639,12 @@ class portutils:
         
         # 复制boot.img
         print(f"\n【复制文件】复制移植后的boot.img到out目录...", file=self.std)
-        Path("out/boot.img").write_bytes(Path("tmp/rom/boot.img").read_bytes())
+        self.outdir.joinpath("boot.img").write_bytes(Path("tmp/rom/boot.img").read_bytes())
         
         # 最终提示
         print(f"\n【打包完成】img镜像生成完毕！", file=self.std)
-        print(f"  ├─ boot.img：out/boot.img", file=self.std)
-        print(f"  └─ system.img：out/system.img", file=self.std)
+        print(f"  ├─ boot.img：{self.outdir.as_posix()}/boot.img", file=self.std)
+        print(f"  └─ system.img：{self.outdir.as_posix()}/system.img", file=self.std)
         
 
     def __pack_fit_size(self):
@@ -1610,18 +1676,50 @@ class portutils:
         print(f"  ├─ 输出类型：{'img镜像' if self.genimg else 'zip卡刷包'}", file=self.std)
         print(f"  ├─ 移植源类型：{'zip卡刷包' if self.source_type == 'zip' else '单独img镜像'}", file=self.std)
         # 输入文件概览（路径 + 大小）
-        print(f"  ├─ 底包 boot：{self.bootimg}（{_fmt_size(Path(self.bootimg).stat().st_size)}）", file=self.std)
-        print(f"  ├─ 底包 system：{self.sysimg}（{_fmt_size(Path(self.sysimg).stat().st_size)}）", file=self.std)
-        if self.source_type == 'zip':
-            print(f"  └─ 移植包：{self.port_source}（{_fmt_size(Path(self.port_source).stat().st_size)}）", file=self.std)
+        if self._flag('lk_patch_mode'):
+            # LK去警告：输入为固件目录（自动检测 lk/lk2）
+            print(f"  ├─ 固件目录：{self.bootimg}", file=self.std)
+            try:
+                from .LKPatch import detect_lk_files as _dlk
+                _lks = [op.basename(f) for f in _dlk(self.bootimg)]
+                print(f"  └─ 检测到 LK 镜像：{'、'.join(_lks) if _lks else '（未检测到）'}", file=self.std)
+            except Exception:
+                pass
         else:
-            pb, ps = self.port_source
+            print(f"  ├─ 底包 boot：{self.bootimg}（{_fmt_size(Path(self.bootimg).stat().st_size)}）", file=self.std)
+            if self.sysimg:
+                print(f"  ├─ 底包 system：{self.sysimg}（{_fmt_size(Path(self.sysimg).stat().st_size)}）", file=self.std)
+            else:
+                print(f"  ├─ 底包 system：不参与（本方案无需 system）", file=self.std)
+            if self.source_type == 'zip':
+                print(f"  └─ 移植包：{self.port_source}（{_fmt_size(Path(self.port_source).stat().st_size)}）", file=self.std)
+            else:
+                pb, ps = self.port_source
             print(f"  ├─ 移植用 boot：{pb}（{_fmt_size(Path(pb).stat().st_size)}）", file=self.std)
-            print(f"  └─ 移植用 system：{ps}（{_fmt_size(Path(ps).stat().st_size)}）", file=self.std)
+            if ps:
+                print(f"  └─ 移植用 system：{ps}（{_fmt_size(Path(ps).stat().st_size)}）", file=self.std)
+            else:
+                print(f"  └─ 移植用 system：不参与（本方案无需 system）", file=self.std)
         
-        # kernel-only + zip 输出二次拦截：UI 已拦截，此处防绕过 UI 直接调用
+        # kernel-only / recovery-only + zip 输出二次拦截：UI 已拦截，此处防绕过 UI 直接调用
         if self._flag('kernel_only_mode') and not self.genimg:
             print(f"【移植失败】kernel-only（仅替换内核）仅支持 img 输出，请将输出类型切换为 img", file=self.std)
+            return
+        if self._flag('recovery_only_mode') and not self.genimg:
+            print(f"【移植失败】recovery-only（仅移植Recovery）仅支持 img 输出，请将输出类型切换为 img", file=self.std)
+            return
+        if self._flag('recovery_only_mode') and self.source_type == 'zip':
+            print(f"【移植失败】recovery-only（仅移植Recovery）仅支持 img 移植源（不支持 zip 卡刷包源）", file=self.std)
+            return
+
+        # LK去警告 模式：直接执行 LK 打补丁（无解包 / 无 system 参与）
+        if self._flag('lk_patch_mode'):
+            if not self.genimg:
+                print(f"【移植失败】LK去警告（仅去警告）仅支持 img 输出", file=self.std)
+                return
+            from .LKPatch import run_lk_patch
+            _ok = run_lk_patch(self.bootimg, self.std)
+            print(f"\n【流程结束】LK去警告{'成功' if _ok else '失败'}，流程结束", file=self.std)
             return
 
         try:
@@ -1629,9 +1727,11 @@ class portutils:
             if not self.__port_boot():
                 print(f"【移植失败】boot.img移植过程出错", file=self.std)
                 return
-            # kernel-only 模式：只处理 boot.img，跳过 system.img
+            # kernel-only / recovery-only 模式：只处理 boot/recovery，跳过 system.img
             if self._flag('kernel_only_mode'):
                 print(f"\n【kernel-only】仅替换内核模式，跳过 system.img 处理", file=self.std)
+            elif self._flag('recovery_only_mode'):
+                print(f"\n【recovery-only】仅移植Recovery模式，跳过 system.img 处理", file=self.std)
             else:
                 self.__port_system()
             

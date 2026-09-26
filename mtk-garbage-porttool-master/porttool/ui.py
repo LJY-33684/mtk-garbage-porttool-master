@@ -801,7 +801,7 @@ class MyUI(ttk.Labelframe):
         optframe = ttk.Frame(self)
         
         # 芯片类型选择
-        optlabel = ttk.Frame(optframe)
+        optlabel = ttk.Label(optframe)
         ttk.Label(optlabel, text="芯片类型", anchor='e').pack(side='left', padx=5, pady=5)
         self.chipset_menu = ttk.OptionMenu(
             optlabel, 

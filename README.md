@@ -207,7 +207,6 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 <img width="1509" height="619" alt="image" src="https://github.com/user-attachments/assets/0383b891-e021-4021-a738-aabd3137b60e" />
 
-
 ## 感谢[@affggh](https://github.com/affggh)分享的原文件，此移植工具基于原工具进行的改进 / Thanks to [@affggh](https://github.com/affggh) for sharing the original files. This porting tool is an improvement based on the original tool.
 
 原作者/Original Author [@affggh](https://github.com/affggh)
@@ -258,5 +257,3 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <img width="1284" height="2280" alt="qrcode_1790395495264" src="https://github.com/user-attachments/assets/60010279-d11e-4c42-8148-3f69d9283a9a" />
 
 <img width="1284" height="2280" alt="qrcode_1790395471488" src="https://github.com/user-attachments/assets/4e67f913-927e-4108-8fad-6470730f57e1" />
-
-

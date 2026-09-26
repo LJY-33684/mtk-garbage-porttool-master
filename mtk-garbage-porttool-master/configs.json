@@ -369,11 +369,29 @@
                 "vendor/etc/.tp"
             ],
             "wifi": [
+                "bin/netcfg",
+                "bin/dhcpcd",
+                "bin/ifconfig",
+                "bin/hostap",
+                "bin/hostapd",
+                "bin/hostapd_bin",
+                "bin/pcscd",
+                "bin/wlan*",
+                "bin/wpa*",
+                "bin/netd",
+                "lib/libhardware_legacy.so",
+                "lib64/libhardware_legacy.so",
+                "lib/libwpa_client.so",
+                "lib64/libwpa_client.so",
+                "lib/libwifi-service.so",
+                "lib64/libwifi-service.so",
                 "etc/wifi/wpa_supplicant.conf",
                 "etc/wifi/p2p_supplicant.conf",
-                "vendor/etc/wifi",
                 "vendor/firmware/wifi*",
-                "vendor/firmware/WIFI*"
+                "vendor/firmware/WIFI*",
+                "vendor/bin/netdiag",
+                "vendor/lib/libem_wifi_jni.so",
+                "vendor/lib64/libem_wifi_jni.so"
             ],
             "camera": [
                 "lib/hw/camera.*",

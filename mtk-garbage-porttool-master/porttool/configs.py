@@ -173,14 +173,13 @@ support_chipset_portstep = {
                 'vendor/etc/.tp'
             ],
             'wifi': [
-                'bin/wpa_supplicant',
-                'bin/hostapd',
-                'bin/wpa_cli',
-                'etc/wifi',
-                'lib/libwpa_client.so',
-                'lib/libwifi-service.so'
-            ]
-        }
+            'bin/wpa_supplicant',
+            'bin/hostapd',
+            'bin/wpa_cli',
+            'etc/wifi',
+            'lib/libwpa_client.so',
+            'lib/libwifi-service.so'
+        ],        }
     },
     'G79 (mt6735/mt6735m/mt6737) kernel-3.18.19': {
         'partitions': {
@@ -230,11 +229,11 @@ support_chipset_portstep = {
                 'initrd/fstab.mt6737'
             ],
             'init': [
-                'initrd/init.mt6735.rc',
-                'initrd/init.mt6737.rc',
-                'initrd/init.mt6735.usb.rc',
-                'initrd/init.project.rc'
-            ],
+            'initrd/init.mt6735.rc',
+            'initrd/init.mt6737.rc',
+            'initrd/init.mt6735.usb.rc',
+            'initrd/init.project.rc'
+        ],
             'firmware': [
                 'etc/firmware',
                 'vendor/firmware'
@@ -379,30 +378,30 @@ support_chipset_portstep = {
                 'vendor/etc/.tp'
             ],
             'wifi': [
-                'bin/netcfg',
-                'bin/dhcpcd',
-                'bin/ifconfig',
-                'bin/hostap',
-                'bin/hostapd',
-                'bin/hostapd_bin',
-                'bin/pcscd',
-                'bin/wlan*',
-                'bin/wpa*',
-                'bin/netd',
-                'lib/libhardware_legacy.so',
-                'lib64/libhardware_legacy.so',
-                'lib/libwpa_client.so',
-                'lib64/libwpa_client.so',
-                'lib/libwifi-service.so',
-                'lib64/libwifi-service.so',
-                'etc/wifi/wpa_supplicant.conf',
-                'etc/wifi/p2p_supplicant.conf',
-                'vendor/firmware/wifi*',
-                'vendor/firmware/WIFI*',
-                'vendor/bin/netdiag',
-                'vendor/lib/libem_wifi_jni.so',
-                'vendor/lib64/libem_wifi_jni.so'
-            ],
+            'bin/netcfg',
+            'bin/dhcpcd',
+            'bin/ifconfig',
+            'bin/hostap',
+            'bin/hostapd',
+            'bin/hostapd_bin',
+            'bin/pcscd',
+            'bin/wlan*',
+            'bin/wpa*',
+            'bin/netd',
+            'lib/libhardware_legacy.so',
+            'lib64/libhardware_legacy.so',
+            'lib/libwpa_client.so',
+            'lib64/libwpa_client.so',
+            'lib/libwifi-service.so',
+            'lib64/libwifi-service.so',
+            'etc/wifi/wpa_supplicant.conf',
+            'etc/wifi/p2p_supplicant.conf',
+            'vendor/firmware/wifi*',
+            'vendor/firmware/WIFI*',
+            'vendor/bin/netdiag',
+            'vendor/lib/libem_wifi_jni.so',
+            'vendor/lib64/libem_wifi_jni.so'
+        ],
             'camera': [
                 'lib/hw/camera.*',
                 'lib64/hw/camera.*',
@@ -649,14 +648,13 @@ support_chipset_portstep = {
                 'vendor/lib/hw/camera.*'
             ],
             'wifi': [
-                'bin/wpa_supplicant',
-                'bin/hostapd',
-                'bin/wpa_cli',
-                'etc/wifi',
-                'lib/libwpa_client.so',
-                'lib/libwifi-service.so'
-            ]
-        }
+            'bin/wpa_supplicant',
+            'bin/hostapd',
+            'bin/wpa_cli',
+            'etc/wifi',
+            'lib/libwpa_client.so',
+            'lib/libwifi-service.so'
+        ],        }
     },
     'mt8163/mt8127/mt8167 (平板, Android 5.1-7.1.2)': {
         'partitions': {
@@ -702,8 +700,8 @@ support_chipset_portstep = {
             ],
             'init': [
 
-            ],
-            'fstab': [
+        ],
+        'fstab': [
                 'initrd/fstab',
                 'initrd/fstab.mt8163',
                 'initrd/fstab.mt8127',
@@ -806,12 +804,12 @@ support_chipset_portstep = {
                 'vendor/etc/.tp'
             ],
             'wifi': [
-                'etc/wifi/wpa_supplicant.conf',
-                'etc/wifi/p2p_supplicant.conf',
-                'vendor/etc/wifi',
-                'vendor/firmware/wifi*',
-                'vendor/firmware/WIFI*'
-            ],
+            'etc/wifi/wpa_supplicant.conf',
+            'etc/wifi/p2p_supplicant.conf',
+            'vendor/etc/wifi',
+            'vendor/firmware/wifi*',
+            'vendor/firmware/WIFI*'
+        ],
             'camera': [
                 'lib/hw/camera.*',
                 'lib64/hw/camera.*',
@@ -882,11 +880,11 @@ support_chipset_portstep = {
                 'initrd/fstab.mt6797'
             ],
             'init': [
-                'initrd/init.mt6797.rc',
-                'initrd/init.mt6797.usb.rc',
-                'initrd/init.project.rc',
-                'initrd/init.target.performance.rc'
-            ],
+            'initrd/init.mt6797.rc',
+            'initrd/init.mt6797.usb.rc',
+            'initrd/init.project.rc',
+            'initrd/init.target.performance.rc'
+        ],
             'firmware': [
                 'etc/firmware',
                 'vendor/firmware'
@@ -1048,30 +1046,30 @@ support_chipset_portstep = {
                 'vendor/etc/.tp'
             ],
             'wifi': [
-                'bin/netcfg',
-                'bin/dhcpcd',
-                'bin/ifconfig',
-                'bin/hostap',
-                'bin/hostapd',
-                'bin/hostapd_bin',
-                'bin/pcscd',
-                'bin/wlan*',
-                'bin/wpa*',
-                'bin/netd',
-                'lib/libhardware_legacy.so',
-                'lib64/libhardware_legacy.so',
-                'lib/libwpa_client.so',
-                'lib64/libwpa_client.so',
-                'lib/libwifi-service.so',
-                'lib64/libwifi-service.so',
-                'etc/wifi/wpa_supplicant.conf',
-                'etc/wifi/p2p_supplicant.conf',
-                'vendor/firmware/wifi*',
-                'vendor/firmware/WIFI*',
-                'vendor/bin/netdiag',
-                'vendor/lib/libem_wifi_jni.so',
-                'vendor/lib64/libem_wifi_jni.so'
-            ],
+            'bin/netcfg',
+            'bin/dhcpcd',
+            'bin/ifconfig',
+            'bin/hostap',
+            'bin/hostapd',
+            'bin/hostapd_bin',
+            'bin/pcscd',
+            'bin/wlan*',
+            'bin/wpa*',
+            'bin/netd',
+            'lib/libhardware_legacy.so',
+            'lib64/libhardware_legacy.so',
+            'lib/libwpa_client.so',
+            'lib64/libwpa_client.so',
+            'lib/libwifi-service.so',
+            'lib64/libwifi-service.so',
+            'etc/wifi/wpa_supplicant.conf',
+            'etc/wifi/p2p_supplicant.conf',
+            'vendor/firmware/wifi*',
+            'vendor/firmware/WIFI*',
+            'vendor/bin/netdiag',
+            'vendor/lib/libem_wifi_jni.so',
+            'vendor/lib64/libem_wifi_jni.so'
+        ],
             'camera': [
                 'lib/hw/camera.*',
                 'lib64/hw/camera.*',
@@ -1212,11 +1210,11 @@ support_chipset_portstep = {
                 'initrd/fstab.mt6737'
             ],
             'init': [
-                'initrd/init.mt6735.rc',
-                'initrd/init.mt6737.rc',
-                'initrd/init.mt6735.usb.rc',
-                'initrd/init.project.rc'
-            ],
+            'initrd/init.mt6735.rc',
+            'initrd/init.mt6737.rc',
+            'initrd/init.mt6735.usb.rc',
+            'initrd/init.project.rc'
+        ],
             'firmware': [
                 'etc/firmware',
                 'vendor/firmware'
@@ -1361,27 +1359,27 @@ support_chipset_portstep = {
                 'vendor/etc/.tp'
             ],
             'wifi': [
-                'bin/netcfg',
-                'bin/dhcpcd',
-                'bin/ifconfig',
-                'bin/hostap',
-                'bin/hostapd',
-                'bin/hostapd_bin',
-                'bin/pcscd',
-                'bin/wlan*',
-                'bin/wpa*',
-                'bin/netd',
-                'lib/libhardware_legacy.so',
-                'lib64/libhardware_legacy.so',
-                'lib/libwpa_client.so',
-                'lib64/libwpa_client.so',
-                'lib/libwifi-service.so',
-                'lib64/libwifi-service.so',
-                'etc/wifi',
-                'vendor/bin/netdiag',
-                'vendor/lib/libem_wifi_jni.so',
-                'vendor/lib64/libem_wifi_jni.so'
-            ],
+            'bin/netcfg',
+            'bin/dhcpcd',
+            'bin/ifconfig',
+            'bin/hostap',
+            'bin/hostapd',
+            'bin/hostapd_bin',
+            'bin/pcscd',
+            'bin/wlan*',
+            'bin/wpa*',
+            'bin/netd',
+            'lib/libhardware_legacy.so',
+            'lib64/libhardware_legacy.so',
+            'lib/libwpa_client.so',
+            'lib64/libwpa_client.so',
+            'lib/libwifi-service.so',
+            'lib64/libwifi-service.so',
+            'etc/wifi',
+            'vendor/bin/netdiag',
+            'vendor/lib/libem_wifi_jni.so',
+            'vendor/lib64/libem_wifi_jni.so'
+        ],
             'camera': [
                 'lib/hw/camera.*',
                 'lib64/hw/camera.*',
@@ -1511,17 +1509,17 @@ support_chipset_portstep = {
                 'initrd/etc/recovery.fstab'
             ],
             'init': [
-                'initrd/init.rc',
-                'initrd/init.recovery.rc',
-                'initrd/init.mt6572.rc',
-                'initrd/init.mt6582.rc',
-                'initrd/init.mt6580.rc',
-                'initrd/init.mt6735.rc',
-                'initrd/init.mt6737.rc',
-                'initrd/init.mt6750.rc',
-                'initrd/init.mt6755.rc',
-                'initrd/init.mt6797.rc'
-            ]
+            'initrd/init.rc',
+            'initrd/init.recovery.rc',
+            'initrd/init.mt6572.rc',
+            'initrd/init.mt6582.rc',
+            'initrd/init.mt6580.rc',
+            'initrd/init.mt6735.rc',
+            'initrd/init.mt6737.rc',
+            'initrd/init.mt6750.rc',
+            'initrd/init.mt6755.rc',
+            'initrd/init.mt6797.rc'
+        ]
         }
     },
     '仅移植内核 (只输出boot)': {

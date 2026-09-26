@@ -6,6 +6,7 @@ import os
 import sys
 import struct
 import hashlib
+import io
 from stat import *
 import shutil
 from gzip import GzipFile
@@ -138,7 +139,24 @@ def parse_bootimg(bootimg):
     """
 
     bootinfo = open('bootinfo.txt', 'w', encoding='utf-8')
-    #check_mtk_head(bootimg, bootinfo)
+    # 先检测并记录 MTK 头（0x58881688），repack 时由 try_add_head 还原，避免带头镜像丢头
+    # 必须在 ANDROID! 搜索之前调用（此时文件指针在开头）
+    check_mtk_head(bootimg, bootinfo)
+
+    # ------------------------------------------------------------
+    # 自动搜索 ANDROID! 魔数，跳过任何前缀（如 MTK 头部）
+    # ------------------------------------------------------------
+    bootimg.seek(0, 0)
+    _data = bootimg.read()
+    _android_pos = _data.find(b'ANDROID!')
+    if _android_pos == -1:
+        raise ValueError('Could not find ANDROID! magic in boot.img')
+    if _android_pos != 0:
+        sys.stderr.write('Found ANDROID! at offset 0x%x, skipping %d bytes.\n' % (_android_pos, _android_pos))
+        bootimg.seek(_android_pos, 0)
+    else:
+        bootimg.seek(0, 0)
+    # ------------------------------------------------------------
 
     (magic,
      kernel_size, kernel_addr,
@@ -148,6 +166,22 @@ def parse_bootimg(bootimg):
      name, cmdline, id4x8
     ) = struct.unpack('<8s10I16s512s32s', bootimg.read(608))
     bootimg.seek(page_size - 608, 1)
+
+    # hdr[9]/hdr[10] 在 boot header v1+（Android 8+）中是 header_version / os_version
+    header_version = dt_size
+    os_version = zero
+    if ramdisk_size == 0:
+        if header_version >= 1:
+            # Android 8+ system-as-root：boot 无 ramdisk 属正常，设备以 /system 为根
+            sys.stderr.write('【提示】ramdisk_size=0 —— 该 boot 为 Android 8+ 的 '
+                             'system-as-root（SAR）结构（boot header v%d，Android 9 起强制）。'
+                             'boot 无 ramdisk 属正常：设备以 /system 作为根分区启动。'
+                             '本工具面向 Android 7 及以下老设备；Android 8+ 设备请改用 GSI 方案。\n'
+                             % header_version)
+        else:
+            # 老设备（Android <=7）boot 必须有 ramdisk，缺失将无法开机
+            sys.stderr.write('【警告】ramdisk_size=0，该 boot 没有 ramdisk。'
+                             '若目标设备运行 Android 7 及以下，移植产物将无 ramdisk，可能无法开机。\n')
 
     base = kernel_addr - 0x00008000
     assert magic.decode('latin') == 'ANDROID!', 'invald bootimg'
@@ -181,7 +215,8 @@ def parse_bootimg(bootimg):
         if bootimg.read(page_size) == struct.pack('%ds' % page_size, b''):
             continue
         bootimg.seek(-page_size, 1)
-        size = bootimg.tell()
+        # 有 MTK 头等前缀时，tell() 是绝对偏移，需减去前缀长度才是对齐基准
+        size = bootimg.tell() - _android_pos
         break
 
     padding = lambda x: (~x + 1) & (size - 1)
@@ -312,6 +347,12 @@ def parse_cpio(cpio, directory, cpiolist):
             except os.error: pass
             cpiolist.write('dir\t%s\t%s\n' % (name, srwx))
         elif S_ISREG(mode):
+            parent = os.path.dirname(path)
+            if parent and not os.path.isdir(parent):
+                try:
+                    os.makedirs(parent)
+                except os.error:
+                    pass
             tmp = open(path, 'wb')
             tmp.write(cpio.read(filesize))
             cpio.read(padding(filesize))
@@ -780,22 +821,59 @@ def unpack_ramdisk(ramdisk=None, directory=None):
     check_mtk_head(tmp, cpiolist)
     pos = tmp.tell()
 
+    # 空 ramdisk（ramdisk_size=0 / 被剥离）：提示但不断言成败（SAR 设备属正常）
+    if os.path.getsize(ramdisk) == 0:
+        sys.stderr.write('【提示】ramdisk 为空（0 字节）—— Android 8+ SAR'
+                         '（system-as-root）结构属正常；仅当目标设备为 Android 7 '
+                         '及以下且缺失 ramdisk 时才会无法开机。\n')
+        os.makedirs(directory, exist_ok=True)
+        shutil.copy2(ramdisk, os.path.join(directory, 'ramdisk.raw'))
+        cpiolist.write('compress_level:0\n')
+        tmp.close()
+        cpiolist.close()
+        return
+
     compress_level = 0
     magic = tmp.read(6)
-    if magic[:3] == struct.pack('3B', 0x1f, 0x8b, 0x08):
-        tmp.seek(pos, 0)
+    tmp.seek(pos, 0)
+
+    if magic[:3] == b'\x1f\x8b\x08':
+        # gzip
+        import gzip
+        sys.stderr.write('Detected gzip compressed ramdisk\n')
+        gz = gzip.GzipFile(fileobj=tmp)
+        cpio_data = gz.read()
+        gz.close()
+        cpio = io.BytesIO(cpio_data)
         compress_level = 6
-        cpio = CPIOGZIP(None, 'rb', compress_level, tmp)
-    elif magic.decode('latin') == '070701':
-        tmp.seek(pos, 0)
+    elif magic[:6] == b'070701':
+        # raw cpio
+        sys.stderr.write('Detected raw cpio ramdisk\n')
         cpio = tmp
+        compress_level = 0
     else:
-        tmp.close()
-        raise IOError('invalid ramdisk')
+        # lz4（项目内置纯 Python 解压 lz4.py，零依赖；支持标准 frame/依赖块/legacy/裸块）
+        try:
+            # 优先相对导入命中包内纯 Python 实现（真实运行环境下 sys.path 顶层无 lz4.py）
+            try:
+                from . import lz4 as _lz4
+            except ImportError:
+                import lz4 as _lz4
+            data = tmp.read()
+            cpio = io.BytesIO(_lz4.decompress(data))
+            compress_level = 0
+            sys.stderr.write('Detected lz4 compressed ramdisk\n')
+        except Exception as e:
+            sys.stderr.write('【移植失败】ramdisk 疑似 lz4 压缩，但解压失败：%s\n' % str(e))
+            sys.stderr.write('（厂家可能使用非标准 lz4 变体；若确认该包正常，请反馈此 boot 样本供完善 lz4 解压器）\n')
+            tmp.close()
+            cpiolist.close()
+            raise
 
     cpiolist.write('compress_level:%d\n' % compress_level)
     sys.stderr.write('compress: %s\n' % (compress_level > 0))
     parse_cpio(cpio, directory, cpiolist)
+    tmp.close()
 
 
 def repack_ramdisk(cpiolist=None):

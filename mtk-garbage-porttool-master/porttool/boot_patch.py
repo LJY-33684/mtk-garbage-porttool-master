@@ -32,7 +32,7 @@ def grep_prop(key, file) -> str:
             if key in i:
                 return i.split("=")[1].rstrip("\n")
 
-def parseMagiskApk(apk: str, arch:["arm64", "arm", "x86", "x86_64"]="arm64", log=stderr):
+def parseMagiskApk(apk: str, arch: str = "arm64", log=stderr):
     """
     This function will extract useful file from magisk.apk
     """

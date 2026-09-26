@@ -16,15 +16,7 @@ def main(INPUT_IMAGE, OUTDIR='.', VERSION=None, PREFIX='system'):
 
     __version__ = '1.7'
 
-    if sys.hexversion < 0x02070000:
-        print >> sys.stderr, "Python 2.7 or newer is required."
-        try:
-            input = raw_input
-        except NameError: pass
-        input('Press ENTER to exit...')
-        sys.exit(1)
-    else:
-        print('img2sdat binary - version: %s\n' % __version__)
+    print('img2sdat binary - version: %s\n' % __version__)
         
     if not os.path.isdir(OUTDIR):
         os.makedirs(OUTDIR)
@@ -39,9 +31,6 @@ def main(INPUT_IMAGE, OUTDIR='.', VERSION=None, PREFIX='system'):
             3. Android Marshmallow 6.0
             4. Android Nougat 7.0/7.1/8.0/8.1
             ''')
-            try:
-                input = raw_input
-            except NameError: pass
             item = input('Choose system version: ')
             if item == '1':
                 VERSION = 1
