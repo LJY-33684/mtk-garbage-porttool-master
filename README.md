@@ -250,6 +250,50 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - 1.2-beta4：更新检查（GitHub/Gitee双源、静默启动检查、30s超时）；base缓存与“完成后清除base目录”选项；API版本检测与跨大版本/VNDK警告；sparse镜像支持；仅移植内核只输出boot；左下角版本号显示、Magisk选择按钮
   - 1.2-beta4: Update check (GitHub/Gitee sources, silent startup check, 30s timeout); base cache & "clear base after completion" option; API version detection with cross-version/VNDK warnings; sparse image support; kernel-only outputs boot only; version label at bottom-left, Magisk picker button.
 
+## 性能参考 / Performance Reference
+
+> 估算基准 / Baseline：底包 system 2.8GB + 移植源 system 0.94GB，全量移植（boot+system），img 镜像输出。
+> 估算模型 / Model：总时长 ≈ 底包大小(GB)×1.5s + 移植源大小(GB)×1.2s + 固定开销约5s，再按 CPU 单核能力与磁盘写入速度打折。
+
+| 配置档次 / Tier | CPU 示例 / Example | 磁盘类型 / Disk | 预估时长 / Est. time | 主要瓶颈 / Bottleneck |
+|---|---|---|---|---|
+| 高端 High-end | i7-13650HX / i9 HX（8核+，P核4.5GHz+） | Gen4 NVMe | ~15s | 无瓶颈 none |
+| 中高端 Upper-mid | i5-12/13代 / R5-5代（6核） | Gen3 NVMe | ~30~45s | 写速 ~1.5GB/s 上限 |
+| 中端 Mid | i5-8/10代 / R5-3代（4核） | SATA SSD | 1~1.5 分钟 | 单核 + SSD 写 ~450MB/s |
+| 入门 Entry | 赛扬/老奔腾（双核） | SATA SSD | 2~3 分钟 | 单核 |
+| 低端 Low-end | 双核 2GHz 级 | 机械盘 7200rpm | 5~10 分钟 | 机械盘 ~100MB/s |
+| 下限 Floor | 老双核 + 机械盘 + 5GB+ 镜像 | 机械盘 | 15~30 分钟 | 机械盘近乎全占 |
+
+**镜像规模影响 / Impact of image size**（同一台机器 / same machine）：
+
+| 底包大小 / Base size | 高端 High-end | 中端 Mid | 低端 Low-end |
+|---|---|---|---|
+| ~1 GB（入门机 ROM） | ~8s | ~40s | 2~4 分钟 |
+| ~3 GB | ~15s | 1~1.5 分钟 | 5~10 分钟 |
+| ~6 GB（大 ROM） | ~25s | 2~3 分钟 | 10~20 分钟 |
+
+**规律 / Notes**：
+- 磁盘 > CPU：镜像越大磁盘占比越高，机械盘换 SATA SSD 通常提速 4~6 倍 / Disk matters more than CPU on large images; HDD→SATA SSD usually gives 4-6x speedup.
+- 固定开销约 5s（boot 流程/启动/清理），小镜像时占比高 / ~5s fixed overhead (boot flow/startup/cleanup), dominant on small images.
+- 流程串行，多核基本用不上，单核快才是关键 / Pipeline is serial; single-core speed matters more than core count.
+- 输出 zip 卡刷包比 img 多一段 img2sdat 差分计算（约 +10~20%）/ Zip output adds img2sdat diffing (~+10-20%).
+
+### 实机测试 / Real-Machine Test
+
+2026-09-26 实测（底包 山寨机 szj 2.8GB + 移植源 巴枪 bq 0.94GB，方案 mt6572/mt6582/mt6592 kernel-3.4.67，全量 img 输出）：
+
+| 项 / Item | 值 / Value |
+|---|---|
+| 机器 / Machine | THUNDEROBOT R16 雷神笔记本 |
+| CPU | Intel Core i7-13650HX（14核20线程，睿频4.9GHz） |
+| 内存 / RAM | 16GB DDR5 4800MHz |
+| 硬盘 / Disk | Crucial P3 Plus 1TB NVMe（Gen4） |
+| 系统 / OS | Windows 11 专业版 |
+| 解包（底包+移植源 3.7GB） | 4.2s |
+| system 移植（驱动替换 + build.prop） | 5.9s |
+| 打包（make_ext4fs 2.79GB + 符号链接修复 + 一致性自查） | 2.5s |
+| **总时长 / Total** | **14.8s** |
+
 ## 改进者QQ/邮箱 / Improver's QQ/Email
 
 3368436451@qq.com
