@@ -1,4 +1,4 @@
-# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
+﻿# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
 > 当前版本 / Current version：**1.3-beta1**
 
@@ -35,8 +35,8 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 - Structured logging: Clearly displays each operation step (e.g., "Unpacking boot.img", "Replacing kernel files") for easier troubleshooting.
 - 单实例保护：同一目录仅允许运行一个实例；再次启动可跳转至正在运行的程序，或清除残留状态锁（强杀后自动接管，不再误锁死）
 - Single-instance guard: only one instance per directory; re-launch can jump to the running instance or clear the stale lock (auto-takeover after force-kill).
-- 时间戳输出目录：移植/打补丁输出统一保存到 out/20260926-10：26：45/ 时间戳目录，各方案底部“打开输出目录”按钮一键跳转
-- Timestamped output dirs (out/20260926-10：26：45/); an "Open Output Dir" button at the bottom of every mode opens the latest output.
+- 时间戳输出目录：移植/打补丁输出统一保存到 out/<时间戳>/ 实时时间戳目录（每次点击开始移植/打补丁时按当前时间生成，如 out/20260926-10：26：45/），各方案底部“打开输出目录”按钮一键跳转
+- Timestamped output dirs (out/<timestamp>/, generated in real time at each run, e.g. out/20260926-10：26：45/); an "Open Output Dir" button at the bottom of every mode opens the latest output.
 
 - **4. 多方案与自动识别 / Presets & Auto Mode：**
 - 内置7套预设方案：mt6572/mt6582/mt6592、G79(mt6735/mt6737)、mt6580/mt8321、mt8163平板、**mt6797(Helio X20/X25)** 等
@@ -233,8 +233,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
 ## 近期更新 / Recent Updates
-- 1.3-beta1（自 beta6 之后的所有改动 / all changes after beta6）：新增恢复模式移植（仅移植Recovery，独立 recovery.img 流程，参考 [Xxinn034/mtk-legacy-porttool](https://github.com/Xxinn034/mtk-legacy-porttool) 分支实现）；整合 LK 去警告工具（兼容大多数安卓版本，去Orange/Red警告+5s延时，整合自 [justistab3-bot/mtk-lk-warning-patch](https://github.com/justistab3-bot/mtk-lk-warning-patch)）；输出目录时间戳化（out/20260926-10：26：45/）+ 全方案“打开输出目录”按钮；单实例保护（同目录单实例、跳转至运行实例/清除状态锁/残留锁自动接管）；输出类型区 Labelframe 分组；LZ4 支持强化（内置 lz4.py、失败写日志）；kernel-only/Recovery 输出限制完善；系列整合修复
-  - 1.3-beta1: added Recovery-only porting (standalone recovery.img flow, based on [Xxinn034/mtk-legacy-porttool](https://github.com/Xxinn034/mtk-legacy-porttool)'s branch); integrated the LK warning patch tool (works on most Android versions, removes Orange/Red warnings + 5s delay, from [justistab3-bot/mtk-lk-warning-patch](https://github.com/justistab3-bot/mtk-lk-warning-patch)); timestamped output dirs (out/20260926-10：26：45/) + "Open Output Dir" button for all modes; single-instance guard (jump to running instance / clear stale lock / auto-takeover); Labelframe grouping for output type; hardened LZ4 support (built-in lz4.py, failures logged); kernel-only/Recovery output restrictions; integration fixes.
+- 1.3-beta1（自 beta6 之后的所有改动 / all changes after beta6）：新增恢复模式移植（仅移植Recovery，独立 recovery.img 流程，参考 [Xxinn034/mtk-legacy-porttool](https://github.com/Xxinn034/mtk-legacy-porttool) 分支实现）；整合 LK 去警告工具（兼容大多数安卓版本，去Orange/Red警告+5s延时，整合自 [justistab3-bot/mtk-lk-warning-patch](https://github.com/justistab3-bot/mtk-lk-warning-patch)）；输出目录时间戳化（out/<时间戳>/，每次运行实时生成）+ 全方案“打开输出目录”按钮；单实例保护（同目录单实例、跳转至运行实例/清除状态锁/残留锁自动接管）；输出类型区 Labelframe 分组；LZ4 支持强化（内置 lz4.py、失败写日志）；kernel-only/Recovery 输出限制完善；系列整合修复
+  - 1.3-beta1: added Recovery-only porting (standalone recovery.img flow, based on [Xxinn034/mtk-legacy-porttool](https://github.com/Xxinn034/mtk-legacy-porttool)'s branch); integrated the LK warning patch tool (works on most Android versions, removes Orange/Red warnings + 5s delay, from [justistab3-bot/mtk-lk-warning-patch](https://github.com/justistab3-bot/mtk-lk-warning-patch)); timestamped output dirs (out/<timestamp>/, generated at each run) + "Open Output Dir" button for all modes; single-instance guard (jump to running instance / clear stale lock / auto-takeover); Labelframe grouping for output type; hardened LZ4 support (built-in lz4.py, failures logged); kernel-only/Recovery output restrictions; integration fixes.
 - 1.2-beta6p3（自 beta6p2 之后的所有改动 / all changes after beta6p2）：boot.img 解包兼容性修复——自动搜索 ANDROID! 魔数跳过 MTK 头部等前缀；ramdisk 多格式支持（gzip/raw cpio/lz4），未知格式不再崩溃、复制 ramdisk.raw 兜底；修正带 MTK 头时 padding 对齐错位；识别 boot header v1（Android 8+ system-as-root）——此类设备 ramdisk_size=0 属正常不再误报，Android 7 及以下设备缺失 ramdisk 才给出无法开机的警告
   - 1.2-beta6p3: boot.img unpack compatibility fixes — auto-skip MTK headers via ANDROID! magic search; multi-format ramdisk support (gzip/raw cpio/lz4) with raw-copy fallback on unknown formats (no crash); fixed padding misalignment when an MTK header is present; detects boot header v1 (Android 8+ system-as-root) so ramdisk_size=0 is treated as normal, while warning of unbootable results only when an Android 7-or-lower device lacks a ramdisk.
 - 1.2-beta6p2（自 beta6p1 之后的所有改动 / all changes after beta6p1）：解包健壮性全面修复——底包缓存 MD5 写入时序（解包成功后才写，杜绝静默使用残缺底包产出错误镜像）；ext4 目录名 GBK 解码回退、损坏目录块与越界 inode 防御、xattr 两处崩溃修复；单个坏目录不再中断整个移植并输出警告；异常日志补全完整堆栈；Linux 下临时文件权限清理修复；DPI/型号同步增加“ro.* 属性可能被更早来源覆盖”提示；移除 sdat2img Python 2 死代码
