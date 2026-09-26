@@ -61,7 +61,7 @@ python porttool_cli.py port \
 | 参数 | 必填 | 说明 |
 |---|---|---|
 | `--chipset` | 是 | 方案名，必须与 `--chipsets` 输出完全一致 |
-| `--base-boot` | 是 | 底包 boot.img（recovery 方案为底包 recovery 镜像；lk 方案为固件目录） |
+| `--base-boot` | 是 | 底包 boot.img（recovery 方案为底包 recovery 镜像）。**LK 去警告请用 `lk` 子命令**（`port` 子命令不处理 LK 方案） |
 | `--base-system` | 视模式 | 底包 system.img；**普通移植必填**；kernel-only / recovery-only 模式省略 |
 | `--donor-boot` | img 源必填 | 移植用 boot.img（recovery 方案为移植用 recovery 镜像） |
 | `--donor-system` | 普通模式必填 | 移植用 system.img |
@@ -130,6 +130,10 @@ python porttool_cli.py lk <scan|patch|verify|restore> --folder <固件目录> [�
 |---|---|---|
 | `scan` | — | 扫描目录内 LK 镜像并报告警告 |
 | `patch` | `--patch-a` `--patch-b` `--auto-backup` `--gen-report` `--inplace` | 打补丁去警告；默认输出到 out/，`--inplace` 原地写 |
+
+- `--patch-a`：补丁A —— 去除橙 / 红状态警告 + 5 秒启动延时（特征码替换）
+- `--patch-b`：补丁B —— 清空警告文本（Orange State / Red State / 5 秒提示等）
+- **CLI 中补丁A/B 默认关闭**，需显式传 `--patch-a` / `--patch-b` 开启（GUI 默认全开；不传时仅备份与输出，不做任何修改）
 | `verify` | — | 校验补丁是否成功 |
 | `restore` | — | 用备份还原原镜像 |
 
@@ -153,7 +157,6 @@ python porttool_cli.py check-update --url <latest_version.txt的URL> [--log-file
 
 - 远程文件格式（兼容有/无引号）：`latest_version=tag`（必填）+ 下载地址（任选其一可解析）
   - `update_url_1=<GitHub 下载直链>` / `update_url_2=<Gitee 下载直链>` / `update_url=<通用链接>`
-- 输出本地 / 远程版本对比；相同输出"已是最新"，不同输出"发现新版本 + 下载地址"
 - 输出本地 / 远程版本对比；相同输出"已是最新"，不同输出"发现新版本 + 下载地址"
 - 网络异常 / 解析失败：退出码 `2`，日志 `【更新检查】失败：...`
 - 壳可据此实现"检查更新"按钮（30s 超时已内置）
