@@ -53,7 +53,12 @@ class TeeLog:
     def __init__(self, logfile=None):
         self.logfile = None
         if logfile:
-            self.logfile = open(logfile, 'w', encoding='utf-8')
+            try:
+                self.logfile = open(logfile, 'w', encoding='utf-8')
+            except OSError as e:
+                sys.stdout.write(f"【参数错误】日志文件无法写入：{logfile}（{e}），本次仅输出到 stdout\n")
+                sys.stdout.flush()
+                self.logfile = None
     def write(self, s):
         sys.stdout.write(s)
         if self.logfile:
@@ -102,6 +107,11 @@ def cmd_port(a, log):
     lk_mode, rec_mode, ker_mode = mode_flags(chipset)
     if lk_mode:
         print(f"【参数错误】方案「{chipset}」为 LK 修补方案，请使用 lk 子命令（lk scan/patch/verify/restore --folder ...）", file=log)
+        return 1
+
+    # ---- 移植源互斥校验：zip 源与 img 源二选一 ----
+    if a.donor_zip and (a.donor_boot or a.donor_system):
+        print("【参数错误】--donor-zip 与 --donor-boot/--donor-system 互斥，只能选其一", file=log)
         return 1
 
     # ---- 移植源 ----
@@ -226,7 +236,7 @@ def cmd_check_update(a, log):
     import re
     try:
         with urllib.request.urlopen(a.url, timeout=30) as r:
-            text = r.read().decode('utf-8', 'replace')
+            text = r.read().decode('utf-8', 'replace').lstrip('\ufeff')
         m_v = re.search(r'latest_version\s*=\s*"?([^"\n]+)"?', text)
         m_u = re.search(r'update_url(?:_\d+)?\s*=\s*"?([^"\n]+)"?', text)
         remote = m_v.group(1).strip() if m_v else ''

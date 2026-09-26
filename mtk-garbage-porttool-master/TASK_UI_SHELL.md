@@ -56,6 +56,9 @@ python porttool_cli.py port \
   [--clean-base] [--log-file <路径>]
 ```
 
+> **路径提示 / Path Note**：所有镜像/目录路径参数请传**绝对路径**（CLI 启动后工作目录为工具目录 mtk-garbage-porttool-master/，相对路径会按工具目录解析，而非调用方当前目录）。
+> All image/directory path arguments should be **absolute paths** (the CLI chdirs to the tool directory at startup; relative paths resolve against it, not the caller's cwd).
+
 ### 5.1 文件传入接口（核心）/ File Inputs
 
 | 参数 | 必填 | 说明 |
