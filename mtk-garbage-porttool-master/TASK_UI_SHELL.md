@@ -1,6 +1,6 @@
 # Task 使用说明：命令行桥接接口 / UI Shell Bridge Task
 
-> 本文档定义根目录 `porttool_cli.py`（命令行桥接入口）的全部使用接口与规范，
+> 本文档定义工具目录（mtk-garbage-porttool-master/）内的 `porttool_cli.py`（命令行桥接入口）的全部使用接口与规范，
 > 供其它平台（Java / C / C++ / Rust / .NET 等）UI 壳调用。
 > 壳只需启动本进程、按本文档传参、读取 stdout / 日志文件，即可复用工具的全部核心功能。
 
@@ -10,7 +10,7 @@
 
 - **传入**：命令行参数（方案名、镜像路径、移植条目开关、输出类型、日志文件）
 - **传出**：stdout 日志流（与 GUI 日志格式完全一致，带 `【】` 标记）+ 可选 `--log-file` 落盘 + 退出码
-- **产物**：写入仓库根 `out/<时间戳>/` 子目录
+- **产物**：写入工具目录 `out/<时间戳>/` 子目录
 
 壳开发时只需要：**拼参数 → 起进程 → 读 stdout / 退出码**。
 
@@ -18,7 +18,7 @@
 
 - Python 3.9+（Windows / Linux 均可；主战场 Windows）
 - 纯标准库，**无需第三方依赖**（CLI 不加载 tkinter；核心逻辑仅用 stdlib + 自带工具模块）
-- 工作目录 = 仓库根目录（CLI 启动时自动 `chdir` 到根目录，壳无需关心）
+- 工作目录 = 工具目录（mtk-garbage-porttool-master/，CLI 启动时自动 `chdir` 到该目录，壳无需关心）
 - 首次运行会生成 `tmp/`、`base/`、`out/` 运行目录（与 GUI 相同）
 
 ## 3. 退出码 / Exit Codes
@@ -142,7 +142,7 @@ python porttool_cli.py lk <scan|patch|verify|restore> --folder <固件目录> [�
 python porttool_cli.py fscheck <system.img路径> [--log-file <路径>]
 ```
 
-- 复用根目录 `fscheck.py`：校验 ext4 文件系统完整性（GD 校验和、inode/block bitmap、extent 一致性）
+- 复用工具目录 `fscheck.py`：校验 ext4 文件系统完整性（GD 校验和、inode/block bitmap、extent 一致性）
 - 移植后建议对产物 `out/<时间戳>/system.img` 自查一次
 
 ## 9. 更新检查子命令 `check-update` / Update Check Subcommand

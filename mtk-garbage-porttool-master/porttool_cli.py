@@ -7,7 +7,7 @@ MTK 低端机移植工具 —— 命令行桥接入口 (CLI Bridge)
 参数传入（路径、方案、条目开关、输出类型），日志/结果经 stdout 传出
 （可选 --log-file 同时落盘）。壳只需要启动本进程、喂参数、读输出。
 
-接口规范详见根目录 TASK_UI_SHELL.md（Task 使用说明）。
+接口规范详见同目录 TASK_UI_SHELL.md（Task 使用说明）。
 
 子命令：
   port          移植（普通 / kernel-only / recovery-only，img 或 zip 输出）
@@ -33,7 +33,7 @@ import copy
 import subprocess
 import urllib.request
 
-# ---- 根目录定位：本文件在仓库根，porttool/ 是包目录 ----
+# ---- 工具目录定位：本文件在工具目录（mtk-garbage-porttool-master/）内，porttool/ 是包目录 ----
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
@@ -206,7 +206,7 @@ def cmd_fscheck(a, log):
     if not os.path.isfile(img):
         print(f"【参数错误】镜像不存在：{img}", file=log)
         return 1
-    # fscheck.py 是顶层执行脚本，走子进程；cwd 固定在仓库根保证 import porttool
+    # fscheck.py 是独立执行脚本，走子进程；cwd 固定在工具目录（mtk-garbage-porttool-master/）保证 import porttool
     p = subprocess.run([sys.executable, os.path.join(_ROOT, 'fscheck.py'), img],
                        cwd=_ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
     if p.stdout:
