@@ -147,15 +147,18 @@ def render_markdown(text_widget, markdown_text):
             text_widget.insert(END, line + '\n', 'code')
             continue
 
-        # 标题
+        # 标题（标题行也走内联解析，支持 [链接](url)、**粗体** 等行内格式）
         if stripped.startswith('### '):
-            text_widget.insert(END, stripped[4:] + '\n', 'h3')
+            _insert_inline(text_widget, stripped[4:], style='h3')
+            text_widget.insert(END, '\n', 'h3')
             continue
         if stripped.startswith('## '):
-            text_widget.insert(END, stripped[3:] + '\n', 'h2')
+            _insert_inline(text_widget, stripped[3:], style='h2')
+            text_widget.insert(END, '\n', 'h2')
             continue
         if stripped.startswith('# '):
-            text_widget.insert(END, stripped[2:] + '\n', 'h1')
+            _insert_inline(text_widget, stripped[2:], style='h1')
+            text_widget.insert(END, '\n', 'h1')
             continue
 
         # 列表项
@@ -178,26 +181,34 @@ def render_markdown(text_widget, markdown_text):
         text_widget.insert(END, '\n')
 
 
-def _insert_inline(text_widget, text):
-    """处理行内 markdown：**粗体**、`代码`、[链接](url)"""
+def _insert_inline(text_widget, text, style=None):
+    """处理行内 markdown：**粗体**、`代码`、[链接](url)
+    style：可选标题样式名（h1/h2/h3），传入时普通文本与行内元素都继承该样式
+    """
     # 用正则分割：**bold**、`code`、[link](url)
     pattern = r'(\*\*.+?\*\*|`.+?`|\[.+?\]\(.+?\))'
     parts = re.split(pattern, text)
+    base = (style,) if style else ()
     for part in parts:
         if not part:
             continue
         if part.startswith('**') and part.endswith('**'):
-            text_widget.insert(END, part[2:-2], 'bold')
+            text_widget.insert(END, part[2:-2], base + ('bold',))
         elif part.startswith('`') and part.endswith('`'):
-            text_widget.insert(END, part[1:-1], 'code')
+            text_widget.insert(END, part[1:-1], base + ('code',))
         elif part.startswith('[') and '](' in part:
             m = re.match(r'\[(.+?)\]\((.+?)\)', part)
             if m:
                 label, url = m.group(1), m.group(2)
                 tag_name = f"link_{id(url)}"
-                text_widget.insert(END, label, tag_name)
+                # 同时打多个 tag：样式走 base+('link',)（蓝色下划线），link_{id} 负责独立可点击事件
+                # （多个链接各自绑定，互不覆盖）
+                text_widget.insert(END, label, base + ('link', tag_name))
                 text_widget.tag_bind(tag_name, '<Button-1>', lambda e, u=url: webbrowser.open(u))
+                # 悬停手型光标（tag 样式不支持 -cursor，用 Enter/Leave 事件模拟）
+                text_widget.tag_bind(tag_name, '<Enter>', lambda e: text_widget.config(cursor='hand2'))
+                text_widget.tag_bind(tag_name, '<Leave>', lambda e: text_widget.config(cursor=''))
             else:
-                text_widget.insert(END, part)
+                text_widget.insert(END, part, base)
         else:
-            text_widget.insert(END, part)
+            text_widget.insert(END, part, base)
