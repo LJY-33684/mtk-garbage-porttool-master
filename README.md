@@ -138,7 +138,7 @@ The tool automatically executes the following steps:
 - 清理临时文件（base缓存默认保留，可勾选完成后清除）
 - Clean up temporary files (base cache kept by default; optional cleanup after completion).
 
-- 仅移植内核（kernel-only）模式：只执行第1~3步并输出 boot.img，跳过 system 处理。
+- 仅移植内核（kernel-only）模式：只执行第1～3步并输出 boot.img，跳过 system 处理。
 - Kernel-only mode: only executes steps 1-3 and outputs boot.img, skipping system processing.
 
 ## 注意事项 / Notes
@@ -257,26 +257,26 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 | 配置档次 / Tier | CPU 示例 / Example | 磁盘类型 / Disk | 预估时长 / Est. time | 主要瓶颈 / Bottleneck |
 |---|---|---|---|---|
-| 高端 High-end | i7-13650HX / i9 HX（8核+，P核4.5GHz+） | Gen4 NVMe | ~15s | 无瓶颈 none |
-| 中高端 Upper-mid | i5-12/13代 / R5-5代（6核） | Gen3 NVMe | ~30~45s | 写速 ~1.5GB/s 上限 |
-| 中端 Mid | i5-8/10代 / R5-3代（4核） | SATA SSD | 1~1.5 分钟 | 单核 + SSD 写 ~450MB/s |
-| 入门 Entry | 赛扬/老奔腾（双核） | SATA SSD | 2~3 分钟 | 单核 |
-| 低端 Low-end | 双核 2GHz 级 | 机械盘 7200rpm | 5~10 分钟 | 机械盘 ~100MB/s |
-| 下限 Floor | 老双核 + 机械盘 + 5GB+ 镜像 | 机械盘 | 15~30 分钟 | 机械盘近乎全占 |
+| 高端 High-end | i7-13650HX / i9 HX（8核+，P核4.5GHz+） | Gen4 NVMe | ～15s | 无瓶颈 none |
+| 中高端 Upper-mid | i5-12/13代 / R5-5代（6核） | Gen3 NVMe | ～30～45s | 写速 ～1.5GB/s 上限 |
+| 中端 Mid | i5-8/10代 / R5-3代（4核） | SATA SSD | 1～1.5 分钟 | 单核 + SSD 写 ～450MB/s |
+| 入门 Entry | 赛扬/老奔腾（双核） | SATA SSD | 2～3 分钟 | 单核 |
+| 低端 Low-end | 双核 2GHz 级 | 机械盘 7200rpm | 5～10 分钟 | 机械盘 ～100MB/s |
+| 下限 Floor | 老双核 + 机械盘 + 5GB+ 镜像 | 机械盘 | 15～30 分钟 | 机械盘近乎全占 |
 
 **镜像规模影响 / Impact of image size**（同一台机器 / same machine）：
 
 | 底包大小 / Base size | 高端 High-end | 中端 Mid | 低端 Low-end |
 |---|---|---|---|
-| ~1 GB（入门机 ROM） | ~8s | ~40s | 2~4 分钟 |
-| ~3 GB | ~15s | 1~1.5 分钟 | 5~10 分钟 |
-| ~6 GB（大 ROM） | ~25s | 2~3 分钟 | 10~20 分钟 |
+| ～1 GB（入门机 ROM） | ～8s | ～40s | 2～4 分钟 |
+| ～3 GB | ～15s | 1～1.5 分钟 | 5～10 分钟 |
+| ～6 GB（大 ROM） | ～25s | 2～3 分钟 | 10～20 分钟 |
 
 **规律 / Notes**：
-- 磁盘 > CPU：镜像越大磁盘占比越高，机械盘换 SATA SSD 通常提速 4~6 倍 / Disk matters more than CPU on large images; HDD→SATA SSD usually gives 4-6x speedup.
-- 固定开销约 5s（boot 流程/启动/清理），小镜像时占比高 / ~5s fixed overhead (boot flow/startup/cleanup), dominant on small images.
+- 磁盘 > CPU：镜像越大磁盘占比越高，机械盘换 SATA SSD 通常提速 4～6 倍 / Disk matters more than CPU on large images; HDD→SATA SSD usually gives 4-6x speedup.
+- 固定开销约 5s（boot 流程/启动/清理），小镜像时占比高 / ～5s fixed overhead (boot flow/startup/cleanup), dominant on small images.
 - 流程串行，多核基本用不上，单核快才是关键 / Pipeline is serial; single-core speed matters more than core count.
-- 输出 zip 卡刷包比 img 多一段 img2sdat 差分计算（约 +10~20%）/ Zip output adds img2sdat diffing (~+10-20%).
+- 输出 zip 卡刷包比 img 多一段 img2sdat 差分计算（约 +10～20%）/ Zip output adds img2sdat diffing (～+10-20%).
 
 ### 实机测试 / Real-Machine Test
 
