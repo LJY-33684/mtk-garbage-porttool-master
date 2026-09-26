@@ -1,6 +1,6 @@
-﻿# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
+# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta2p1**
+> 当前版本 / Current version：**1.3-beta2p2**
 
 ## 项目介绍 / Project Introduction
 
@@ -248,6 +248,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
 ## 近期更新 / Recent Updates
+- 1.3-beta2p2（1.3-beta2p1 的紧急修补 / emergency patch for 1.3-beta2p1）：修复 zip 移植源崩溃（输入概览 UnboundLocalError）；非 sdat zip 输出不再包含未移植的 donor 原版 system.img；CLI LK patch 空转改为强制指定补丁；CLI Magisk 架构默认对齐 GUI（arm64）；发行版 Linux 工具执行权限修复（zip 内 0755 + 运行前自动 chmod）；run.sh shebang 规范化为 /bin/sh；p2 归档轮收尾——Magisk stub 链路修复（stub.apk 缺失不再传空参数 + 输出缺失警告）、平板方案无效「替换init」残留条目清理、boot 移植 init 替换空值守卫（防静默空转）、解包 symlink 目标路径引号清理
+  - 1.3-beta2p2 (emergency patch for 1.3-beta2p1): fixed zip-donor crash (UnboundLocalError in input overview); non-sdat zip output no longer embeds the unported donor system.img; CLI LK patch no longer idles silently (requires at least one patch flag); CLI Magisk arch default aligned with GUI (arm64); release Linux tool exec-permission fix (0755 in zip + auto chmod before exec); run.sh shebang normalized to /bin/sh; p2 archiving round — Magisk stub fixes (no empty argv when stub.apk missing + missing-stub warning), tablet preset invalid "replace init" leftover cleanup, empty-value guard for boot init replacement (no silent no-op), symlink target quote cleanup in extraction.
 - 1.3-beta2p1（1.3-beta2 的紧急修补 / emergency patch for 1.3-beta2）：修复 CLI 边界问题——`--log-file` 指向无效路径时不再抛 traceback 崩溃（降级为仅 stdout 并提示）；`--donor-zip` 与 `--donor-boot/--donor-system` 互斥校验（原静默忽略改为明确报错）
   - 1.3-beta2p1 (emergency patch for 1.3-beta2): fixed CLI edge cases — invalid `--log-file` path no longer crashes with a traceback (degrades to stdout-only with a notice); `--donor-zip` vs `--donor-boot/--donor-system` mutual-exclusion check (silent ignore now reports an error).
 - 1.3-beta2（自 1.3-beta1p1 之后的所有改动 / all changes after beta1p1）：新增 CLI 桥接接口 `porttool_cli.py` 与接口规范 `TASK_UI_SHELL.md`（供其它平台 UI 壳复用；接口/退出码/日志规范详见手册，手册同时随发行版 zip 资产分发）；修复 CLI lk 子命令参数崩溃、argparse 退出码统一、check-update 下载链解析；CLI 与手册随源码置于 `mtk-garbage-porttool-master/` 子目录（与 main.py 同级）

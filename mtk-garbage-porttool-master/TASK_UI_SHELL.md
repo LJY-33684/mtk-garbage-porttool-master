@@ -35,7 +35,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3-beta2`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3-beta2p2`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -52,7 +52,7 @@ python porttool_cli.py port \
   [--donor-system <移植用system.img路径>] | --donor-zip <移植用zip路径> \
   [--out-type img|zip] \
   [--item <KEY>]... [--no-item <KEY>]... \
-  [--patch-magisk] [--magisk-apk <路径>] [--target-arch arm] \
+  [--patch-magisk] [--magisk-apk <路径>] [--target-arch arm64] \
   [--clean-base] [--log-file <路径>]
 ```
 
@@ -68,7 +68,7 @@ python porttool_cli.py port \
 | `--base-system` | 视模式 | 底包 system.img；**普通移植必填**；kernel-only / recovery-only 模式省略 |
 | `--donor-boot` | img 源必填 | 移植用 boot.img（recovery 方案为移植用 recovery 镜像） |
 | `--donor-system` | 普通模式必填 | 移植用 system.img |
-| `--donor-zip` | zip 源 | 移植用 zip 卡刷包（与 donor-boot/donor-system 二选一） |
+| `--donor-zip` | zip 源 | 移植用 zip 卡刷包（与 donor-boot/donor-system 二选一；同时传时 CLI 报【参数错误】互斥提示，exit=1） |
 | `--out-type` | 否 | `img`（默认）/ `zip` |
 
 **模式自动判定**：不需要显式传"模式"——CLI 从方案配置的 `flags` 自动识别
@@ -102,6 +102,7 @@ python porttool_cli.py port \
 | `fit_density` / `change_model` | 同步 DPI / 型号信息 |
 | `change_timezone` / `change_locale` | 同步时区 / 语言区域 |
 | `single_simcard` / `dual_simcard` | 单 / 双卡配置 |
+| `generate_script` | 生成自动刷机脚本（**仅 zip 输出生效**；img 输出无卡刷脚本概念，CLI/GUI 会自动忽略该条目，非 bug） |
 
 ### 5.4 输出约定 / Outputs
 
@@ -114,12 +115,13 @@ python porttool_cli.py port \
 日志是壳与用户交互的核心通道，规范如下：
 
 1. **stdout 为主**：所有日志经 stdout 输出，行尾 `\n`；壳应实时读取（可逐行展示）
-2. **可选落盘**：`--log-file <路径>` 时 stdout 与文件**双写**（内容一致，UTF-8）
+2. **可选落盘**：`--log-file <路径>` 时 stdout 与文件**双写**（内容一致，UTF-8）；路径无效（目录不存在/无权限）时打印【参数错误】日志文件无法写入，并降级为仅 stdout 继续运行（不中断任务、不抛 traceback）
 3. **格式**：所有行带 `【】` 中文标记前缀，与 GUI 日志逐字一致，例如：
    - `【开始移植】...` / `【解包boot.img】...` / `【移植项】...` / `【打包完成】...`
    - `【信息】底包 boot.img：`（缩进子行以 `  ├─` / `  └─` 开头）
    - `【CLI】...`：CLI 自身附加的信息行（方案、输出类型、输出目录）
    - `【参数错误】...` / `【移植异常】...` / `【流程结束】...`
+   - `【移植项】` 下的操作明细以 `  - ` 开头（`  - 替换 ...` / `  - 跳过 ...（底包中不存在）` / `  - 跳过（...）` 守卫提示 / `  - 警告：...` 非致命警告，如 `apk 中未找到 stub.apk，跳过 stub`），壳可直接透传展示
 4. **进度语义**：`【提示】开始执行...` 到 `【流程结束】...` / `【移植异常】...` 为一个完整任务区间
 5. 壳若需要结构化信息（版本、方案列表、条目列表），用第 4 节的查询接口，不要解析日志
 
@@ -132,11 +134,12 @@ python porttool_cli.py lk <scan|patch|verify|restore> --folder <固件目录> [�
 | 操作 | 选项 | 说明 |
 |---|---|---|
 | `scan` | — | 扫描目录内 LK 镜像并报告警告 |
-| `patch` | `--patch-a` `--patch-b` `--auto-backup` `--gen-report` `--inplace` | 打补丁去警告；默认输出到 out/，`--inplace` 原地写 |
+| `patch` | `--patch-a` `--patch-b` `--auto-backup` `--gen-report` `--inplace` | 打补丁去警告；默认输出到 out/，`--inplace` 原地写。**CLI 默认所有补丁关闭，至少需指定 `--patch-a` 或 `--patch-b`**（补丁A=去橙/红警告并追加5秒延时；补丁B=清空警告文本；不指定时报【参数错误】，exit=1） |
 | `verify` | — | 校验补丁是否成功 |
 | `restore` | — | 用备份还原原镜像 |
 
-- `--folder`：固件目录（GeekFlashTool readback 目录），自动检测 `lk.img` / `lk2.img`
+- `--folder`：固件目录（GeekFlashTool readback 目录），自动检测 `lk.img` / `lk2.img` / `lk_a.img` / `lk_b.img` / `lk.bin` / `lk2.bin` / `lk_a.bin` / `lk_b.bin`（8 个候选）
+- `--auto-backup`：CLI 默认**不**自动备份，建议显式开启（GUI 默认开启）；`--inplace` 原地写时强烈建议配合备份
 - 备份 / 补丁产物写入 out 时间戳目录；跨会话仍可通过产物名找回
 
 ## 8. 文件系统自查子命令 `fscheck` / FS Check Subcommand
@@ -202,5 +205,5 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 12. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3-beta2`
+- 本桥接接口随工具版本发布：当前 `1.3-beta2p2`
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）
