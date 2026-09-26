@@ -307,6 +307,35 @@ def _out_dir() -> str:
     return d
 
 
+def _find_in_out(fname: str) -> Optional[str]:
+    """跨会话兜底：在 out/ 下所有时间戳子目录中查找 fname（最新目录优先），找不到返回 None"""
+    base = os.path.join(os.getcwd(), 'out')
+    if not os.path.isdir(base):
+        return None
+    for d in sorted(os.listdir(base), reverse=True):
+        cand = os.path.join(base, d, fname)
+        if os.path.isfile(cand):
+            return cand
+    return None
+
+
+def latest_lk_out_dir() -> Optional[str]:
+    """out/ 下最近一个含 LK 产物（*_patched / *_original_backup）的时间戳目录；无则 None"""
+    base = os.path.join(os.getcwd(), 'out')
+    if not os.path.isdir(base):
+        return None
+    for d in sorted(os.listdir(base), reverse=True):
+        full = os.path.join(base, d)
+        if not os.path.isdir(full):
+            continue
+        for n in os.listdir(full):
+            low = n.lower()
+            if (low.endswith('_patched.img') or low.endswith('_patched.bin')
+                    or low.endswith('_original_backup.img') or low.endswith('_original_backup.bin')):
+                return full
+    return None
+
+
 def _rel(p: str) -> str:
     """相对 cwd 的正斜杠路径（日志展示用）"""
     return os.path.relpath(p, os.getcwd()).replace(os.sep, '/')
@@ -624,6 +653,10 @@ def verify_files(folder: str, log=None, selected=None) -> bool:
         name = os.path.basename(p)
         bak = backup_path(p)
         if not os.path.isfile(bak):
+            found = _find_in_out(os.path.basename(bak))
+            if found:
+                bak = found
+        if not os.path.isfile(bak):
             try:
                 s = scan(read_file(p))
                 if not s['fit_ok']:
@@ -633,7 +666,12 @@ def verify_files(folder: str, log=None, selected=None) -> bool:
                 pass
             print(f"  {name}: 没有备份 {os.path.basename(bak)}，无法对比", file=std)
             continue
-        cand = [c for c in (patched_path(p), p) if os.path.isfile(c)]
+        pat = patched_path(p)
+        if not os.path.isfile(pat):
+            found = _find_in_out(os.path.basename(pat))
+            if found:
+                pat = found
+        cand = [c for c in (pat, p) if os.path.isfile(c)]
         if not cand:
             print(f"  {name}: 没有可校验的输出文件", file=std)
             continue
@@ -669,7 +707,15 @@ def restore_files(folder: str, log=None, selected=None) -> bool:
     if not files:
         print("【LK还原】目录中未检测到 LK 镜像，请先选择固件目录并勾选要处理的镜像", file=std)
         return False
-    todo = [(p, backup_path(p)) for p in files if os.path.isfile(backup_path(p))]
+    todo = []
+    for p in files:
+        bak = backup_path(p)
+        if not os.path.isfile(bak):
+            found = _find_in_out(os.path.basename(bak))
+            if found:
+                bak = found
+        if os.path.isfile(bak):
+            todo.append((p, bak))
     if not todo:
         print("【LK还原】没有找到备份文件，无需还原", file=std)
         return False

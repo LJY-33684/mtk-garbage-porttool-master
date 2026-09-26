@@ -603,12 +603,13 @@ class MyUI(ttk.Labelframe):
         restore_files(self.lk_dir_var.get().strip().strip('"'), self.log, sel)
 
     def _lk_open_dir(self):
-        # 跳转到输出目录：仅当已打过补丁（out/<时间戳>/ 已生成）才打开
-        from .LKPatch import _OUT_TS, _out_dir
-        if _OUT_TS is None:
+        # 跳转到输出目录：打开最近一次包含 LK 产物（备份/补丁）的时间戳目录；
+        # 跨会话仍能打开上次打补丁的输出；无任何产物时提示
+        from .LKPatch import latest_lk_out_dir
+        folder = latest_lk_out_dir()
+        if not folder:
             print("尚未生成输出目录，请先选择固件目录并打补丁", file=self.log)
             return
-        folder = _out_dir()
         try:
             os.startfile(folder)
         except Exception as e:
