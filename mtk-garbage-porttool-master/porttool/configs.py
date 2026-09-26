@@ -1462,6 +1462,58 @@ support_chipset_portstep = {
             ]
         }
     },
+    'LK去警告 (兼容大多数安卓版本, 去Orange/Red警告+5s延时)': {
+        'partitions': {
+        },
+        'flags': {
+            'lk_patch_mode': True
+        },
+        'replace': {
+        }
+    },
+    '仅移植Recovery (只输出recovery)': {
+        'partitions': {
+        },
+        'flags': {
+            'generate_script': False,
+            'recovery_only_mode': True,
+            'replace_kernel': True,
+            'selinux_permissive': True,
+            'enable_adb': True,
+            'replace_fstab': False,
+            'replace_init': False
+        },
+        'replace': {
+            'kernel': [
+                'kernel',
+                'kernel.gz'
+            ],
+            'fstab': [
+                'initrd/fstab',
+                'initrd/fstab.mt6572',
+                'initrd/fstab.mt6582',
+                'initrd/fstab.mt6580',
+                'initrd/fstab.mt6735',
+                'initrd/fstab.mt6737',
+                'initrd/fstab.mt6750',
+                'initrd/fstab.mt6755',
+                'initrd/fstab.mt6797',
+                'initrd/etc/recovery.fstab'
+            ],
+            'init': [
+                'initrd/init.rc',
+                'initrd/init.recovery.rc',
+                'initrd/init.mt6572.rc',
+                'initrd/init.mt6582.rc',
+                'initrd/init.mt6580.rc',
+                'initrd/init.mt6735.rc',
+                'initrd/init.mt6737.rc',
+                'initrd/init.mt6750.rc',
+                'initrd/init.mt6755.rc',
+                'initrd/init.mt6797.rc'
+            ]
+        }
+    },
     '仅移植内核 (只输出boot)': {
         'partitions': {
         },
@@ -1470,22 +1522,12 @@ support_chipset_portstep = {
             'kernel_only_mode': True,
             'replace_kernel': True,
             'selinux_permissive': True,
-            'enable_adb': True,
-            'replace_firmware': True,
-            'replace_mddb': True
+            'enable_adb': True
         },
         'replace': {
             'kernel': [
                 'kernel',
                 'kernel.gz'
-            ],
-            'firmware': [
-                'etc/firmware',
-                'vendor/firmware'
-            ],
-            'mddb': [
-                'etc/mddb',
-                'vendor/etc/mddb'
             ]
         }
     }
