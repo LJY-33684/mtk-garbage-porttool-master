@@ -606,19 +606,6 @@ class MyUI(ttk.Labelframe):
             return
         restore_files(self.lk_dir_var.get().strip().strip('"'), self.log, sel)
 
-    def _lk_open_dir(self):
-        # 跳转到输出目录：打开最近一次包含 LK 产物（备份/补丁）的时间戳目录；
-        # 跨会话仍能打开上次打补丁的输出；无任何产物时提示
-        from .LKPatch import latest_lk_out_dir
-        folder = latest_lk_out_dir()
-        if not folder:
-            print("尚未生成输出目录，请先选择固件目录并打补丁", file=self.log)
-            return
-        try:
-            os.startfile(folder)
-        except Exception as e:
-            print(f"打开目录失败：{e}", file=self.log)
-
     def _open_last_outdir(self):
         """打开最近一次移植的输出目录 out/<时间戳>/"""
         outdir = getattr(self, 'last_outdir', None)
@@ -629,6 +616,46 @@ class MyUI(ttk.Labelframe):
             os.startfile(outdir)
         except Exception as e:
             print(f"打开输出目录失败：{e}", file=self.log)
+
+    def _oppo_browse(self):
+        f = askopenfilename(
+            title='选择 OPPO 系固件',
+            filetypes=[('OPPO 系固件', '*.ofp *.ozip *.ops'), ('所有文件', '*.*')])
+        if f:
+            self.oppo_fw_var.set(f)
+            self.oppo_status.set('已选择：' + os.path.basename(f))
+            print(f"【OPPO解密】已选择固件：{f}", file=self.log)
+
+    def _oppo_start(self):
+        fw = self.oppo_fw_var.get().strip().strip('"')
+        if not fw or not Path(fw).is_file():
+            print("请先选择固件文件（.ofp/.ozip/.ops）", file=self.log)
+            return
+        import time
+        ts = time.strftime("%Y%m%d-%H：%M：%S")
+        outdir = os.path.join(getcwd(), 'out', ts)
+        os.makedirs(outdir, exist_ok=True)
+        self.last_outdir = outdir
+        self.oppo_start_btn.config(state='disabled', text='解密中...')
+        self.oppo_status.set('正在解密，请稍候...')
+        out_type = 'zip' if self.pack_type.get() == 'zip' else 'img'
+        print(f"【OPPO解密】开始解密，输出目录：{outdir}，输出类型：{'zip 卡刷包（不展开）' if out_type == 'zip' else 'img 镜像（展开并转换分区镜像）'}", file=self.log)
+
+        def task():
+            try:
+                from . import oppo_decrypt
+                ok = oppo_decrypt.decrypt(fw, outdir, self.log, out_type=out_type)
+                msg = '解密完成' if ok else '解密失败，请查看日志'
+            except Exception as e:
+                ok = False
+                msg = f'解密异常：{e}'
+                print(f"【解密异常】{e}", file=self.log)
+
+            def restore():
+                self.oppo_start_btn.config(state='normal', text='开始解密')
+                self.oppo_status.set(msg)
+            self.after(0, restore)
+        threading.Thread(target=task, daemon=True).start()
 
     def __setup_widgets(self):
         """初始化主UI的所有组件"""
@@ -695,7 +722,7 @@ class MyUI(ttk.Labelframe):
             """加载选中芯片类型对应的移植条目"""
             print(f"选中移植方案为{select}...", file=self.log)
             item_dict = {k: v for k, v in support_chipset_portstep[select]['flags'].items()
-                         if k not in ('recovery_only_mode', 'kernel_only_mode', 'lk_patch_mode')}
+                         if k not in ('recovery_only_mode', 'kernel_only_mode', 'lk_patch_mode', 'oppo_decrypt_mode')}
             # 仅移植Recovery / 仅移植内核 方案只输出 img：隐藏无意义的 generate_script 条目
             if ('recovery_only_mode' in support_chipset_portstep[select]['flags']
                     or 'kernel_only_mode' in support_chipset_portstep[select]['flags']):
@@ -708,6 +735,29 @@ class MyUI(ttk.Labelframe):
                 actcanvas.delete(self._cv_item)
                 self.actcvframe.destroy()
             __create_cv_frame()
+
+            # OPPO固件解密 模式：左侧整体切换为解密面板（与移植互斥）
+            _is_oppo = bool(
+                support_chipset_portstep.get(select, {}).get('flags', {}).get('oppo_decrypt_mode', False)
+            )
+            if _is_oppo:
+                self.item = []
+                self.itembox = []
+                actframe.pack_forget()
+                self.port_button.pack_forget()
+                # 输出类型复用既有控件（zip 卡刷包 / img 镜像），OPPO 解密直接引用
+                buttonlabel.pack(side='top', padx=5, pady=5, fill='x', expand='yes')
+                if hasattr(self, '_extra'):
+                    self._extra.pack_forget()
+                self.lk_panel.pack_forget()
+                self.oppo_panel.pack(side='top', fill='both', expand='yes', padx=5, pady=5)
+                # 恢复输出类型复选框可见（离开 recovery/ko 方案后可能被 grid_forget）
+                self.recovery_hint_label.grid_forget()
+                self.buttoncheck1.grid(column=0, row=0, padx=5, pady=5)
+                self.buttoncheck2.grid(column=1, row=0, padx=5, pady=5)
+                self.pack_type.set('img')
+                print("OPPO固件解密模式：已切换为解密界面（OFP/OZIP/OPS）；输出类型由下方控件选择（img=展开并转换分区镜像 / zip=直接输出解密卡刷包）", file=self.log)
+                return
 
             # LK去警告 模式：左侧整体切换为原版 LK 工具面板（去掉"支持的移植条目"框与一键移植）
             _is_lk = bool(
@@ -723,6 +773,7 @@ class MyUI(ttk.Labelframe):
                 if hasattr(self, '_extra'):
                     self._extra.pack_forget()
                 # 显示 LK 工具面板（占左侧大部分区域）
+                self.oppo_panel.pack_forget()
                 self.lk_panel.pack(side='top', fill='both', expand='yes', padx=5, pady=5)
                 self.pack_type.set('img')
                 print("LK去警告模式：已切换为 LK 工具界面（扫描/打补丁/校验/还原备份/打开输出目录），仅支持 img 输出", file=self.log)
@@ -794,8 +845,9 @@ class MyUI(ttk.Labelframe):
                     self.magiskarch.grid(column=0, row=2, padx=5, pady=5, sticky='nsew', columnspan=2)
                     self.magiskapkentry.grid(column=0, row=3, padx=5, pady=5, sticky='ew')
                     self.magiskapkbtn.grid(column=1, row=3, padx=(0, 5), pady=5, sticky='e')
-            # 非 LK 方案：恢复左侧常规布局（隐藏 LK 工具面板）
+            # 非特殊方案：恢复左侧常规布局（隐藏 LK / OPPO 面板）
             self.lk_panel.pack_forget()
+            self.oppo_panel.pack_forget()
             actframe.pack(side='top', fill='x', expand='yes')
             self.port_button.pack(side='top', fill='both', padx=5, pady=5, expand='yes')
             buttonlabel.pack(side='top', padx=5, pady=5, fill='x', expand='yes')
@@ -968,14 +1020,34 @@ class MyUI(ttk.Labelframe):
             ttk.Button(_btns1, text=_t, width=8, command=_c).pack(side='left', padx=3, pady=3)
         _btns1.pack(side='top', fill='x', padx=8, pady=(6, 0))
         _btns2 = ttk.Frame(self.lk_panel)
-        for _t, _c in (("还原备份", self._lk_restore), ("打开输出目录", self._lk_open_dir)):
-            ttk.Button(_btns2, text=_t, width=10, command=_c).pack(side='left', padx=3, pady=3)
+        ttk.Button(_btns2, text="还原备份", width=10, command=self._lk_restore).pack(side='left', padx=3, pady=3)
         _btns2.pack(side='top', fill='x', padx=8)
         # 状态行
         self.lk_status = StringVar(value='就绪：选择固件目录后点击"重新检测"')
         ttk.Label(self.lk_panel, textvariable=self.lk_status, foreground='gray', font=('Microsoft YaHei', 8)
                   ).pack(side='top', anchor='w', padx=8, pady=(6, 6))
         self.lk_panel.pack_forget()  # 默认隐藏，选择 LK 方案时显示
+
+        # ========== OPPO固件解密 面板（选择 OPPO 方案时替换左侧常规布局） ==========
+        self.oppo_panel = ttk.Labelframe(optframe, text="OPPO/Realme/OnePlus 固件解密")
+        _orow = ttk.Frame(self.oppo_panel)
+        self.oppo_fw_var = StringVar()
+        ttk.Label(_orow, text="固件文件").pack(side='left', padx=(5, 4))
+        ttk.Entry(_orow, textvariable=self.oppo_fw_var).pack(side='left', fill='x', expand='yes')
+        ttk.Button(_orow, text="选择", width=7, command=self._oppo_browse).pack(side='left', padx=(4, 5))
+        _orow.pack(side='top', fill='x', padx=5, pady=(8, 4))
+        ttk.Label(self.oppo_panel,
+                  text="支持 OFP（MTK）/ OZIP / OPS；输出类型由下方控件选择：img=展开并转换分区镜像 / zip=直接输出解密卡刷包",
+                  foreground='gray').pack(side='top', anchor='w', padx=10, pady=(0, 4))
+        _obtns = ttk.Frame(self.oppo_panel)
+        self.oppo_start_btn = ttk.Button(_obtns, text="开始解密", command=self._oppo_start)
+        self.oppo_start_btn.pack(side='left', padx=3, pady=3)
+        _obtns.pack(side='top', fill='x', padx=8)
+        self.oppo_status = StringVar(value='就绪：选择固件文件后点击“开始解密”')
+        ttk.Label(self.oppo_panel, textvariable=self.oppo_status, foreground='gray',
+                  font=('Microsoft YaHei', 8)).pack(side='top', anchor='w', padx=10, pady=(6, 6))
+        self.oppo_panel.pack_forget()  # 默认隐藏，选择 OPPO 方案时显示
+
         # 版本号行（左下角，修补面具选项下面）：左侧版本号，右侧 GitHub / Gitee 仓库图标
         bottom_row = ttk.Frame(optframe)
         bottom_row.pack(side='bottom', fill='x', padx=8, pady=(0, 5))

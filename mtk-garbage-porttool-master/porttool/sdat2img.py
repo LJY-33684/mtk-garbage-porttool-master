@@ -9,16 +9,25 @@
 from __future__ import print_function
 import sys, os, errno
 
-def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE):
+def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE, log=None):
+    """log：可选日志对象（有 .write）或回调函数（直接调用）；None 时输出到 stdout。"""
+    def out(s, err=False):
+        if log:
+            if hasattr(log, 'write'):
+                log.write(s)
+            else:
+                log(s)
+        else:
+            print(s, end='', file=sys.stderr if err else sys.stdout)
     __version__ = '1.2'
 
-    print('sdat2img binary - version: {}\n'.format(__version__))
+    out('sdat2img binary - version: {}\n'.format(__version__))
 
     def rangeset(src):
         src_set = src.split(',')
         num_set =  [int(item) for item in src_set]
         if len(num_set) != num_set[0]+1:
-            print('Error on parsing following data to rangeset:\n{}'.format(src), file=sys.stderr)
+            out('Error on parsing following data to rangeset:\n{}'.format(src), err=True)
             sys.exit(1)
 
         return tuple ([ (num_set[i], num_set[i+1]) for i in range(1, len(num_set), 2) ])
@@ -48,7 +57,7 @@ def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE):
             else:
                 # Skip lines starting with numbers, they are not commands anyway
                 if not cmd[0].isdigit():
-                    print('Command "{}" is not valid.'.format(cmd), file=sys.stderr)
+                    out('Command "{}" is not valid.'.format(cmd), err=True)
                     trans_list.close()
                     sys.exit(1)
 
@@ -60,15 +69,15 @@ def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE):
     version, new_blocks, commands = parse_transfer_list_file(TRANSFER_LIST_FILE)
 
     if version == 1:
-        print('Android Lollipop 5.0 detected!\n')
+        out('Android Lollipop 5.0 detected!\n')
     elif version == 2:
-        print('Android Lollipop 5.1 detected!\n')
+        out('Android Lollipop 5.1 detected!\n')
     elif version == 3:
-        print('Android Marshmallow 6.x detected!\n')
+        out('Android Marshmallow 6.x detected!\n')
     elif version == 4:
-        print('Android Nougat 7.x / Oreo 8.x detected!\n')
+        out('Android Nougat 7.x / Oreo 8.x detected!\n')
     else:
-        print('Unknown Android version!\n')
+        out('Unknown Android version!\n')
 
     # 输出镜像是工具生成的中间产物，直接覆盖写入
     # （旧版 "Don't clobber" 注释与 'wb' 覆盖行为矛盾，且 EEXIST 分支实际不可达，已修正）
@@ -76,8 +85,8 @@ def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE):
         output_img = open(OUTPUT_IMAGE_FILE, 'wb')
     except IOError as e:
         if e.errno == errno.EEXIST:
-            print('Error: the output file "{}" already exists'.format(e.filename), file=sys.stderr)
-            print('Remove it, rename it, or choose a different file name.', file=sys.stderr)
+            out('Error: the output file "{}" already exists\n'.format(e.filename), err=True)
+            out('Remove it, rename it, or choose a different file name.\n', err=True)
             sys.exit(e.errno)
         else:
             raise
@@ -92,7 +101,7 @@ def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE):
                 begin = block[0]
                 end = block[1]
                 block_count = end - begin
-                print('Copying {} blocks into position {}...'.format(block_count, begin))
+                out('Copying {} blocks into position {}...\n'.format(block_count, begin))
 
                 # Position output file
                 output_img.seek(begin*BLOCK_SIZE)
@@ -102,7 +111,7 @@ def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE):
                     output_img.write(new_data_file.read(BLOCK_SIZE))
                     block_count -= 1
         else:
-            print('Skipping command {}...'.format(command[0]))
+            out('Skipping command {}...\n'.format(command[0]))
 
     # Make file larger if necessary
     if(output_img.tell() < max_file_size):
@@ -110,7 +119,7 @@ def main(TRANSFER_LIST_FILE, NEW_DATA_FILE, OUTPUT_IMAGE_FILE):
 
     output_img.close()
     new_data_file.close()
-    print('Done! Output image: {}'.format(os.path.realpath(output_img.name)))
+    print('Done! Output image: {}'.format(os.path.realpath(output_img.name))) if not log else out('Done! Output image: {}\n'.format(os.path.realpath(output_img.name)))
 
 if __name__ == '__main__':
     try:
