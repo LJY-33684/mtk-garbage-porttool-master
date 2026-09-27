@@ -35,7 +35,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3-beta2p2`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3-beta3`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -142,7 +142,27 @@ python porttool_cli.py lk <scan|patch|verify|restore> --folder <固件目录> [�
 - `--auto-backup`：CLI 默认**不**自动备份，建议显式开启（GUI 默认开启）；`--inplace` 原地写时强烈建议配合备份
 - 备份 / 补丁产物写入 out 时间戳目录；跨会话仍可通过产物名找回
 
-## 8. 文件系统自查子命令 `fscheck` / FS Check Subcommand
+## 8. 固件解密子命令 `decrypt` / Decrypt Subcommand
+
+```
+python porttool_cli.py decrypt --input <固件路径> [--out-type img|zip] [--outdir <输出目录>] [--log-file <路径>]
+```
+
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `--input` | 是 | OPPO/Realme/OnePlus 固件（`.ofp` / `.ozip` / `.ops`） |
+| `--out-type` | 否 | `img`（默认）/ `zip`；`img`=展开并转换分区镜像，`zip`=直接输出解密后的卡刷包（不展开，仅 OZIP 生效） |
+| `--outdir` | 否 | 输出目录；省略时自动使用 `out/<时间戳>/` |
+
+- 自动识别格式：MTK OFP（AES-CFB128）/ OZIP（AES-ECB）/ OPS（OnePlus 自定义流密码）；**明文 OZIP**（部分 realmeUI 1.0 旧包为未加密 zip 伪装 `.ozip`）自动识别，无需解密直接按普通卡刷包使用
+- AES 后端：优先工具目录 / PATH 的 openssl（快，随包内置 `bin/win/x86_64/` 四件套），无则内置 pyaes 纯 Python 兜底（日志首行注明实际后端；Linux 缺失时提示 `apt/dnf install openssl`，Windows 提示双击「获取openssl加速组件.bat」）
+- 输出：
+  - `--out-type zip`：OZIP 解密后的 zip（标准卡刷包结构：META-INF + new.dat.br + firmware-update 等）直接搬至输出目录，不展开；**OFP/OPS 无卡刷 zip 形态，选 zip 时提示并按镜像输出**
+  - `--out-type img`（默认）：展开固件镜像；**全部 `*.new.dat.br` 分区（system/vendor 及 Android 10+ 的 product/odm/system_ext 等，动态收集）** 经 brotli（多后端：工具自带 brotli 命令 → 内置 vendor 库 → 系统命令 → Python brotli/brotlicffi，GB 级流式解压）解压后，用工具 sdat2img 逐个转成分区 `.img`，转换中间文件自动清理；brotli 组件缺失时明确报错并保留源 `.br`（不静默降级）
+- 中间缓存 `tmp/oppo_decrypt/` 结束后自动清理，用户原始固件保持不动
+- 失败：无法识别格式 / 固件 zip 结构损坏 / 密钥表未覆盖该机型 / 解密异常，均退出码 `2` 并打印明确错误，不伪成功；**解密成功但部分分区格式转换失败时不报「解密失败」，明确提示原文件保留**
+
+## 9. 文件系统自查子命令 `fscheck` / FS Check Subcommand
 
 ```
 python porttool_cli.py fscheck <system.img路径> [--log-file <路径>]
@@ -151,7 +171,7 @@ python porttool_cli.py fscheck <system.img路径> [--log-file <路径>]
 - 复用工具目录 `fscheck.py`：校验 ext4 文件系统完整性（GD 校验和、inode/block bitmap、extent 一致性）
 - 移植后建议对产物 `out/<时间戳>/system.img` 自查一次
 
-## 9. 更新检查子命令 `check-update` / Update Check Subcommand
+## 10. 更新检查子命令 `check-update` / Update Check Subcommand
 
 ```
 python porttool_cli.py check-update --url <latest_version.txt的URL> [--log-file <路径>]
@@ -163,7 +183,7 @@ python porttool_cli.py check-update --url <latest_version.txt的URL> [--log-file
 - 网络异常 / 解析失败：退出码 `2`，日志 `【更新检查】失败：...`
 - 壳可据此实现"检查更新"按钮（30s 超时已内置）
 
-## 10. 壳接入建议 / Shell Integration Notes
+## 11. 壳接入建议 / Shell Integration Notes
 
 1. **下拉框**：启动时跑一次 `--chipsets`，缓存到壳侧；切换方案时 `--items --chipset` 刷新勾选列表
 2. **一键移植**：收集勾选 → 生成 `port` 参数 → 异步起进程 → 逐行读 stdout 追加到日志框 → 退出码 0/非0 决定按钮恢复与提示
@@ -171,7 +191,7 @@ python porttool_cli.py check-update --url <latest_version.txt的URL> [--log-file
 4. **打开输出目录**：从 stdout 的 `【CLI】输出目录：...` 行取最新路径（或直接浏览 `out/` 下最新时间戳目录）
 5. **多实例**：CLI 进程本身无 UI 锁；若壳需要单实例保护，自行在壳层实现（与 GUI 的 singleton 等价）
 
-## 11. 完整示例 / Examples
+## 12. 完整示例 / Examples
 
 ```bash
 # 查询
@@ -196,6 +216,11 @@ python porttool_cli.py port --chipset "仅移植内核 (只输出boot)" \
 # LK 去警告
 python porttool_cli.py lk patch --folder "D:\readback" --patch-a --auto-backup
 
+# OPPO/Realme/OnePlus 固件解密（自动 out/<时间戳>/，img 展开+转换分区镜像）
+python porttool_cli.py decrypt --input "D:\firmware\CPHxxxx.ozip"
+# 解密后直接输出卡刷包（不展开）
+python porttool_cli.py decrypt --input "D:\firmware\CPHxxxx.ozip" --out-type zip
+
 # 文件系统自查
 python porttool_cli.py fscheck "out\20260926-14：15：32\system.img"
 
@@ -203,7 +228,7 @@ python porttool_cli.py fscheck "out\20260926-14：15：32\system.img"
 python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garbage-porttool-master/raw/main/latest_version.txt"
 ```
 
-## 12. 版本 / Version
+## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3-beta2p2`
+- 本桥接接口随工具版本发布：当前 `1.3-beta3`
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）
