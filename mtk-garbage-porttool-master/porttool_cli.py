@@ -216,6 +216,26 @@ def cmd_lk(a, log):
 
 
 # ============================================================
+# decrypt 子命令：OPPO/Realme/OnePlus 固件解密（OFP/OZIP/OPS）
+# ============================================================
+def cmd_decrypt(a, log):
+    from porttool import oppo_decrypt
+    fw = a.input
+    if not fw or not os.path.isfile(fw):
+        print(f"【参数错误】固件不存在：{fw}", file=log)
+        return 1
+    outdir = a.outdir
+    if not outdir:
+        import time
+        ts = time.strftime("%Y%m%d-%H：%M：%S")
+        outdir = os.path.join(_ROOT, 'out', ts)
+    os.makedirs(outdir, exist_ok=True)
+    ok = oppo_decrypt.decrypt(fw, outdir, log, out_type=getattr(a, 'out_type', 'img'))
+    print(f"输出目录：{outdir}", file=log)
+    return 0 if ok else 2
+
+
+# ============================================================
 # fscheck 子命令：文件系统自查（复用 fscheck.py）
 # ============================================================
 def cmd_fscheck(a, log):
@@ -275,7 +295,7 @@ def main(argv=None):
     p.add_argument('--chipset', default='', help='方案名（--items 查询 / 移植时使用）')
     p.add_argument('--version', action='store_true', help='输出版本号')
 
-    sub = p.add_subparsers(dest='cmd', metavar='{port,lk,fscheck,check-update}')
+    sub = p.add_subparsers(dest='cmd', metavar='{port,lk,decrypt,fscheck,check-update}')
 
     # port
     sp = sub.add_parser('port', help='移植（普通 / kernel-only / recovery-only）')
@@ -315,6 +335,14 @@ def main(argv=None):
     su.add_argument('--url', required=True, help='latest_version.txt 的 URL')
     su.add_argument('--log-file', default='', help='额外日志文件')
 
+    # decrypt
+    sd = sub.add_parser('decrypt', help='OPPO/Realme/OnePlus 固件解密（OFP/OZIP/OPS）')
+    sd.add_argument('--input', required=True, help='固件路径（.ofp/.ozip/.ops）')
+    sd.add_argument('--outdir', default='', help='输出目录（默认 out/<时间戳>/）')
+    sd.add_argument('--out-type', choices=['img', 'zip'], default='img',
+                    help='输出类型：img（默认，展开并转换成分区镜像）| zip（OZIP 直接输出解密后的卡刷包，不展开）')
+    sd.add_argument('--log-file', default='', help='额外日志文件')
+
     try:
         a = p.parse_args(argv)
     except SystemExit as e:
@@ -352,6 +380,8 @@ def main(argv=None):
             rc = cmd_port(a, log)
         elif a.cmd == 'lk':
             rc = cmd_lk(a, log)
+        elif a.cmd == 'decrypt':
+            rc = cmd_decrypt(a, log)
         elif a.cmd == 'fscheck':
             rc = cmd_fscheck(a, log)
         elif a.cmd == 'check-update':
