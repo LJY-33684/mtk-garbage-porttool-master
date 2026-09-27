@@ -1460,6 +1460,13 @@
         },
         "replace": {}
     },
+    "OPPO固件解密 (OFP/OZIP/OPS, 兼容大多数安卓版本)": {
+        "partitions": {},
+        "flags": {
+            "oppo_decrypt_mode": true
+        },
+        "replace": {}
+    },
     "仅移植Recovery (只输出recovery)": {
         "partitions": {},
         "flags": {
