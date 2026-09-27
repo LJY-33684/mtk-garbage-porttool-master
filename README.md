@@ -8,6 +8,16 @@
 
 This is a ROM porting assistance tool specifically designed for MTK low-end chip series (such as MT65xx, MT67xx entry-level models). It aims to simplify the adaptation process of boot/system images between the "base package (official ROM of the current device)" and the "donor source (target ROM)". It automates tedious steps such as file replacement, configuration synchronization, and image repacking, lowering the technical barrier for ROM porting on low-end devices.
 
+## 感谢[@affggh](https://github.com/affggh)分享的原文件，此移植工具基于原工具进行的改进 / Thanks to [@affggh](https://github.com/affggh) for sharing the original files. This porting tool is an improvement based on the original tool.
+
+原作者/Original Author [@affggh](https://github.com/affggh)
+
+本工具最初源自 / Originally forked from: [ColdWindScholar/mtk-garbage-porttool](https://github.com/ColdWindScholar/mtk-garbage-porttool)
+
+- 恢复模式移植参考 [@Xxinn034](https://github.com/Xxinn034/mtk-legacy-porttool) 分支实现 / Recovery-only porting based on [@Xxinn034](https://github.com/Xxinn034/mtk-legacy-porttool)'s branch.
+- LK 去警告工具整合自 [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch) / LK warning patch integrated from [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch).
+- OPPO 固件解密参考 [@ColdWindScholar](https://github.com/ColdWindScholar/TIK) 的 TIK 实现（基于 bkerler MIT 协议，已按 GPL-3.0 兼容性评估并登记第三方声明）/ OPPO firmware decryption based on [@ColdWindScholar](https://github.com/ColdWindScholar/TIK)'s TIK (bkerler MIT base, GPL-3.0 compatibility assessed & third-party notice included).
+
 ## 功能特点 / Features
 
 - **1. 多源支持 / Multi-Source Support：**
@@ -73,16 +83,6 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 - **8. 版本检测与警告 / Version Detection：**
 - 自动检测底包/移植源Android版本（API），Android 8.0+（可能启用Treble/VNDK）与跨大版本移植给出警告
 - Auto-detects base/donor Android version (API); warns on Android 8.0+ (possible Treble/VNDK) and cross-major-version porting.
-
-## 感谢[@affggh](https://github.com/affggh)分享的原文件，此移植工具基于原工具进行的改进 / Thanks to [@affggh](https://github.com/affggh) for sharing the original files. This porting tool is an improvement based on the original tool.
-
-原作者/Original Author [@affggh](https://github.com/affggh)
-
-本工具最初源自 / Originally forked from: [ColdWindScholar/mtk-garbage-porttool](https://github.com/ColdWindScholar/mtk-garbage-porttool)
-
-- 恢复模式移植参考 [@Xxinn034](https://github.com/Xxinn034/mtk-legacy-porttool) 分支实现 / Recovery-only porting based on [@Xxinn034](https://github.com/Xxinn034/mtk-legacy-porttool)'s branch.
-- LK 去警告工具整合自 [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch) / LK warning patch integrated from [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch).
-- OPPO 固件解密参考 [@ColdWindScholar](https://github.com/ColdWindScholar/TIK) 的 TIK 实现（基于 bkerler MIT 协议，已按 GPL-3.0 兼容性评估并登记第三方声明）/ OPPO firmware decryption based on [@ColdWindScholar](https://github.com/ColdWindScholar/TIK)'s TIK (bkerler MIT base, GPL-3.0 compatibility assessed & third-party notice included).
 
 ## CLI 桥接接口 / CLI Bridge Interface
 
