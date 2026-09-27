@@ -12,6 +12,7 @@ MTK 低端机移植工具 —— 命令行桥接入口 (CLI Bridge)
 子命令：
   port          移植（普通 / kernel-only / recovery-only，img 或 zip 输出）
   lk            LK 去警告（scan / patch / verify / restore）
+  decrypt       OPPO/Realme/OnePlus 固件解密（OFP/OZIP/OPS；img 展开转镜像 / zip 直出卡刷包）
   fscheck       文件系统自查（对生成的 system.img 做完整性检查）
   check-update  检查更新（读取远程 latest_version.txt 与本版本比较）
 
@@ -231,7 +232,7 @@ def cmd_decrypt(a, log):
         outdir = os.path.join(_ROOT, 'out', ts)
     os.makedirs(outdir, exist_ok=True)
     ok = oppo_decrypt.decrypt(fw, outdir, log, out_type=getattr(a, 'out_type', 'img'))
-    print(f"输出目录：{outdir}", file=log)
+    print(f"【CLI】输出目录：{outdir}", file=log)
     return 0 if ok else 2
 
 

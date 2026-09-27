@@ -107,7 +107,7 @@ python porttool_cli.py port \
 ### 5.4 输出约定 / Outputs
 
 - 产物目录：`out/<YYYYMMDD-HH：MM：SS>/`（**全角冒号**，Windows 目录名限制；每次运行实时生成）
-- 产物命名：`boot.img` / `system.img`（img 输出）；`zip 卡刷包`（zip 输出）
+- 产物命名：`boot.img` / `system.img`（img 输出）；`recovery.img`（recovery-only 模式）；`zip 卡刷包`（zip 输出）
 - LK 模式：备份 `<名字>_original_backup`、补丁 `<名字>_patched` 同样落在 out 时间戳目录下
 
 ## 6. 日志接口（重点）/ Log Interface
