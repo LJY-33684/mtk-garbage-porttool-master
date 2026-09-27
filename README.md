@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta2p2**
+> 当前版本 / Current version：**1.3-beta3**
 
 ## 项目介绍 / Project Introduction
 
@@ -49,6 +49,8 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 - **Recovery-only mode**: standalone recovery.img porting flow, img output only (based on [Xxinn034/mtk-legacy-porttool](https://github.com/Xxinn034/mtk-legacy-porttool)'s branch).
 - **LK去警告（兼容大多数安卓版本）**：去除 Orange/Red 警告与 5 秒延时；支持扫描/打补丁/校验/还原/自动备份（整合自 [justistab3-bot/mtk-lk-warning-patch](https://github.com/justistab3-bot/mtk-lk-warning-patch)）
 - **LK warning patch mode** (works on most Android versions): removes Orange/Red warnings + 5s delay; scan/patch/verify/restore/auto-backup (integrated from [justistab3-bot/mtk-lk-warning-patch](https://github.com/justistab3-bot/mtk-lk-warning-patch)).
+- **OPPO固件解密（兼容大多数安卓版本）**：支持官方固件 OFP / OZIP / OPS 三种格式识别与解密；输出类型复用（zip 卡刷包直接搬 OZIP / img 镜像展开转分区镜像）；自动识别明文 OZIP（realmeUI 1.0 旧包伪装 .ozip）；随包内置 openssl / brotli 加速组件（参考 [ColdWindScholar/TIK](https://github.com/ColdWindScholar/TIK) 实现）
+- **OPPO firmware decryption mode** (works on most Android versions): recognizes & decrypts OFP / OZIP / OPS official firmware; output type reused (zip flashable from OZIP / img images by expansion); auto-detects plaintext OZIP (realmeUI 1.0 disguised .ozip); bundled openssl / brotli accelerators (based on [ColdWindScholar/TIK](https://github.com/ColdWindScholar/TIK)).
 
 - **5. 文件系统修复与自查 / FS Fix & Verification：**
 - 符号链接修复（Windows解包丢失的 !<symlink> 标记转回真符号链接，支持raw/sparse）
@@ -78,8 +80,8 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 
 The tool ships a pure command-line bridge entry `porttool_cli.py` (in the same directory as main.py), so UI shells on other platforms (**Java / C / C++ / Rust** ...) can reuse this tool's capabilities: parameters in (preset, paths, item toggles, output type), logs & results out via stdout (optional `--log-file`), exit codes **0=ok / 1=arg/validation error / 2=execution failure**.
 
-- 子命令：`port`（移植，普通 / kernel-only / recovery-only，img 或 zip 输出）、`lk`（LK 去警告：scan/patch/verify/restore）、`fscheck`（文件系统自查）、`check-update`（检查更新）；顶层查询：`--chipsets` / `--items` / `--version`
-- Subcommands: `port` (normal / kernel-only / recovery-only, img or zip output), `lk` (scan/patch/verify/restore), `fscheck` (filesystem integrity check), `check-update`; top-level queries: `--chipsets` / `--items` / `--version`.
+- 子命令：`port`（移植，普通 / kernel-only / recovery-only，img 或 zip 输出）、`lk`（LK 去警告：scan/patch/verify/restore）、`fscheck`（文件系统自查）、`decrypt`（OPPO 固件解密：OFP/OZIP/OPS）、`check-update`（检查更新）；顶层查询：`--chipsets` / `--items` / `--version`
+- Subcommands: `port` (normal / kernel-only / recovery-only, img or zip output), `lk` (scan/patch/verify/restore), `fscheck` (filesystem integrity check), `decrypt` (OPPO firmware decryption: OFP/OZIP/OPS), `check-update`; top-level queries: `--chipsets` / `--items` / `--version`.
 
 完整接口规范见同目录 [TASK_UI_SHELL.md](mtk-garbage-porttool-master/TASK_UI_SHELL.md)（该手册同时随发行版 zip 资产分发，仅下载发行版也能看到接口规范）。
 
@@ -226,6 +228,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 - 恢复模式移植参考 [@Xxinn034](https://github.com/Xxinn034/mtk-legacy-porttool) 分支实现 / Recovery-only porting based on [@Xxinn034](https://github.com/Xxinn034/mtk-legacy-porttool)'s branch.
 - LK 去警告工具整合自 [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch) / LK warning patch integrated from [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch).
+- OPPO 固件解密参考 [@ColdWindScholar](https://github.com/ColdWindScholar/TIK) 的 TIK 实现（基于 bkerler MIT 协议，已按 GPL-3.0 兼容性评估并登记第三方声明）/ OPPO firmware decryption based on [@ColdWindScholar](https://github.com/ColdWindScholar/TIK)'s TIK (bkerler MIT base, GPL-3.0 compatibility assessed & third-party notice included).
 
 ## 早期改动 / Early Changes
 
@@ -248,6 +251,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
 ## 近期更新 / Recent Updates
+- 1.3-beta3（自 beta2p2 之后的所有改动 / all changes after beta2p2）：新增 OPPO 固件解密方案（OFP / OZIP / OPS 识别与解密，兼容大多数安卓版本，输出类型复用 zip卡刷包 / img镜像，自动识别明文 OZIP，参考 [ColdWindScholar/TIK](https://github.com/ColdWindScholar/TIK) 实现）；openssl 加速组件随包分发（内置 1.0.2u 四件套 + 逐项探测链 + 安装/重装/卸载 bat，解密默认走 openssl 后端）；brotli 解压组件随包分发（内置多平台库 + brotli.exe，无需 pip）；解密分区镜像动态收集（system/product/odm 全覆盖）；CLI 新增 `decrypt` 子命令；系列解密修复（pyaes CFB/ECB 接口、openssl 攒批性能优化、zip 损坏明确提示、解密失败不再误报等）
+  - 1.3-beta3: added OPPO firmware decryption preset (OFP/OZIP/OPS recognition & decryption, works on most Android versions, output type reused zip-flashable/img-images, auto-detects plaintext OZIP, based on [ColdWindScholar/TIK](https://github.com/ColdWindScholar/TIK)); bundled openssl accelerator components (1.0.2u four-piece set + probe chain + install/reinstall/uninstall bat, decryption defaults to openssl backend); bundled brotli decompression components (multi-platform libs + brotli.exe, no pip needed); dynamic partition-image collection (system/product/odm); CLI `decrypt` subcommand; decryption fix round (pyaes CFB/ECB, openssl batching perf, clear corrupt-zip notice, no false "decrypt failed").
 - 1.3-beta2p2（1.3-beta2p1 的紧急修补 / emergency patch for 1.3-beta2p1）：修复 zip 移植源崩溃（输入概览 UnboundLocalError）；非 sdat zip 输出不再包含未移植的 donor 原版 system.img；CLI LK patch 空转改为强制指定补丁；CLI Magisk 架构默认对齐 GUI（arm64）；发行版 Linux 工具执行权限修复（zip 内 0755 + 运行前自动 chmod）；run.sh shebang 规范化为 /bin/sh；p2 归档轮收尾——Magisk stub 链路修复（stub.apk 缺失不再传空参数 + 输出缺失警告）、平板方案无效「替换init」残留条目清理、boot 移植 init 替换空值守卫（防静默空转）、解包 symlink 目标路径引号清理
   - 1.3-beta2p2 (emergency patch for 1.3-beta2p1): fixed zip-donor crash (UnboundLocalError in input overview); non-sdat zip output no longer embeds the unported donor system.img; CLI LK patch no longer idles silently (requires at least one patch flag); CLI Magisk arch default aligned with GUI (arm64); release Linux tool exec-permission fix (0755 in zip + auto chmod before exec); run.sh shebang normalized to /bin/sh; p2 archiving round — Magisk stub fixes (no empty argv when stub.apk missing + missing-stub warning), tablet preset invalid "replace init" leftover cleanup, empty-value guard for boot init replacement (no silent no-op), symlink target quote cleanup in extraction.
 - 1.3-beta2p1（1.3-beta2 的紧急修补 / emergency patch for 1.3-beta2）：修复 CLI 边界问题——`--log-file` 指向无效路径时不再抛 traceback 崩溃（降级为仅 stdout 并提示）；`--donor-zip` 与 `--donor-boot/--donor-system` 互斥校验（原静默忽略改为明确报错）
