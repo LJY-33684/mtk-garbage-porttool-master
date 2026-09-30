@@ -6,7 +6,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from os import walk, getcwd, chdir, symlink, readlink, name as osname, stat, unlink, chmod
 import os
 import os.path as op
-from shutil import rmtree, copytree
+from shutil import rmtree, copytree, copy2
 from stat import S_IWRITE
 import lzma
 import subprocess
@@ -257,7 +257,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta3p1'
+tool_author = 'affggh'; tool_version = '1.3-beta3p2'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -323,6 +323,59 @@ def _infer_fs_mode(unix_path: str, st_mode: int = 0) -> str:
         parts[1] in ('bin', 'xbin') or (parts[1] == 'vendor' and parts[2] == 'bin'))
     is_exec = bool(st_mode & 0o111) or path_exec
     return suid + ('755' if is_exec else '644')
+
+# Android API → 主版本号（用于判断硬件 HAL ABI 是否跨大版本）。
+# 同一主版本内（如 7.0↔7.1、5.0↔5.1）老式 C HAL 基本兼容；主版本不同时，
+# 独立服务型 HAL（音频/相机/媒体硬解/基带RIL/WiFi/蓝牙）ABI 会不兼容。
+_ANDROID_MAJOR = {
+    19: 4, 20: 4,              # 4.4 / 4.4W
+    21: 5, 22: 5,              # 5.0 / 5.1
+    23: 6,                     # 6.0
+    24: 7, 25: 7,              # 7.0 / 7.1（7.0 起 audioserver/mediacodec 独立、HAL 接口变更）
+    26: 8, 27: 8,              # 8.0 / 8.1（Treble，gralloc/HWC/sensors 等转 HIDL）
+    28: 9, 29: 10, 30: 11,     # 9 / 10 / 11
+    31: 12, 32: 12,            # 12 / 12L
+    33: 13, 34: 14, 35: 15,    # 13 / 14 / 15
+}
+
+def cross_major_version(base_sdk, port_sdk) -> bool:
+    """底包(base)与移植源(port)是否处于不同 Android 主版本。
+    任一版本读不到(None/未知)时返回 False，保守地不改变原有替换行为。"""
+    if base_sdk is None or port_sdk is None:
+        return False
+    bm = _ANDROID_MAJOR.get(base_sdk)
+    pm = _ANDROID_MAJOR.get(port_sdk)
+    return bool(bm is not None and pm is not None and bm != pm)
+
+# 向后兼容旧名
+audio_cross_version = cross_major_version
+
+# === 跨 Android 大版本硬件替换策略（同平台、Android 7.x 及以下无 VNDK 老设备）===
+# 原则：
+#  - 独立服务型 HAL（音频/相机/媒体硬解/RIL/WiFi/蓝牙）跨大版本 ABI 不兼容，覆盖底包旧库
+#    会让对应独立进程（audioserver/cameraserver/mediacodec/rild/wpa_supplicant/bluetooth）
+#    崩溃；这些进程崩溃一般不阻断开机，故跨版本一律跳过、保留移植源自带实现以保开机
+#    （代价是对应功能可能不可用）。
+#  - 图形栈（gralloc/hwcomposer/GPU EGL）是 surfaceflinger 开机合成必需，不换必黑屏/卡一；
+#    Treble(8.0) 前为稳定的 gralloc1/HWC1/EGL C ABI，故跨版本仍成套替换（仅给黑屏警告）。
+#  - sensors/lights/power/vibrator/gps 等老式 C HAL 在 8.0 前 ABI 稳定；
+#    firmware/mddb/.tp/keylayout 是与硬件绑定的数据，均继续替换。
+
+# 手动 replace 循环：跨版本整组跳过的替换项（音频/相机/RIL/WiFi/蓝牙）；
+# 这些组里的 modem/wifi/bt 固件与射频数据由独立的 firmware、mddb 组继续替换，不受影响。
+CROSS_SKIP_REPLACE_GROUPS = frozenset({
+    'audiodriver', 'audioengine', 'tfa',
+    'camera', 'ril', 'wifi', 'bluetooth',
+})
+
+# 音频三组：硬件 primary HAL / 音频参数路由库 / TFA 功放，与移植源 ROM 的音频框架
+# （libaudioflinger / audio_policy / audio_effects 配置）强成套。实测即使同芯片、同 Android
+# 大版本，跨机型用底包音频 HAL 覆盖移植源，也会让 audioserver 加载即空指针崩溃（SIGSEGV
+# fault addr 0x4）、卡第二屏（mt6582 Android7.1.2 同版本移植实证）。因此这三组默认关闭、
+# 保留移植源整套以优先保证开机；仅当用户手动勾选时执行，并打印醒目风险警告。
+AUDIO_REPLACE_GROUPS = frozenset({
+    'audiodriver', 'audioengine', 'tfa',
+})
 
 class updaterutil:
     def __init__(self, fd):
@@ -531,6 +584,10 @@ class portutils:
         self.outdir.mkdir(parents=True, exist_ok=True)
         self.std = stdlog if stdlog else stdout
         self.sdat = False  # 提前赋值，确保属性始终存在
+        # 跨 Android 大版本标志：底包与移植源主版本不同时为 True。
+        # 在 __port_system 版本检测后置位；置位后自动跳过音频/相机/媒体硬解/RIL/WiFi/蓝牙
+        # 等独立服务型 HAL 的跨版本替换以保开机，图形 gralloc/hwcomposer/GPU 仍成套替换。
+        self._cross_major = False
         if not self.__check_exist:
             print("【检查失败】必要文件不存在，移植流程终止", file=self.std)
             raise RuntimeError("移植初始化失败：底包或移植源文件不存在，请检查路径配置")
@@ -854,6 +911,17 @@ class portutils:
             print(f"【文件替换】底包/{val} -> 移植源/{val}...", file=self.std)
             src = base_prefix.joinpath(val)
             dst = port_prefix.joinpath(val)
+
+            def _merge_copy(s, d):
+                # 合并复制：覆盖前清掉目标只读位（Windows 只读文件无法直接截断写入）
+                if op.lexists(d):
+                    _clear_attrs(Path(d))
+                copy2(s, d)
+
+            # firmware 目录按硬件/芯片名单个加载，多文件共存无害，采用合并覆盖：
+            # 底包固件覆盖同名项，同时保留移植源独有、底包没有的固件（如传感器固件）。
+            # mddb / GPU egl / 音频参数 / 热配置等必须与底包对应 HAL/modem 严格配套，仍整套替换。
+            merge_dir = 'firmware' in val.replace('\\', '/').lower()
             if "*" in val:
                 matched = 0
                 for file in glob.glob(op.join(str(base_prefix), val)):
@@ -862,15 +930,22 @@ class portutils:
                     dst2 = port_prefix.joinpath(relfile)
                     src_file = base_prefix.joinpath(relfile)
                     if op.isdir(src_file):
-                        # 通配命中目录：整体目录替换
-                        if dst2.exists():
-                            if dst2.is_dir():
-                                _rmtree(dst2)
-                            else:
+                        # 通配命中目录：firmware 合并，其余整体目录替换
+                        if merge_dir:
+                            if dst2.exists() and not dst2.is_dir():
                                 _clear_attrs(dst2)
                                 dst2.unlink()
-                        copytree(src_file, dst2)
-                        print(f"  - 替换通配目录 {file}", file=self.std)
+                            copytree(src_file, dst2, dirs_exist_ok=True, copy_function=_merge_copy)
+                            print(f"  - 合并通配目录（保留移植源独有文件）{file}", file=self.std)
+                        else:
+                            if dst2.exists():
+                                if dst2.is_dir():
+                                    _rmtree(dst2)
+                                else:
+                                    _clear_attrs(dst2)
+                                    dst2.unlink()
+                            copytree(src_file, dst2)
+                            print(f"  - 替换通配目录 {file}", file=self.std)
                     else:
                         dst2.parent.mkdir(parents=True, exist_ok=True)
                         _clear_attrs(dst2)
@@ -879,14 +954,21 @@ class portutils:
                 if matched == 0:
                     print(f"  - 未匹配任何文件（底包中无 {val}）", file=self.std)
             elif src.is_dir():
-                if dst.exists():
-                    if dst.is_dir():
-                        _rmtree(dst)
-                    else:
+                if merge_dir:
+                    if dst.exists() and not dst.is_dir():
                         _clear_attrs(dst)
                         dst.unlink()
-                copytree(src, dst)
-                print(f"  - 替换目录 {val}", file=self.std)
+                    copytree(src, dst, dirs_exist_ok=True, copy_function=_merge_copy)
+                    print(f"  - 合并替换目录 {val}（底包覆盖同名，保留移植源独有固件）", file=self.std)
+                else:
+                    if dst.exists():
+                        if dst.is_dir():
+                            _rmtree(dst)
+                        else:
+                            _clear_attrs(dst)
+                            dst.unlink()
+                    copytree(src, dst)
+                    print(f"  - 替换目录 {val}", file=self.std)
             elif src.is_file():
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 _clear_attrs(dst)
@@ -971,6 +1053,10 @@ class portutils:
         if port_sdk is not None:
             ver = _API_VER.get(port_sdk, f"API {port_sdk}")
             print(f"【版本检测】移植源 Android {ver}（API {port_sdk}）", file=self.std)
+        if base_sdk is None or port_sdk is None:
+            print(f"【提示】未能完整读取底包/移植源的 Android 版本（build.prop 缺失或无 ro.build.version.sdk）", file=self.std)
+            print(f"  音频驱动替换将按勾选执行，无法进行跨版本自动保护；", file=self.std)
+            print(f"  若开机卡第二屏且 logcat 出现 audioserver/audioflinger 崩溃，请手动取消音频相关勾选后重试。", file=self.std)
 
         # 高版本警告：Android 8.0+ 可能引入 Treble/VNDK，文件替换移植不一定适用
         for label, sdk in (("底包", base_sdk), ("移植源", port_sdk)):
@@ -987,140 +1073,40 @@ class portutils:
             print(f"【警告】跨大版本移植：底包 Android {bv} → 移植源 Android {pv}", file=self.std)
             print(f"  跨大版本 HAL 接口可能不兼容，建议同平台同 Android 大版本移植", file=self.std)
 
+        # === 跨 Android 大版本硬件替换策略判定 ===
+        # 独立服务型 HAL 的 ABI 随 Android 主版本变化（7.0 起 audioserver/mediacodec 独立，
+        # 相机/RIL/WiFi/蓝牙接口随版本演进）。同一主版本内（7.0↔7.1、5.0↔5.1）基本兼容可正常
+        # 替换；主版本不同时把底包旧 HAL 盖进移植源，会让对应独立进程崩溃（音频即表现为卡第二屏、
+        # ADB 可连）。按主版本号判断，比上面的“API 差≥3”更敏感（6.0 API23 → 7.1 API25 差仅 2 也能抓到）。
+        if cross_major_version(base_sdk, port_sdk):
+            self._cross_major = True
+            bv = _API_VER.get(base_sdk, f"API {base_sdk}")
+            pv = _API_VER.get(port_sdk, f"API {port_sdk}")
+            print(f"【严重警告】检测到跨 Android 大版本移植：底包 Android {bv} → 移植源 Android {pv}", file=self.std)
+            print(f"  为保证正常开机，已自动跳过下列【独立服务型】HAL/库的跨版本替换（保留移植源自带实现）：", file=self.std)
+            print(f"    · 音频（audio HAL/音频引擎/TFA 功放）——不跳过会使 audioserver 崩溃卡第二屏", file=self.std)
+            print(f"    · 相机（camera HAL/libcam*/libmtkcam 等）、媒体硬解（OMX/codec）", file=self.std)
+            print(f"    · 基带 RIL（rild/ccci/libril）、WiFi（wpa_supplicant/hostapd 及客户端库）、蓝牙 vendor 库", file=self.std)
+            print(f"  跳过上述项后，外放/相机/硬解/信号/WiFi/蓝牙可能不可用，但不影响开机。", file=self.std)
+            print(f"  图形 gralloc/hwcomposer/GPU 是开机合成必需，仍会【成套替换】；", file=self.std)
+            print(f"    Treble 前为稳定 C ABI，多数可开机；若仍黑屏/卡第一屏，请改用同 Android 大版本的底包。", file=self.std)
+            print(f"  传感器/灯/电源/震动/GPS 等稳定 HAL，以及 firmware/mddb/按键布局等硬件数据照常替换；", file=self.std)
+            print(f"    modem/WiFi/蓝牙固件与射频数据（firmware、mddb）与硬件绑定，也照常替换。", file=self.std)
+
         # 执行system移植逻辑
         print(f"【开始移植】执行system.img移植逻辑...", file=self.std)
         base_prefix = Path("base/system")
         port_prefix = Path("tmp/rom/system")
 
-        # === 同平台通用自动替换模式 ===
+        # === 同平台通用（未列芯片/同平台自动识别）模式 ===
+        # auto 不再用关键词全目录“瞎扫”（旧逻辑会把底包 audio.primary.* 等所有 hw HAL 一并盖进移植源，
+        # 跨机型音频 HAL/框架错配即致 audioserver 崩溃、卡第二屏，Dream. mt6582 实证）。
+        # 改为与手动方案【统一】：下方遍历 flags / replace 组，以 configs.json 各组里的路径/通配符为“识别词”，
+        # 在底包 system 中精准 glob 命中后再替换；是否替换完全由该组 flag（界面勾选 / 默认开关）决定。
+        # 默认矩阵（均衡）：GPU/显示HAL、传感器/灯/GPS/电源/震动/散热、firmware/mddb/按键/开机画面默认替换；
+        # 相机/基带/WiFi/蓝牙同平台默认替换、跨大版本自动跳过；音频 HAL/引擎/功放默认【不替换】。
         if self._flag('auto_replace'):
-            print(f"【自动替换】同平台通用模式：自动扫描底包硬件文件并替换...", file=self.std)
-            auto_count = 0
-
-            # 1. 整个目录替换（固件/配置/GPU驱动）
-            auto_dirs = [
-                "vendor/firmware", "etc/firmware",
-                "vendor/etc/mddb", "etc/mddb",
-                "vendor/etc/audio_param", "etc/audio_param",
-                "vendor/etc/.tp",
-                "vendor/lib/egl", "lib/egl",
-                "etc/wifi", "etc/bluetooth",
-                "etc/ht120_mtc",
-                # 音频配置文件
-                "etc/audio_effects.conf", "vendor/etc/audio_effects.conf",
-                "vendor/etc/audio_policy.conf", "vendor/etc/audio_device.xml",
-                # GPU egl（arm64 双架构）
-                "vendor/lib64/egl", "lib64/egl",
-                # TFA 功放常见目录（NXP 外放功放）
-                "etc/tfa98xx", "etc/tfa9895", "etc/tfa9897", "vendor/etc/tfa98xx",
-                # GPS 配置
-                "vendor/etc/agps_profiles_conf2.xml",
-                # 键盘布局
-                "usr/keylayout",
-                # /system/bin 下 RIL 守护进程（同平台替换安全）
-                "bin/ccci_fsd", "bin/ccci_mdinit", "bin/gsm0710muxd", "bin/rild",
-            ]
-            for d in auto_dirs:
-                p = base_prefix.joinpath(d)
-                if p.is_dir() or p.is_file():
-                    if d in ('vendor/firmware', 'etc/firmware'):
-                        print(f"  - 整目录替换 {d}（含 modem 等平台固件，auto 同平台通用模式）", file=self.std)
-                    __replace(d)
-                    auto_count += 1
-
-            # 2. HAL 模块目录（所有 .so 全替换，含 arm64 双架构）
-            for hwdir in ["lib/hw", "vendor/lib/hw", "lib64/hw", "vendor/lib64/hw"]:
-                src_dir = base_prefix.joinpath(hwdir)
-                if src_dir.is_dir():
-                    for sofile in src_dir.glob("*.so"):
-                        rel = str(sofile.relative_to(base_prefix)).replace("\\", "/")
-                        __replace(rel)
-                        auto_count += 1
-
-            # 3. 硬件库关键词匹配（/vendor/lib/ 和 /lib/ 下的 .so）
-            hw_lib_keywords = [
-                'audio', 'gralloc', 'hwcomposer', 'camera', 'cam',
-                'sensors', 'lights', 'gps', 'power', 'bluetooth',
-                'vibrator', 'thermal', 'wifi', 'wlan', 'ril', 'ccci',
-                'mali', 'imgegl', 'pvr', 'vulkan', 'omx', 'codec',
-                'vcodec', '3a', 'featureio', 'imageio', 'showlogo',
-                'gralloc_extra', 'ksensor', 'rgbwlight', 'mtk-ril',
-                'mtkfusion', 'libbt-vendor', 'libem_wifi', 'libccci',
-                'librilutils', 'libvia-ril', 'libviagpsrpc', 'libgpu',
-                'libmtkcam', 'libcam', 'libmhal', 'libmtkjpeg',
-                'libjpg', 'libswjpg', 'libhardware_legacy', 'libwpa',
-                'libwifi', 'libnetd', 'libdrm', 'libsecure', 'tfa',
-            ]
-            # 只扫描 vendor/lib 与 vendor/lib64（vendor 分区的硬件驱动库），不扫 /lib 根目录（系统框架库不能换）
-            for libdir in ["vendor/lib", "vendor/lib64"]:
-                src_dir = base_prefix.joinpath(libdir)
-                if src_dir.is_dir():
-                    for sofile in src_dir.glob("*.so"):
-                        name = sofile.name.lower()
-                        if any(kw in name for kw in hw_lib_keywords):
-                            rel = str(sofile.relative_to(base_prefix)).replace("\\", "/")
-                            __replace(rel)
-                            auto_count += 1
-
-            # /lib 根目录下少数确实需要替换的硬件兼容库（单独列出，不做关键词扫描）
-            lib_hw_specific = [
-                "lib/libhardware_legacy.so",
-                "lib/libwpa_client.so",
-                "lib/libwifi-service.so",
-                "lib/libreference-ril.so",
-                "lib/libril.so",
-                "lib/mtk-ril.so",
-            ]
-            for rel in lib_hw_specific:
-                if base_prefix.joinpath(rel).exists():
-                    __replace(rel)
-                    auto_count += 1
-
-            # 3b. 非 Treble 主路径：/system/lib 与 /system/lib64 硬件库白名单（前缀匹配，安全项与手动方案同源）
-            legacy_lib_prefixes = [
-                'libcam.', 'libcam_utils', 'libcamalgo', 'libcamdrv', 'libcameracustom',
-                'lib3a', 'libfeatureio', 'libimageio', 'libmhal', 'libmtkjpeg', 'libjpg',
-                'librilmtk', 'libmtkril', 'librilutils', 'libvia-ril',
-                'libmtkomx', 'libstagefrighthw', 'libudf', 'libmtk_vt',
-                'libmali', 'libgles_mali', 'libshowlogo',
-                'libaudiocomp', 'libaudioroute', 'libaudiocust', 'libtfa',
-            ]
-            # 精确文件名排除（带 .so 后缀）：只排除这些框架库本身，
-            # 不误伤白名单前缀命中的硬件适配库（如 libstagefrighthw.so）
-            LEGACY_EXCLUDE = (
-                'libstagefright.so', 'libdrm.so', 'libbinder.so', 'libc.so',
-                'libandroid_runtime.so', 'libcameraservice.so', 'libaudioflinger.so',
-                'libmedia.so', 'libnetd.so', 'libwilhelm.so',
-            )
-            for libdir in ["lib", "lib64"]:
-                src_dir = base_prefix.joinpath(libdir)
-                if src_dir.is_dir():
-                    for sofile in src_dir.glob("*.so"):
-                        name = sofile.name.lower()
-                        if (any(name.startswith(p) for p in legacy_lib_prefixes)
-                                and name not in LEGACY_EXCLUDE):
-                            rel = str(sofile.relative_to(base_prefix)).replace("\\", "/")
-                            __replace(rel)
-                            auto_count += 1
-                            print(f"  - 替换 {rel}", file=self.std)
-
-            # 4. 硬件守护进程关键词匹配（只扫 vendor/bin，/bin 是系统工具不替换）
-            hw_bin_keywords = [
-                'ccci_', 'rild', 'gsm0710muxd', 'mtkfusion',
-                'wpa_', 'hostapd', 'netdiag', 'agpsd', 'boot_logo',
-            ]
-            for bindir in ["vendor/bin"]:
-                src_dir = base_prefix.joinpath(bindir)
-                if src_dir.is_dir():
-                    for binfile in src_dir.iterdir():
-                        if binfile.is_file():
-                            name = binfile.name.lower()
-                            if any(kw in name for kw in hw_bin_keywords):
-                                rel = str(binfile.relative_to(base_prefix)).replace("\\", "/")
-                                __replace(rel)
-                                auto_count += 1
-
-            print(f"【自动替换】完成，共替换 {auto_count} 个硬件文件/目录", file=self.std)
+            print(f"【自动移植】未列芯片·同平台模式：按内置硬件识别表精准匹配底包文件并替换...", file=self.std)
 
         for item in self.items['flags']:
             item_flag = self._flag(item)
@@ -1129,9 +1115,22 @@ class portutils:
             
             if item.startswith("replace_"):
                 replace_type = item[len("replace_"):]
+                # 跨 Android 大版本：音频/相机/RIL/WiFi/蓝牙组整体跳过（独立服务型 HAL ABI 不兼容，
+                # 覆盖会让对应进程崩溃，音频即表现为卡第二屏；详见版本检测处的严重警告）。
+                # 图形 gralloc/hwcomposer/malidriver 与 sensors/gps/power/vibrator/thermal 不跳过；
+                # modem/wifi/bt 固件与射频数据由独立的 firmware、mddb 组继续替换。
+                if self._cross_major and replace_type in CROSS_SKIP_REPLACE_GROUPS:
+                    print(f"【移植项】替换{replace_type}相关文件...", file=self.std)
+                    print(f"  - 跨大版本：已自动跳过{replace_type}全部替换（保留移植源自带实现以保证开机）", file=self.std)
+                    continue
                 # auto 模式下手动选项优先：若 replace 字典有配置则用手动路径覆盖自动替换结果
                 if not self.items.get('replace', {}).get(replace_type):  # #55补：空值也跳过（防空转）
                     continue  # 该方案未配置此替换项的路径，跳过
+                if replace_type in AUDIO_REPLACE_GROUPS:
+                    print(f"  ! 【高风险警告】你手动开启了「{replace_type}」替换。", file=self.std)
+                    print(f"  ! 音频硬件 HAL / 效果策略配置 / 功放库与移植源 ROM 的音频框架（audioflinger 等）强成套，", file=self.std)
+                    print(f"  ! 跨机型覆盖底包音频——即使同芯片、同 Android 版本——也可能导致 audioserver 崩溃、卡第二屏或外放异常。", file=self.std)
+                    print(f"  ! 该选项默认关闭以优先保证开机；若刷入后卡第二屏 / 无声音 / 炸外放，请取消「{replace_type}」后重新移植。", file=self.std)
                 print(f"【移植项】替换{replace_type}相关文件...", file=self.std)
                 for i in self.items['replace'][replace_type]:
                     if base_prefix.joinpath(i).exists() or "*" in i:
@@ -1517,23 +1516,29 @@ class portutils:
                         # 解析权限参数
                         uid, gid, mode, extra = '0', '0', '644', ''
                         selable = 'u:object_r:system_file:s0'
-                        mode_set = False
+                        fmode_val = dmode_val = None
                         for idx, farg in enumerate(fargs):
                             match farg:
                                 case 'uid': uid = fargs[idx+1]
                                 case 'gid': gid = fargs[idx+1]
                                 case 'mode':
-                                    mode = fargs[idx+1]; mode_set = True
+                                    mode = fargs[idx+1]
                                 case 'fmode':
-                                    mode = fargs[idx+1]; mode_set = True  # 文件权限优先（fs_config 逐文件语义）
+                                    fmode_val = fargs[idx+1]
                                 case 'dmode':
-                                    # #72：目录权限仅兜底——set_metadata_recursive 同时给 dmode/fmode 时，
-                                    # 以 fmode（文件权限）为准，避免后写参数覆盖先写
-                                    if not mode_set:
-                                        mode = fargs[idx+1]; mode_set = True
-                                case 'capabilities': 
+                                    dmode_val = fargs[idx+1]
+                                case 'capabilities':
                                     extra = 'capabilities=' + fargs[idx+1] if fargs[idx+1] != '0x0' else ''
                                 case 'selabel': selable = fargs[idx+1]
+                        # set_metadata_recursive 的 fpath 是目录，根条目必须用 dmode（通常 0755）；
+                        # fmode 是子文件权限，而子文件/子目录由下方实际遍历逐个补全，不能拿 fmode 压目录根。
+                        # 旧实现让 dmode 后写覆盖 fmode 恰好正确；#72 改成 fmode 优先会把 /system 挂载点
+                        # 压成 0644（无 x 位），system_server 无法遍历，刷入卡第二屏。
+                        if dirmode:
+                            if dmode_val:
+                                mode = dmode_val
+                        elif fmode_val:
+                            mode = fmode_val
                         
                         fs_label.append([fpath.lstrip('/'), uid, gid, mode, extra])
                         fc_label.append([fpath, selable])

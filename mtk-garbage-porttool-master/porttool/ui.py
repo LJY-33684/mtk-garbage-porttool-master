@@ -682,8 +682,12 @@ class MyUI(ttk.Labelframe):
                 __bind_wheel(child)
         
         def __scroll_func(event):
-            """更新滚动区域"""
-            actcanvas.configure(scrollregion=actcanvas.bbox("all"), width=300, height=180)
+            """更新滚动区域：内容不足视口高度时锁到视口高度，避免滚轮把内容拉上去露白"""
+            actcanvas.configure(width=300, height=180)
+            bb = actcanvas.bbox("all")
+            if bb:
+                # 内容高度 < 视口高度(180) 时，滚动范围撑到视口高度 -> yview 锁死顶部，滚不动
+                actcanvas.configure(scrollregion=(bb[0], bb[1], bb[2], max(bb[3], 180)))
         
         def __create_cv_frame():
             """创建移植条目滚动画布内的frame"""
@@ -706,6 +710,20 @@ class MyUI(ttk.Labelframe):
                 # 部分选中：框内显示 "-"
                 self.select_all_var.set(False)
                 self.select_all_box.state(['alternate'])
+            # #159：gralloc 与 hwcomposer 必须成套替换，单独换一个会黑屏
+            _g = _h = None
+            for _k, _v in self.item:
+                if _k == 'replace_gralloc':
+                    _g = _v.get()
+                elif _k == 'replace_hwcomposer':
+                    _h = _v.get()
+            if _g is not None and _h is not None and _g != _h:
+                if not getattr(self, '_ghwc_warned', False):
+                    print("【警告】gralloc 与 hwcomposer 只勾选了一个：二者必须成套替换，"
+                          "只换其中一个会导致黑屏！请保持同时勾选或同时取消。", file=self.log)
+                    self._ghwc_warned = True
+            else:
+                self._ghwc_warned = False
         
         def __toggle_select_all():
             """全选/全不选：空或部分选中时点击 -> 全部勾选(✓)；全选状态下点击 -> 全部取消(空)"""
@@ -718,6 +736,44 @@ class MyUI(ttk.Labelframe):
                     v.set(True)
             __sync_select_all()
         
+        # 移植条目 key -> 中文显示名（#158：UI 直接显示中文，未收录的 key 回退显示英文 key）
+        ITEM_LABEL = {
+            'replace_kernel': '替换内核 kernel',
+            'replace_audiodriver': '音频驱动 HAL（高风险）',
+            'replace_audioengine': '音频引擎/音效配置',
+            'replace_tfa': 'TFA 智能功放',
+            'replace_bluetooth': '蓝牙 vendor 库',
+            'replace_camera': '相机 HAL/库',
+            'replace_firmware': '硬件固件 firmware',
+            'replace_fstab': 'fstab 挂载表',
+            'replace_gps': 'GPS HAL',
+            'replace_gralloc': '显示合成 HAL（gralloc）',
+            'replace_hwcomposer': '显示合成 HAL（hwcomposer）',
+            'replace_init': 'init 启动脚本',
+            'replace_libshowlogo': '开机画面 logo',
+            'replace_malidriver': 'GPU Mali 驱动',
+            'replace_mddb': 'mddb 传感器坐标',
+            'replace_mtk-kpd': '按键布局 mtk-kpd',
+            'replace_power': '电源 HAL',
+            'replace_ril': '基带 RIL',
+            'replace_sensors': '传感器 HAL',
+            'replace_thermal': '温控 HAL',
+            'replace_vibrator': '震动 HAL',
+            'replace_wifi': 'WiFi',
+            'selinux_permissive': 'SELinux 宽容模式',
+            'enable_adb': '开启 ADB 调试',
+            'auto_replace': '自动识别同平台硬件',
+            'change_locale': '同步语言区域',
+            'change_model': '同步设备型号',
+            'change_platform': '同步平台/芯片信息',
+            'change_timezone': '同步时区',
+            'fit_density': '同步屏幕 DPI',
+            'generate_script': '生成刷机脚本',
+            'single_simcard': '单卡配置',
+            'dual_simcard': '双卡配置',
+            'use_custom_update-binary': '自定义 update-binary',
+        }
+
         def __load_port_item(select):
             """加载选中芯片类型对应的移植条目"""
             print(f"选中移植方案为{select}...", file=self.log)
@@ -785,7 +841,7 @@ class MyUI(ttk.Labelframe):
                 self.itembox.append(
                     ttk.Checkbutton(
                         self.actcvframe, 
-                        text=item_key, 
+                        text=ITEM_LABEL.get(item_key, item_key), 
                         variable=self.item[index][1],
                         command=__sync_select_all
                     )
@@ -795,9 +851,10 @@ class MyUI(ttk.Labelframe):
             for checkbox in self.itembox:
                 checkbox.pack(side='top', fill='x', padx=5)
             
-            # 按实际条目数动态调整滚动范围：
-            # 条目少时（内容低于视口高度）不可滚动、不产生空白；条目多时可滚动到全部内容
-            actcanvas.configure(scrollregion=(0, 0, 300, max(154, len(self.itembox) * 22)))
+            # 滚动区域：严格贴合条目实际包围盒；内容不足视口高度时锁到视口高度，滚不出空白
+            _bbox = actcanvas.bbox("all")
+            if _bbox:
+                actcanvas.configure(scrollregion=(_bbox[0], _bbox[1], _bbox[2], max(_bbox[3], 180)))
             # 递归绑定滚轮，确保鼠标在复选框/全选框上时也能滚动
             __bind_wheel(self.actcvframe)
             __sync_select_all()

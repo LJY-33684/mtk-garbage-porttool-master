@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta3p1**
+> 当前版本 / Current version：**1.3-beta3p2**
 
 ## 项目介绍 / Project Introduction
 
@@ -256,6 +256,9 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
 ## 近期更新 / Recent Updates
+
+- ⚠️ **1.3-beta3p2（紧急修复，强烈建议立即更新 / emergency fix — please update）**：实机实锤修复「同芯片同安卓版本仍卡第二屏、外放无声」的严重问题——旧 auto 模式会关键词全目录瞎扫，把底包的 `audio.primary` / `gralloc` / `hwcomposer` / `sensors` 等 HAL 盖进移植包；即使同芯片同安卓版本，不同厂商这些 HAL 也不通用，盖错后 audioserver 崩溃（SIGSEGV），表现为卡第二屏但 ADB 可连、外放无声。现改为按配置表精准识别，且音频/显示/传感器 HAL 默认不再自动替换、保持移植包原样；gralloc/hwcomposer 单独勾选时日志警告必须成套替换；移植条目改中文显示；修复条目区滚动顶部露白。**旧版本产出的包不保证能开机或有声音，请更新后重新移植。**
+  - ⚠️ **1.3-beta3p2 (emergency fix — please update)**: fixes a serious issue where porting could still end at boot-loop / no external audio even on the same chip and Android version. The old auto-mode keyword scan blindly copied the base's `audio.primary` / `gralloc` / `hwcomposer` / `sensors` HALs into the donor; these HALs are not interchangeable across vendors even on the same chip, so a mismatch crashes audioserver (SIGSEGV) — device stalls at second boot screen with ADB available but no sound. Now scans precisely per config table, and audio/display/sensor HALs default to NOT being replaced (kept from the donor); warns in the log when gralloc/hwcomposer are checked without their pair; porting items now show Chinese labels; fixes the scroll-area empty-gap. **Packages produced by older versions may not boot or may be silent — please update and re-port.**
 - 1.3-beta3p1（1.3-beta3 的紧急修补 / emergency patch for 1.3-beta3）：修复 Linux 端移植必崩（`bin/linux/` 下 8 个可执行文件 git 位 100644→100755 + zip 打包显式写 0755，解压即带执行位，无需手动 chmod）；change_locale 加 `persist.sys.locale` 兜底（底包只写 persist 键时也能同步语言区域）；Magisk APK 文件选择加 `*.apk` 过滤；CLI 手册退出码表修正（【参数错误】归退出码 1，退出码 2 改为【移植异常】/【解密异常】）；openssl 加速组件 bat 删重复 `:download` 标签 + fulgan 源 403 时提示自动切换国内可直连备用源
   - 1.3-beta3p1 (emergency patch for 1.3-beta3): fixed Linux porting crash (8 `bin/linux/` executables now 100755 in git + zip embeds 0755, executable on extract without manual chmod); change_locale falls back to `persist.sys.locale`; Magisk APK picker now filters `*.apk`; CLI manual exit-code table corrected (【参数错误】is exit 1, exit 2 now lists 【移植异常】/【解密异常】); openssl bat dedup'd the `:download` label + fulgan 403 now prompts automatic fallback to the China-direct mirror.
 - 1.3-beta3（自 beta2p2 之后的所有改动 / all changes after beta2p2）：新增 OPPO 固件解密方案（OFP / OZIP / OPS 识别与解密，兼容大多数安卓版本，输出类型复用 zip卡刷包 / img镜像，自动识别明文 OZIP，参考 [ColdWindScholar/TIK](https://github.com/ColdWindScholar/TIK) 实现）；openssl 加速组件随包分发（内置 1.0.2u 四件套 + 逐项探测链 + 安装/重装/卸载 bat，解密默认走 openssl 后端）；brotli 解压组件随包分发（内置多平台库 + brotli.exe，无需 pip）；解密分区镜像动态收集（system/product/odm 全覆盖）；CLI 新增 `decrypt` 子命令；系列解密修复（pyaes CFB/ECB 接口、openssl 攒批性能优化、zip 损坏明确提示、解密失败不再误报等）

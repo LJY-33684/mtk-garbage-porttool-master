@@ -35,7 +35,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3-beta3p1`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3-beta3p2`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -109,6 +109,14 @@ python porttool_cli.py port \
 - 产物目录：`out/<YYYYMMDD-HH：MM：SS>/`（**全角冒号**，Windows 目录名限制；每次运行实时生成）
 - 产物命名：`boot.img` / `system.img`（img 输出）；`recovery.img`（recovery-only 模式）；`zip 卡刷包`（zip 输出）
 - LK 模式：备份 `<名字>_original_backup`、补丁 `<名字>_patched` 同样落在 out 时间戳目录下
+
+### 5.5 跨 Android 大版本硬件自动跳过 / Cross-Major HAL Safety
+
+- 工具读取底包与移植源 `build.prop` 的 `ro.build.version.sdk`，当二者 **Android 主版本不同**（如 6.0 API23 → 7.1.2 API25；同主版本 7.0↔7.1、5.0↔5.1 不算跨版本）时自动进入跨版本安全策略：**即使对应条目被勾选，也会跳过**下列「独立服务型 HAL」的替换以保证开机，并在日志打印【严重警告】总说明 + 逐条 `【移植项】...跨大版本：已自动跳过...`：
+  - 音频（`audiodriver`/`audioengine`/`tfa`）、相机（`camera`）、媒体硬解（OMX/codec）、RIL（`ril`）、WiFi（`wifi` 的库与守护进程）、蓝牙（`bluetooth` 的 vendor 库）
+- **仍会替换**：图形 gralloc / hwcomposer / Mali GPU（开机合成链路必需，成套替换；若仍黑屏/卡一需同 Android 大版本底包，日志会显著警告）、sensors / lights / gps / power / vibrator / thermal 等老式 C HAL、`firmware` 与 `mddb`（含 wifi/bt/modem 固件与射频数据）、keylayout、wifi/bt 纯配置文件。
+- 读不到任一端 sdk 时保守不跳过（维持原替换行为，日志有【提示】）。
+- 该策略对 GUI 与 CLI 完全一致、**无额外参数**；壳只需透传【严重警告】与各跳过明细行，无需自行判断版本。
 
 ## 6. 日志接口（重点）/ Log Interface
 
@@ -230,5 +238,5 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3-beta3p1`
+- 本桥接接口随工具版本发布：当前 `1.3-beta3p2`
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）
