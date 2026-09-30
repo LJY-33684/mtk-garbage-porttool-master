@@ -116,6 +116,7 @@ python porttool_cli.py port \
   - 音频（`audiodriver`/`audioengine`/`tfa`）、相机（`camera`）、媒体硬解（OMX/codec）、RIL（`ril`）、WiFi（`wifi` 的库与守护进程）、蓝牙（`bluetooth` 的 vendor 库）
 - **仍会替换**：图形 gralloc / hwcomposer / Mali GPU（开机合成链路必需，成套替换；若仍黑屏/卡一需同 Android 大版本底包，日志会显著警告）、sensors / lights / gps / power / vibrator / thermal 等老式 C HAL、`firmware` 与 `mddb`（含 wifi/bt/modem 固件与射频数据）、keylayout、wifi/bt 纯配置文件。
 - 读不到任一端 sdk 时保守不跳过（维持原替换行为，日志有【提示】）。
+- **音频三组默认关闭**（`replace_audiodriver` / `replace_audioengine` / `replace_tfa` 默认 `False`）：即使**同芯片同 Android 版本**，不同厂商的 `audio.primary` / audio_policy 等 HAL 也不通用，盖错会导致 `audioserver` SIGSEGV（卡第二屏、ADB 可连、外放无声）。故默认保持移植源原样、不替换；确需替换时壳侧传 `--item replace_audiodriver` 并由用户自行承担风险。
 - 该策略对 GUI 与 CLI 完全一致、**无额外参数**；壳只需透传【严重警告】与各跳过明细行，无需自行判断版本。
 
 ## 6. 日志接口（重点）/ Log Interface
