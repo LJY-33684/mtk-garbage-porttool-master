@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta3**
+> 当前版本 / Current version：**1.3-beta3p1**
 
 ## 项目介绍 / Project Introduction
 
@@ -256,6 +256,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
 ## 近期更新 / Recent Updates
+- 1.3-beta3p1（1.3-beta3 的紧急修补 / emergency patch for 1.3-beta3）：修复 Linux 端移植必崩（`bin/linux/` 下 8 个可执行文件 git 位 100644→100755 + zip 打包显式写 0755，解压即带执行位，无需手动 chmod）；change_locale 加 `persist.sys.locale` 兜底（底包只写 persist 键时也能同步语言区域）；Magisk APK 文件选择加 `*.apk` 过滤；CLI 手册退出码表修正（【参数错误】归退出码 1，退出码 2 改为【移植异常】/【解密异常】）；openssl 加速组件 bat 删重复 `:download` 标签 + fulgan 源 403 时提示自动切换国内可直连备用源
+  - 1.3-beta3p1 (emergency patch for 1.3-beta3): fixed Linux porting crash (8 `bin/linux/` executables now 100755 in git + zip embeds 0755, executable on extract without manual chmod); change_locale falls back to `persist.sys.locale`; Magisk APK picker now filters `*.apk`; CLI manual exit-code table corrected (【参数错误】is exit 1, exit 2 now lists 【移植异常】/【解密异常】); openssl bat dedup'd the `:download` label + fulgan 403 now prompts automatic fallback to the China-direct mirror.
 - 1.3-beta3（自 beta2p2 之后的所有改动 / all changes after beta2p2）：新增 OPPO 固件解密方案（OFP / OZIP / OPS 识别与解密，兼容大多数安卓版本，输出类型复用 zip卡刷包 / img镜像，自动识别明文 OZIP，参考 [ColdWindScholar/TIK](https://github.com/ColdWindScholar/TIK) 实现）；openssl 加速组件随包分发（内置 1.0.2u 四件套 + 逐项探测链 + 安装/重装/卸载 bat，解密默认走 openssl 后端）；brotli 解压组件随包分发（内置多平台库 + brotli.exe，无需 pip）；解密分区镜像动态收集（system/product/odm 全覆盖）；CLI 新增 `decrypt` 子命令；系列解密修复（pyaes CFB/ECB 接口、openssl 攒批性能优化、zip 损坏明确提示、解密失败不再误报等）
   - 1.3-beta3: added OPPO firmware decryption preset (OFP/OZIP/OPS recognition & decryption, works on most Android versions, output type reused zip-flashable/img-images, auto-detects plaintext OZIP, based on [ColdWindScholar/TIK](https://github.com/ColdWindScholar/TIK)); bundled openssl accelerator components (1.0.2u four-piece set + probe chain + install/reinstall/uninstall bat, decryption defaults to openssl backend); bundled brotli decompression components (multi-platform libs + brotli.exe, no pip needed); dynamic partition-image collection (system/product/odm); CLI `decrypt` subcommand; decryption fix round (pyaes CFB/ECB, openssl batching perf, clear corrupt-zip notice, no false "decrypt failed").
 - 1.3-beta2p2（1.3-beta2p1 的紧急修补 / emergency patch for 1.3-beta2p1）：修复 zip 移植源崩溃（输入概览 UnboundLocalError）；非 sdat zip 输出不再包含未移植的 donor 原版 system.img；CLI LK patch 空转改为强制指定补丁；CLI Magisk 架构默认对齐 GUI（arm64）；发行版 Linux 工具执行权限修复（zip 内 0755 + 运行前自动 chmod）；run.sh shebang 规范化为 /bin/sh；p2 归档轮收尾——Magisk stub 链路修复（stub.apk 缺失不再传空参数 + 输出缺失警告）、平板方案无效「替换init」残留条目清理、boot 移植 init 替换空值守卫（防静默空转）、解包 symlink 目标路径引号清理

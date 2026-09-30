@@ -35,7 +35,6 @@ exit /b 0
 
 
 :download
-:download
 where curl.exe >nul 2>nul
 if errorlevel 1 (
   echo [提示] 未找到 curl.exe（需 Windows 10 1803 及以上系统）。
@@ -58,7 +57,13 @@ for %%U in (%CAND0% %CAND1%) do (
     if exist "%EX%\openssl.exe" goto install
     if exist "%EX%\openssl-1.1\x64\bin\openssl.exe" goto install
   )
-  echo [重试] 该来源失败，尝试下一候选...
+  echo %%U | findstr /i "fulgan" >nul
+  if errorlevel 1 (
+    echo [重试] 该来源失败，尝试下一候选...
+  ) else (
+    echo [提示] fulgan 源被 Cloudflare 拦截(403)，需代理才能访问
+    echo        不用担心，正在自动切换国内可直连的备用源...
+  )
 )
 
 goto fail

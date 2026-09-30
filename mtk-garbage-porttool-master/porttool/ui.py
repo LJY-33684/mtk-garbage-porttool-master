@@ -947,8 +947,8 @@ class MyUI(ttk.Labelframe):
             *["arm64", "arm", "x86", "x86_64"]
         )
         self.magiskapkentry = ttk.Entry(self._extra, textvariable=self.magisk_apk)
-        self.magiskapkentry.bind("<Double-Button-1>", lambda x:self.magisk_apk.set(askopenfilename()))
-        self.magiskapkbtn = ttk.Button(self._extra, text="选择", width=6, command=lambda: self.magisk_apk.set(askopenfilename()))
+        self.magiskapkentry.bind("<Double-Button-1>", lambda x:self.magisk_apk.set(askopenfilename(filetypes=[("Android APK", "*.apk"), ("All files", "*.*")])))
+        self.magiskapkbtn = ttk.Button(self._extra, text="选择", width=6, command=lambda: self.magisk_apk.set(askopenfilename(filetypes=[("Android APK", "*.apk"), ("All files", "*.*")])))
 
         # Magisk修补复选框（控制架构/APK输入框显示）
         self.buttonmagisk = ttk.Checkbutton(

@@ -257,7 +257,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta3'
+tool_author = 'affggh'; tool_version = '1.3-beta3p1'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -1195,7 +1195,7 @@ class portutils:
                     base_prop = base_prefix.joinpath("build.prop")
                     if port_prop.exists() and base_prop.exists():
                         with proputil(str(port_prop)) as pp, proputil(str(base_prop)) as bp:
-                            locale = bp.getprop('ro.product.locale')
+                            locale = bp.getprop('ro.product.locale') or bp.getprop('persist.sys.locale')
                             if locale:
                                 pp.setprop('ro.product.locale', locale)
                                 pp.setprop('persist.sys.locale', locale)
@@ -1206,7 +1206,7 @@ class portutils:
                                     pp.setprop('ro.product.locale.region', region)
                                 print(f"  - 同步语言区域：{locale}", file=self.std)
                             else:
-                                print(f"  - 跳过（底包中未找到ro.product.locale）", file=self.std)
+                                print(f"  - 跳过（底包中未找到 ro.product.locale / persist.sys.locale）", file=self.std)
                     else:
                         print(f"  - 跳过（未找到build.prop）", file=self.std)
                 case 'enable_adb':
