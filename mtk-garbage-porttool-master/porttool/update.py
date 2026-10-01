@@ -122,6 +122,7 @@ def render_markdown(text_widget, markdown_text):
     text_widget.tag_configure('code', font=('Consolas', 9), background='#f0f0f0')
     text_widget.tag_configure('link', foreground='#0066cc', underline=True)
     text_widget.tag_configure('list', lmargin1=20, lmargin2=20)
+    text_widget.tag_configure('blockquote', lmargin1=16, lmargin2=16, foreground='#888888')
 
     in_code_block = False
     for line in markdown_text.splitlines():
@@ -160,6 +161,14 @@ def render_markdown(text_widget, markdown_text):
             content = re.sub(r'^\d+\.\s+', '', stripped)
             text_widget.insert(END, stripped.split('.')[0] + '. ', 'list')
             _insert_inline(text_widget, content)
+            text_widget.insert(END, '\n')
+            continue
+
+        # 引用块（blockquote）
+        if stripped.startswith('>'):
+            content = re.sub(r'^>\s?', '', stripped)
+            text_widget.insert(END, '  ', 'blockquote')
+            _insert_inline(text_widget, content, style='blockquote')
             text_widget.insert(END, '\n')
             continue
 
