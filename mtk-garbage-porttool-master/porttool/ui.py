@@ -588,7 +588,7 @@ class MyUI(ttk.Labelframe):
         scan_report(self.lk_dir_var.get().strip().strip('"'), self.log, self._lk_selected())
 
     def _lk_patch(self):
-        from .LKPatch import patch_files
+        from .LKPatch import patch_files, _out_dir
         sel = self._lk_selected()
         if not sel:
             print("请先选择固件目录并勾选要处理的镜像", file=self.log)
@@ -597,6 +597,7 @@ class MyUI(ttk.Labelframe):
                     patch_a=self.lk_var_a.get(), patch_b=self.lk_var_b.get(),
                     auto_backup=self.lk_var_bak.get(), gen_report=self.lk_var_ver.get(),
                     inplace=self.lk_var_inplace.get())
+        self.last_outdir = _out_dir()
 
     def _lk_verify(self):
         from .LKPatch import verify_files
