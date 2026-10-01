@@ -40,8 +40,8 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 os.chdir(_ROOT)
 
-from porttool.configs import support_chipset_portstep          # 方案配置
-from porttool.utils import portutils, tool_version, tool_author  # 移植核心 + 版本
+# 注意：porttool.configs / porttool.utils 在 main() 版本探测之后再 import
+# （低版本 Python 会在文件级 import 时就因 match-case 语法 SyntaxError，探测代码跑不到）
 
 
 # ============================================================
@@ -86,7 +86,7 @@ def build_items(chipset, item_ons, item_offs, extra):
     # 附加项（Magisk / 清理缓存）
     items['patch_magisk'] = extra.get('patch_magisk', False)
     items['magisk_apk'] = extra.get('magisk_apk', '')
-    items['target_arch'] = extra.get('target_arch', 'arm')
+    items['target_arch'] = extra.get('target_arch', 'arm64')  # #175：与 argparse default 一致
     items['clean_base_after'] = extra.get('clean_base_after', False)
     return items
 
@@ -196,6 +196,8 @@ def cmd_lk(a, log):
         print(f"【参数错误】固件目录不存在：{folder}", file=log)
         return 1
     op = a.lk_op
+    print(file=log)
+    print("=" * 60, file=log)
     if op == 'scan':
         ok = LKPatch.scan_report(folder, log)
     elif op == 'patch':
@@ -231,6 +233,8 @@ def cmd_decrypt(a, log):
         ts = time.strftime("%Y%m%d-%H：%M：%S")
         outdir = os.path.join(_ROOT, 'out', ts)
     os.makedirs(outdir, exist_ok=True)
+    print(file=log)
+    print("=" * 60, file=log)
     ok = oppo_decrypt.decrypt(fw, outdir, log, out_type=getattr(a, 'out_type', 'img'))
     print(f"【CLI】输出目录：{outdir}", file=log)
     return 0 if ok else 2
@@ -288,6 +292,14 @@ def cmd_check_update(a, log):
 # 顶层查询：--chipsets / --items / --version
 # ============================================================
 def main(argv=None):
+    import sys
+    if sys.version_info < (3, 10):
+        sys.stderr.write("[错误] 需要 Python 3.10+，当前：%s\n" % sys.version.split()[0])
+        return 1
+    # 延迟 import：确保低版本 Python 在版本探测后才会碰到 match-case 语法
+    global support_chipset_portstep, portutils, tool_version, tool_author
+    from porttool.configs import support_chipset_portstep
+    from porttool.utils import portutils, tool_version, tool_author
     p = argparse.ArgumentParser(
         prog='porttool_cli',
         description='MTK 低端机移植工具命令行桥接入口（供其它平台 UI 壳调用）')

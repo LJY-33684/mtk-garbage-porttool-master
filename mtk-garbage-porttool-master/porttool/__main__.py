@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-from tkinter import Tk
-from .ui import (
-    MyUI
-)
-from . import singleton
+# 注意：.ui / .singleton 在 main() 版本探测之后再 import
+# （低版本 Python 会在文件级 import 链上因 match-case 语法 SyntaxError，探测代码跑不到）
 from os import name
 if name == 'nt':
     import ctypes
@@ -110,6 +107,26 @@ def _show_already_running(pid):
 
 
 def main():
+    # Python 3.10+ 环境探测
+    import sys
+    if sys.version_info < (3, 10):
+        try:
+            import tkinter.messagebox as mb
+            mb.showerror(
+                "需要 Python 3.10+",
+                "本工具需要 Python 3.10 或更高版本运行。\n"
+                "当前版本：%s\n\n请从 python.org 下载安装最新版 Python 3 后重试。"
+                % sys.version.split()[0]
+            )
+        except Exception:
+            print("[错误] 需要 Python 3.10+，当前：%s" % sys.version.split()[0])
+        return
+
+    # 延迟 import：确保低版本 Python 在版本探测后才会碰到 match-case 语法
+    from tkinter import Tk
+    from .ui import MyUI
+    from . import singleton
+
     # 高 DPI 必须在 Tk() 之前设置
     scaling = _setup_high_dpi()
 

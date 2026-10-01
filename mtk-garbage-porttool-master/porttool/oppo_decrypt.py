@@ -17,6 +17,7 @@ import mmap
 import os
 import shutil
 import subprocess
+import sys
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -1002,8 +1003,14 @@ def decrypt(path, outdir, log=None, out_type='img'):
                     ok = True
                 else:
                     emit(f"【解压】正在展开固件镜像到 {outdir} ...")
+                    outdir_abs = os.path.abspath(outdir)
                     with zipfile.ZipFile(zippath) as zf:
-                        zf.extractall(outdir)
+                        for name in zf.namelist():
+                            target = os.path.abspath(os.path.join(outdir_abs, name))
+                            if not (target == outdir_abs or target.startswith(outdir_abs + os.sep)):
+                                emit(f"[警告] 跳过非法 zip 条目（路径穿越）: {name}")
+                                continue
+                            zf.extract(name, outdir_abs)
                     conv_ok = _convert_to_img(outdir, emit)
                     if conv_ok:
                         ok = True

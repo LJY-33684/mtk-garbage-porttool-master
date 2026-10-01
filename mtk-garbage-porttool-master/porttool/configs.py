@@ -1,4 +1,5 @@
 import os.path as op
+import sys
 from . import archdetect
 
 # 仓库根目录（基于本文件定位，避免依赖当前工作目录；configs.py 位于 <根>/porttool/ 下）
@@ -1539,8 +1540,11 @@ support_chipset_portstep = {
 
 _configs_path = op.join(_ROOT, "configs.json")
 if op.isfile(_configs_path):
-    with open(_configs_path, 'r', encoding='utf-8-sig') as c:
-        support_chipset_portstep = json.load(c)
+    try:
+        with open(_configs_path, 'r', encoding='utf-8-sig') as c:
+            support_chipset_portstep = json.load(c)
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"[警告] configs.json 解析失败（{e}），降级使用内嵌默认配置", file=sys.stderr)
 else:
     try:
         with open(_configs_path, 'w', encoding='utf-8') as c:

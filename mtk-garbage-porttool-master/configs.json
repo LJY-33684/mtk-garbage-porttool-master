@@ -31,6 +31,7 @@
             "change_model": true,
             "change_timezone": true,
             "change_locale": true,
+            "set_cn_servers": true,
             "use_custom_update-binary": true,
             "replace_wifi": false
         },
@@ -217,6 +218,7 @@
             "change_model": true,
             "change_timezone": true,
             "change_locale": true,
+            "set_cn_servers": true,
             "use_custom_update-binary": true
         },
         "replace": {
@@ -526,6 +528,7 @@
             "change_model": true,
             "change_timezone": true,
             "change_locale": true,
+            "set_cn_servers": true,
             "use_custom_update-binary": true,
             "replace_wifi": false
         },
@@ -702,6 +705,7 @@
             "change_model": true,
             "change_timezone": true,
             "change_locale": true,
+            "set_cn_servers": true,
             "use_custom_update-binary": true
         },
         "replace": {
@@ -885,6 +889,7 @@
             "change_model": true,
             "change_timezone": true,
             "change_locale": true,
+            "set_cn_servers": true,
             "use_custom_update-binary": true
         },
         "replace": {
@@ -1211,6 +1216,7 @@
             "change_model": true,
             "change_timezone": true,
             "change_locale": true,
+            "set_cn_servers": true,
             "use_custom_update-binary": true
         },
         "replace": {

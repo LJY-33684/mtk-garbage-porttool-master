@@ -1,4 +1,4 @@
-# The MIT License (MIT)
+﻿# The MIT License (MIT)
 #
 # Copyright (c) 2014 Richard Moore
 #
@@ -62,34 +62,15 @@ def _compact_word(word):
     return (word[0] << 24) | (word[1] << 16) | (word[2] << 8) | word[3]
 
 def _string_to_bytes(text):
-    return list(ord(c) for c in text)
+    if isinstance(text, bytes):
+        return text
+    return [ord(c) for c in text]
 
 def _bytes_to_string(binary):
-    return "".join(chr(b) for b in binary)
+    return bytes(binary)
 
 def _concat_list(a, b):
-    return a + b
-
-
-# Python 3 compatibility
-try:
-    xrange
-except Exception:
-    xrange = range
-
-    # Python 3 supports bytes, which is already an array of integers
-    def _string_to_bytes(text):
-        if isinstance(text, bytes):
-            return text
-        return [ord(c) for c in text]
-
-    # In Python 3, we return bytes
-    def _bytes_to_string(binary):
-        return bytes(binary)
-
-    # Python 3 cannot concatenate a list onto a bytes, so we bytes-ify it first
-    def _concat_list(a, b):
-        return a + bytes(b)
+    return a + bytes(b)
 
 
 # Based *largely* on the Rijndael implementation
@@ -136,19 +117,19 @@ class AES(object):
         rounds = self.number_of_rounds[len(key)]
 
         # Encryption round keys
-        self._Ke = [[0] * 4 for i in xrange(rounds + 1)]
+        self._Ke = [[0] * 4 for i in range(rounds + 1)]
 
         # Decryption round keys
-        self._Kd = [[0] * 4 for i in xrange(rounds + 1)]
+        self._Kd = [[0] * 4 for i in range(rounds + 1)]
 
         round_key_count = (rounds + 1) * 4
         KC = len(key) // 4
 
         # Convert the key into ints
-        tk = [ struct.unpack('>i', key[i:i + 4])[0] for i in xrange(0, len(key), 4) ]
+        tk = [ struct.unpack('>i', key[i:i + 4])[0] for i in range(0, len(key), 4) ]
 
         # Copy values into round key arrays
-        for i in xrange(0, KC):
+        for i in range(0, KC):
             self._Ke[i // 4][i % 4] = tk[i]
             self._Kd[rounds - (i // 4)][i % 4] = tk[i]
 
@@ -166,12 +147,12 @@ class AES(object):
             rconpointer += 1
 
             if KC != 8:
-                for i in xrange(1, KC):
+                for i in range(1, KC):
                     tk[i] ^= tk[i - 1]
 
             # Key expansion for 256-bit keys is "slightly different" (fips-197)
             else:
-                for i in xrange(1, KC // 2):
+                for i in range(1, KC // 2):
                     tk[i] ^= tk[i - 1]
                 tt = tk[KC // 2 - 1]
 
@@ -180,7 +161,7 @@ class AES(object):
                                (self.S[(tt >> 16) & 0xFF] << 16) ^
                                (self.S[(tt >> 24) & 0xFF] << 24))
 
-                for i in xrange(KC // 2 + 1, KC):
+                for i in range(KC // 2 + 1, KC):
                     tk[i] ^= tk[i - 1]
 
             # Copy values into round key arrays
@@ -192,8 +173,8 @@ class AES(object):
                 t += 1
 
         # Inverse-Cipher-ify the decryption round key (fips-197 section 5.3)
-        for r in xrange(1, rounds):
-            for j in xrange(0, 4):
+        for r in range(1, rounds):
+            for j in range(0, 4):
                 tt = self._Kd[r][j]
                 self._Kd[r][j] = (self.U1[(tt >> 24) & 0xFF] ^
                                   self.U2[(tt >> 16) & 0xFF] ^
@@ -211,11 +192,11 @@ class AES(object):
         a = [0, 0, 0, 0]
 
         # Convert plaintext to (ints ^ key)
-        t = [(_compact_word(plaintext[4 * i:4 * i + 4]) ^ self._Ke[0][i]) for i in xrange(0, 4)]
+        t = [(_compact_word(plaintext[4 * i:4 * i + 4]) ^ self._Ke[0][i]) for i in range(0, 4)]
 
         # Apply round transforms
-        for r in xrange(1, rounds):
-            for i in xrange(0, 4):
+        for r in range(1, rounds):
+            for i in range(0, 4):
                 a[i] = (self.T1[(t[ i          ] >> 24) & 0xFF] ^
                         self.T2[(t[(i + s1) % 4] >> 16) & 0xFF] ^
                         self.T3[(t[(i + s2) % 4] >>  8) & 0xFF] ^
@@ -225,7 +206,7 @@ class AES(object):
 
         # The last round is special
         result = [ ]
-        for i in xrange(0, 4):
+        for i in range(0, 4):
             tt = self._Ke[rounds][i]
             result.append((self.S[(t[ i           ] >> 24) & 0xFF] ^ (tt >> 24)) & 0xFF)
             result.append((self.S[(t[(i + s1) % 4] >> 16) & 0xFF] ^ (tt >> 16)) & 0xFF)
@@ -245,11 +226,11 @@ class AES(object):
         a = [0, 0, 0, 0]
 
         # Convert ciphertext to (ints ^ key)
-        t = [(_compact_word(ciphertext[4 * i:4 * i + 4]) ^ self._Kd[0][i]) for i in xrange(0, 4)]
+        t = [(_compact_word(ciphertext[4 * i:4 * i + 4]) ^ self._Kd[0][i]) for i in range(0, 4)]
 
         # Apply round transforms
-        for r in xrange(1, rounds):
-            for i in xrange(0, 4):
+        for r in range(1, rounds):
+            for i in range(0, 4):
                 a[i] = (self.T5[(t[ i          ] >> 24) & 0xFF] ^
                         self.T6[(t[(i + s1) % 4] >> 16) & 0xFF] ^
                         self.T7[(t[(i + s2) % 4] >>  8) & 0xFF] ^
@@ -259,7 +240,7 @@ class AES(object):
 
         # The last round is special
         result = [ ]
-        for i in xrange(0, 4):
+        for i in range(0, 4):
             tt = self._Kd[rounds][i]
             result.append((self.Si[(t[ i           ] >> 24) & 0xFF] ^ (tt >> 24)) & 0xFF)
             result.append((self.Si[(t[(i + s1) % 4] >> 16) & 0xFF] ^ (tt >> 16)) & 0xFF)
@@ -278,14 +259,14 @@ class Counter(object):
     def __init__(self, initial_value = 1):
 
         # Convert the value into an array of bytes long
-        self._counter = [ ((initial_value >> i) % 256) for i in xrange(128 - 8, -1, -8) ]
+        self._counter = [ ((initial_value >> i) % 256) for i in range(128 - 8, -1, -8) ]
 
     value = property(lambda s: s._counter)
 
     def increment(self):
         '''Increment the counter (overflow rolls back to 0).'''
 
-        for i in xrange(len(self._counter) - 1, -1, -1):
+        for i in range(len(self._counter) - 1, -1, -1):
             self._counter[i] += 1
 
             if self._counter[i] < 256: break
@@ -443,7 +424,7 @@ class AESModeOfOperationCFB(AESSegmentModeOfOperation):
 
         # Break block into segments
         encrypted = [ ]
-        for i in xrange(0, len(plaintext), self._segment_bytes):
+        for i in range(0, len(plaintext), self._segment_bytes):
             plaintext_segment = plaintext[i: i + self._segment_bytes]
             xor_segment = self._aes.encrypt(self._shift_register)[:len(plaintext_segment)]
             cipher_segment = [ (p ^ x) for (p, x) in zip(plaintext_segment, xor_segment) ]
@@ -463,7 +444,7 @@ class AESModeOfOperationCFB(AESSegmentModeOfOperation):
 
         # Break block into segments
         decrypted = [ ]
-        for i in xrange(0, len(ciphertext), self._segment_bytes):
+        for i in range(0, len(ciphertext), self._segment_bytes):
             cipher_segment = ciphertext[i: i + self._segment_bytes]
             xor_segment = self._aes.encrypt(self._shift_register)[:len(cipher_segment)]
             plaintext_segment = [ (p ^ x) for (p, x) in zip(cipher_segment, xor_segment) ]

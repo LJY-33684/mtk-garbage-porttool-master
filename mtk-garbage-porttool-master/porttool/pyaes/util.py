@@ -1,4 +1,4 @@
-# The MIT License (MIT)
+﻿# The MIT License (MIT)
 #
 # Copyright (c) 2014 Richard Moore
 #
@@ -27,22 +27,12 @@
 # ensures the object behaves as we need it to.
 
 def to_bufferable(binary):
-    return binary
+    if isinstance(binary, bytes):
+        return binary
+    return bytes(ord(b) for b in binary)
 
 def _get_byte(c):
-    return ord(c)
-
-try:
-    xrange
-except:
-
-    def to_bufferable(binary):
-        if isinstance(binary, bytes):
-            return binary
-        return bytes(ord(b) for b in binary)
-
-    def _get_byte(c):
-        return c
+    return c
 
 def append_PKCS7_padding(data):
     pad = 16 - (len(data) % 16)

@@ -77,9 +77,19 @@ class FileChooser(Toplevel):
                 case 4: return "移植用system.img"
                 case _: return ""
         
-        def __choose_file(val: StringVar):
+        def __choose_file(val: StringVar, index: int = 0):
             """文件选择按钮回调：选择文件并更新对应变量"""
-            val.set(askopenfilename(initialdir=getcwd()))
+            # #170 后顺手：按框类型过滤后缀（boot/recovery 含 .bin，system 仅 .img，移植包 .zip）
+            _ft = {
+                0: [("Boot/Recovery 镜像", "*.img *.bin"), ("所有文件", "*.*")],
+                1: [("System 镜像", "*.img *.bin"), ("所有文件", "*.*")],
+                2: [("移植包 ZIP", "*.zip"), ("所有文件", "*.*")],
+                3: [("Boot/Recovery 镜像", "*.img *.bin"), ("所有文件", "*.*")],
+                4: [("System 镜像", "*.img *.bin"), ("所有文件", "*.*")],
+            }.get(index, [("所有文件", "*.*")])
+            path = askopenfilename(initialdir=getcwd(), filetypes=_ft)
+            if path:
+                val.set(path)
             self.focus()
         
         def __toggle_source_type():
@@ -118,7 +128,7 @@ class FileChooser(Toplevel):
             frame = ttk.Frame(self)
             label = ttk.Label(frame, text=__match(index), width=16)
             entry = ttk.Entry(frame, textvariable=current_var, width=40)
-            button = ttk.Button(frame, text="选择文件", command=lambda x=current_var: __choose_file(x))
+            button = ttk.Button(frame, text="选择文件", command=lambda x=current_var, i=index: __choose_file(x, i))
             self.frame.append([frame, label, entry, button])
         
         # ========== Recovery 模式布局：只显示 底包Recovery + 移植Recovery ==========
@@ -639,6 +649,8 @@ class MyUI(ttk.Labelframe):
         self.oppo_start_btn.config(state='disabled', text='解密中...')
         self.oppo_status.set('正在解密，请稍候...')
         out_type = 'zip' if self.pack_type.get() == 'zip' else 'img'
+        print(file=self.log)
+        print("=" * 60, file=self.log)
         print(f"【OPPO解密】开始解密，输出目录：{outdir}，输出类型：{'zip 卡刷包（不展开）' if out_type == 'zip' else 'img 镜像（展开并转换分区镜像）'}", file=self.log)
 
         def task():
@@ -764,6 +776,7 @@ class MyUI(ttk.Labelframe):
             'enable_adb': '开启 ADB 调试',
             'auto_replace': '自动识别同平台硬件',
             'change_locale': '同步语言区域',
+            'set_cn_servers': '国内网络/时间服务器',
             'change_model': '同步设备型号',
             'change_platform': '同步平台/芯片信息',
             'change_timezone': '同步时区',
@@ -1106,6 +1119,12 @@ class MyUI(ttk.Labelframe):
         self.oppo_panel.pack_forget()  # 默认隐藏，选择 OPPO 方案时显示
 
         # 版本号行（左下角，修补面具选项下面）：左侧版本号，右侧 GitHub / Gitee 仓库图标
+        # 风险提示行（更靠窗口底）：刷机备份提醒
+        warn_row = ttk.Frame(optframe)
+        warn_row.pack(side='bottom', fill='x', padx=8, pady=(0, 2))
+        ttk.Label(warn_row, text="刷机有风险，操作前务必备份原系统；即使移植后能正常开机，也请保留原厂固件以备恢复。",
+                  font=('Microsoft YaHei', 8), foreground='#b06000', wraplength=620).pack(side='left')
+
         bottom_row = ttk.Frame(optframe)
         bottom_row.pack(side='bottom', fill='x', padx=8, pady=(0, 5))
         ttk.Label(bottom_row, text=f"版本号：{tool_version}", font=('Microsoft YaHei', 8), foreground='gray').pack(side='left')
@@ -1133,6 +1152,10 @@ class MyUI(ttk.Labelframe):
         self.log = LogLabel(logframe)
         self.log.pack(side='left', fill='both', anchor='center')
         logframe.pack(side='left', padx=5, pady=5, fill='both', expand='yes')
+
+        # 启动日志首行：显示 Python 环境
+        import sys, platform
+        self.log.write(f"MTK 移植工具已启动 | Python {sys.version.split()[0]} | {platform.system()} {platform.machine()}")
 
         # 初始加载移植条目
         __load_port_item(self.chipset_select.get())

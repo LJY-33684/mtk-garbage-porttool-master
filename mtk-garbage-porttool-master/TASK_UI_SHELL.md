@@ -101,6 +101,7 @@ python porttool_cli.py port \
 | `replace_gralloc` / `replace_hwcomposer` | 替换 gralloc / hwcomposer |
 | `fit_density` / `change_model` | 同步 DPI / 型号信息 |
 | `change_timezone` / `change_locale` | 同步时区 / 语言区域 |
+| `set_cn_servers` | 写入国内网络/时间服务器（captive portal→小米、NTP→阿里云），离线改 build.prop，刷完即生效 |
 | `single_simcard` / `dual_simcard` | 单 / 双卡配置 |
 | `generate_script` | 生成自动刷机脚本（**仅 zip 输出生效**；img 输出无卡刷脚本概念，CLI/GUI 会自动忽略该条目，非 bug） |
 

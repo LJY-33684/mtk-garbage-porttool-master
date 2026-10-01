@@ -29,6 +29,7 @@ from .boot_patch import BootPatcher, parseMagiskApk
 import glob
 import contextlib
 import sys
+import platform
 import gzip
 import zlib
 
@@ -257,7 +258,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta3p2'
+tool_author = 'affggh'; tool_version = '1.3-beta4'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -499,14 +500,25 @@ class updaterutil:
 class ziputil:
     def __init__(self):
         pass
-    
+
+    @staticmethod
+    def _safe_extract_member(zipf, name, outdir):
+        """#170 zip slip：校验解压目标路径不逃出 outdir"""
+        outdir_abs = op.abspath(outdir)
+        target = op.abspath(op.join(outdir_abs, name))
+        if not target.startswith(outdir_abs + op.sep) and target != outdir_abs:
+            raise ValueError(f"非法 zip 条目（路径穿越）: {name}")
+        zipf.extract(name, outdir_abs)
+
     def decompress(zippath: str, outdir: str):
         with ZipFile(zippath, 'r') as zipf:
-            zipf.extractall(outdir)
-    
+            for name in zipf.namelist():
+                ziputil._safe_extract_member(zipf, name, outdir)
+
     def extract_onefile(zippath: str, filename: str, outpath: str):
         with ZipFile(zippath, 'r') as zipf:
-            zipf.extract(filename, outpath)
+            outdir = op.dirname(outpath)
+            ziputil._safe_extract_member(zipf, filename, outdir)
     
     def compress(zippath: str, indir: str):
         with ZipFile(zippath, 'w', ZIP_DEFLATED) as zipf:
@@ -533,7 +545,6 @@ class bootutil:
     
     def unpack(self):
         chdir(self.bootdir)
-        # 屏蔽 bootimg.py 的英文诊断噪音（base/arguments 等），失败时还原以便排查
         err_buf = StringIO()
         try:
             with contextlib.redirect_stderr(err_buf):
@@ -541,29 +552,33 @@ class bootutil:
         except Exception:
             sys.stderr.write(err_buf.getvalue())
             raise
-        chdir(self.retcwd)
+        finally:
+            chdir(self.retcwd)
     
     def repack(self):
         chdir(self.bootdir)
-        with open("bootinfo.txt", encoding='utf-8-sig') as f:
-            (
-                base,
-                ramdisk_addr,
-                second_addr,
-                tags_addr,
-                page_size,
-                name,
-                cmdline,
-                padding_size,
-            ) = [i.lstrip("\x00").rstrip().split(':', 1)[1] for i in iter(f.readline, "")]
-        err_buf = StringIO()
         try:
-            with contextlib.redirect_stderr(err_buf):
-                repack_bootimg(base, cmdline, page_size, padding_size, None)
-        except Exception:
-            sys.stderr.write(err_buf.getvalue())
-            raise
-        chdir(self.retcwd)
+            with open("bootinfo.txt", encoding='utf-8-sig') as f:
+                (
+                    base,
+                    ramdisk_addr,
+                    second_addr,
+                    tags_addr,
+                    page_size,
+                    name,
+                    cmdline,
+                    padding_size,
+                ) = [i.lstrip("\x00").rstrip().split(':', 1)[1] for i in iter(f.readline, "")]
+            cmdline = cmdline.strip()  # #174：与 base/page_size 等数值字段去空格对齐
+            err_buf = StringIO()
+            try:
+                with contextlib.redirect_stderr(err_buf):
+                    repack_bootimg(base, cmdline, page_size, padding_size, None)
+            except Exception:
+                sys.stderr.write(err_buf.getvalue())
+                raise
+        finally:
+            chdir(self.retcwd)
     
     def __enter__(self):
         return self
@@ -855,6 +870,7 @@ class portutils:
                                 print(f"  - 已开启SELinux宽容模式，无需重复操作", file=self.std)
                                 continue
                             f.truncate(0)
+                            f.seek(0, 0)
                             for line in lines:
                                 if line.startswith("cmdline:"):
                                     f.write(line + " androidboot.selinux=permissive\n")
@@ -1208,6 +1224,25 @@ class portutils:
                                 print(f"  - 跳过（底包中未找到 ro.product.locale / persist.sys.locale）", file=self.std)
                     else:
                         print(f"  - 跳过（未找到build.prop）", file=self.std)
+                case 'set_cn_servers':
+                    print(f"【移植项】切换网络连通性检测/时间服务器为国内节点...", file=self.std)
+                    build_prop_path = port_prefix.joinpath("build.prop")
+                    if build_prop_path.exists():
+                        with proputil(str(build_prop_path)) as p:
+                            kv = [
+                                # 连通性检测 captive portal：Google -> 小米 MIUI
+                                ('captive_portal_http_url', 'http://connect.rom.miui.com/generate_204'),
+                                ('captive_portal_https_url', 'https://connect.rom.miui.com/generate_204'),
+                                ('captive_portal_use_https', '0'),
+                                # NTP 时间同步：Google -> 阿里云
+                                ('ro.ntp.server', 'ntp.aliyun.com'),
+                            ]
+                            for key, value in kv:
+                                p.setprop(key, value)
+                                print(f"  - 设置 {key} = {value}", file=self.std)
+                        print(f"  - 国内节点已写入build.prop（WiFi 连通性检测+NTP对时）", file=self.std)
+                    else:
+                        print(f"  - 跳过（未找到system/build.prop）", file=self.std)
                 case 'enable_adb':
                     print(f"【移植项】开启ADB调试...", file=self.std)
                     build_prop_path = port_prefix.joinpath("build.prop")
@@ -1708,6 +1743,8 @@ class portutils:
 
     def start(self):
         """启动移植流程"""
+        print(file=self.std)
+        print("=" * 60, file=self.std)
         print(f"【开始移植】MTK低端机移植工具启动...", file=self.std)
         print(f"  ├─ 工具版本：{tool_version}", file=self.std)
         print(f"  ├─ 输出类型：{'img镜像' if self.genimg else 'zip卡刷包'}", file=self.std)
