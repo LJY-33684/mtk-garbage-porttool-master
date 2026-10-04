@@ -42,7 +42,8 @@ support_chipset_portstep = {
             'change_timezone': True,
             'change_locale': True,
             'replace_wifi': False,
-            'fix_storage': False,
+            'fix_storage': True,
+            'fix_storage_system': False,
             'use_custom_update-binary': True
         },
         'replace': {

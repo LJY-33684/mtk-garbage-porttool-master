@@ -1,6 +1,6 @@
 ﻿# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta5**
+> 当前版本 / Current version：**1.3-beta5p1**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -184,7 +184,8 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 | 同步语言区域 | 语言/区域设置 |
 | 同步屏幕 DPI | 屏幕密度 |
 | 国内网络/时间服务器 | WiFi 连通性检测 + NTP 国内节点 |
-| 存储修复（收敛外置存储） | 修复外置存储挂载（仅 6572/6582/6592 方案） |
+| 存储修复·boot侧 | 修复外置存储挂载（仅 6572/6582/6592 方案，默认勾选） |
+| 存储修复·system侧 | 兜底：boot侧修复失效时替换 sdcard/vold（仅 6572/6582/6592 方案，默认不勾选） |
 | 单卡配置 | 单 SIM 卡配置 |
 | 双卡配置 | 双 SIM 卡配置 |
 
@@ -371,6 +372,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3-beta5p1**：存储修复拆分为两个独立条目——`存储修复·boot侧`（fstab 收敛 + init.rc 挂载修正，**默认勾选**）与 `存储修复·system侧`（兜底替换 sdcard/vold，默认不勾选，仅当 boot 侧修复失效时尝试）；system 侧新增**版本一致性守卫**（底包与移植源 Android 大版本不一致时自动跳过，避免 vold/sdcard 跨版本不兼容）
+  - **1.3-beta5p1**: split storage fix into two independent items — "Storage fix · boot-side" (fstab convergence + init.rc mount fix, **checked by default**) and "Storage fix · system-side" (fallback sdcard/vold replacement, unchecked by default, try only when boot-side fix fails); system-side now has a **version-consistency guard** (auto-skips when base and porting source are on different Android major versions to avoid vold/sdcard cross-version incompatibility).
 - **1.3-beta5**：新增「存储修复（收敛外置存储）」移植条目（仅 mt6572/mt6582/mt6592 方案）——boot 侧 fstab 收敛 + init.rc 挂载修正，system 侧底包 sdcard/vold 替换；打包过滤加固（`del_`/`tmp_` 前缀开发脚本不再混入发行包）；修复单实例弹窗 NameError（`Tk`/`singleton` 未定义，触发“同目录已有实例”必崩）；README 补充仓库地址（GitHub/Gitee）、目录快速跳转、支持方案与移植条目说明
   - **1.3-beta5**: new "Storage fix (converge external storage)" porting item (mt6572/mt6582/mt6592 only) — boot-side fstab convergence + init.rc mount fix, system-side base sdcard/vold replacement; packaging filter hardened (`del_`/`tmp_`-prefixed dev scripts no longer leak into release); fixed single-instance dialog NameError (`Tk`/`singleton` undefined, crash when "already running" pops up); README adds repository links (GitHub/Gitee), TOC jump links, presets & porting-item docs.
 

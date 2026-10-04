@@ -258,7 +258,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta5'
+tool_author = 'affggh'; tool_version = '1.3-beta5p1'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -1349,11 +1349,24 @@ class portutils:
                         print(f"  - 国内节点已写入build.prop（WiFi 连通性检测+NTP对时）", file=self.std)
                     else:
                         print(f"  - 跳过（未找到system/build.prop）", file=self.std)
-                case 'fix_storage':
+                case 'fix_storage_system':
                     # AMG 教程补充节：6582 设备移植 6572 固件后存储仍异常时，
                     # 从同版本 6582 移植包提取 sdcard/vold 替换进移植后 system。
                     # 工具替换方向为 底包 -> 移植源，底包即"同版本原厂/移植包"，直接套用。
+                    # 独立条目：仅当 boot 侧 fix_storage 修复后存储仍异常时再勾选此兜底项。
                     print(f"【移植项】存储修复·system侧（替换sdcard/vold）...", file=self.std)
+                    # 版本一致性守卫：vold/sdcard 与 Android 版本强绑定，跨大版本替换可能直接不可用
+                    base_rel = port_rel = None
+                    base_bp = base_prefix.joinpath("build.prop")
+                    port_bp = port_prefix.joinpath("build.prop")
+                    if base_bp.exists() and port_bp.exists():
+                        with proputil(str(base_bp)) as b, proputil(str(port_bp)) as p:
+                            base_rel = b.getprop('ro.build.version.release')
+                            port_rel = p.getprop('ro.build.version.release')
+                    if base_rel and port_rel and base_rel != port_rel:
+                        print(f"  - 跳过 system 侧（底包 Android {base_rel} vs 移植源 Android {port_rel}，", file=self.std)
+                        print(f"    跨大版本 vold/sdcard 可能不兼容；仅 boot 侧修复已生效）", file=self.std)
+                        continue
                     for f in ('bin/sdcard', 'bin/vold'):
                         src = base_prefix.joinpath(f)
                         dst = port_prefix.joinpath(f)

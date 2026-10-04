@@ -33,7 +33,8 @@
             "change_locale": true,
             "set_cn_servers": true,
             "use_custom_update-binary": true,
-            "fix_storage": false,
+            "fix_storage": true,
+            "fix_storage_system": false,
             "replace_wifi": false
         },
         "replace": {
