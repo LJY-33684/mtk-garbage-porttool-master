@@ -35,7 +35,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3-beta3p2`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3-beta5`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -103,6 +103,7 @@ python porttool_cli.py port \
 | `change_timezone` / `change_locale` | 同步时区 / 语言区域 |
 | `set_cn_servers` | 写入国内网络/时间服务器（captive portal→小米、NTP→阿里云），离线改 build.prop，刷完即生效 |
 | `single_simcard` / `dual_simcard` | 单 / 双卡配置 |
+| `fix_storage` | 存储修复（AMG 教程，仅 mt6572/mt6582/mt6592 方案提供）：boot 侧收敛 fstab 外置存储声明（删除 `/devices/` 存储行、补标准 sdcard1/usbotg 行），并在 init.rc 删除 `ro.vold.primary_physical`、补充 protect 挂载 / `mount_all` / 存储 symlink；system 侧将底包 `system/bin/sdcard` + `system/bin/vold` 替换进移植源（对应 AMG 教程"6582 移植 6572 固件后仍异常时从同版本 6582 包提取这两个文件"），修复"单卡槽设备刷入后冒出多个损坏 SD 卡卷"的问题 |
 | `generate_script` | 生成自动刷机脚本（**仅 zip 输出生效**；img 输出无卡刷脚本概念，CLI/GUI 会自动忽略该条目，非 bug） |
 
 ### 5.4 输出约定 / Outputs

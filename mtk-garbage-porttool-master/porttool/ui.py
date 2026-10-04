@@ -782,6 +782,7 @@ class MyUI(ttk.Labelframe):
             'change_platform': '同步平台/芯片信息',
             'change_timezone': '同步时区',
             'fit_density': '同步屏幕 DPI',
+            'fix_storage': '存储修复（收敛外置存储）',
             'generate_script': '生成刷机脚本',
             'single_simcard': '单卡配置',
             'dual_simcard': '双卡配置',

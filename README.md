@@ -1,13 +1,42 @@
-# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
+﻿# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta4**
+> 当前版本 / Current version：**1.3-beta5**
 
+> **仓库地址 / Repository：**
+> - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
+> - **Gitee 镜像**（国内访问备用）：https://gitee.com/Q3368436451/mtk-garbage-porttool-master
+
+## 目录 / Table of Contents
+
+- [项目介绍 / Project Introduction](#project)
+- [项目致谢 / Credits](#credits)
+- [功能特点 / Features](#features)
+- [支持方案 / Supported Presets](#presets)
+- [移植条目 / Porting Items](#items)
+- [CLI 桥接接口 / CLI Bridge Interface](#cli)
+- [环境要求 / Environment Requirements](#env)
+- [使用步骤 / Usage Steps](#usage)
+- [移植核心流程 / Core Porting Process](#process)
+- [注意事项 / Notes](#notes)
+- [常见问题 / FAQ](#faq)
+- [免责声明 / Disclaimer](#disclaimer)
+- [软件截图 / Software Screenshots](#screenshots)
+- [早期改动 / Early Changes](#early-changes)
+- [近期更新 / Recent Updates](#recent-updates)
+- [性能参考 / Performance Reference](#performance)
+  - [实机测试 / Real-Machine Test](#benchmark)
+- [改进者QQ/邮箱 / Improver's QQ/Email](#contact)
+- [相关群聊 / Related Chat Group](#group)
+
+
+<a name="project"></a>
 ## 项目介绍 / Project Introduction
 
 这是一个针对 **MTK低端芯片系列（如MT65xx、MT67xx入门款）** 的ROM移植辅助工具，旨在简化“底包（当前设备官方ROM）”与“移植源（目标ROM）”之间的boot/system镜像适配流程，自动完成文件替换、配置同步、镜像打包等繁琐步骤，降低低端机ROM移植的技术门槛。
 
 This is a ROM porting assistance tool specifically designed for MTK low-end chip series (such as MT65xx, MT67xx entry-level models). It aims to simplify the adaptation process of boot/system images between the "base package (official ROM of the current device)" and the "donor source (target ROM)". It automates tedious steps such as file replacement, configuration synchronization, and image repacking, lowering the technical barrier for ROM porting on low-end devices.
 
+<a name="credits"></a>
 ## 感谢[@affggh](https://github.com/affggh)分享的原文件，此移植工具基于原工具进行的改进 / Thanks to [@affggh](https://github.com/affggh) for sharing the original files. This porting tool is an improvement based on the original tool.
 
 原作者/Original Author [@affggh](https://github.com/affggh)
@@ -18,6 +47,7 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 - LK 去警告工具整合自 [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch) / LK warning patch integrated from [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch).
 - OPPO 固件解密参考 [@ColdWindScholar](https://github.com/ColdWindScholar/TIK) 的 TIK 实现（基于 bkerler MIT 协议，已按 GPL-3.0 兼容性评估并登记第三方声明）/ OPPO firmware decryption based on [@ColdWindScholar](https://github.com/ColdWindScholar/TIK)'s TIK (bkerler MIT base, GPL-3.0 compatibility assessed & third-party notice included).
 
+<a name="features"></a>
 ## 功能特点 / Features
 
 - **1. 多源支持 / Multi-Source Support：**
@@ -84,6 +114,81 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 - 自动检测底包/移植源Android版本（API），Android 8.0+（可能启用Treble/VNDK）与跨大版本移植给出警告
 - Auto-detects base/donor Android version (API); warns on Android 8.0+ (possible Treble/VNDK) and cross-major-version porting.
 
+<a name="presets"></a>
+## 支持方案 / Supported Presets
+
+工具内置以下预设方案（UI「芯片类型」下拉框选择，10 套）：
+
+| 方案 / Preset | 说明 / Description |
+|---|---|
+| `mt6572/mt6582/mt6592 kernel-3.4.67` | 经典老平台（Android 4.x~7.x 入门机） |
+| `G79 (mt6735/mt6735m/mt6737) kernel-3.18.19` | 常见入门机方案（含巴枪/扫码设备） |
+| `mt6580/mt8321 (通用, Android 5.1-7.1.2)` | 通用入门平台 |
+| `mt8163/mt8127/mt8167 (平板, Android 5.1-7.1.2)` | 学习平板方案 |
+| `mt6797 (Helio X20/X25) kernel-3.18 (Android 5.1-7.1.2)` | 十核高端入门（含双架构驱动） |
+| `未列芯片 (同平台自动识别)` | auto 模式：自动扫描底包按配置表精准识别硬件，不触碰系统框架库 |
+| `LK去警告 (兼容大多数安卓版本, 去Orange/Red警告+5s延时)` | 独立功能：LK 去警告补丁（扫描/打补丁/校验/还原/自动备份） |
+| `OPPO固件解密 (OFP/OZIP/OPS, 兼容大多数安卓版本)` | 独立功能：OPPO 官方固件解密（OFP/OZIP/OPS，zip 卡刷包 / img 镜像输出） |
+| `仅移植Recovery (只输出recovery)` | 只移植 recovery.img（独立流程，仅支持 img 输出） |
+| `仅移植内核 (只输出boot)` | 只移植 boot.img，跳过 system 处理 |
+
+<a name="items"></a>
+## 移植条目 / Porting Items
+
+每个方案下可勾选的移植条目（UI 支持全选 / 三态全选，部分选中显示“-”），按功能分组：
+
+**系统与启动 / System & Boot**：
+
+| 条目 / Item | 说明 / Description |
+|---|---|
+| 替换内核 kernel | 用移植源内核替换底包内核 |
+| fstab 挂载表 | 适配分区挂载表 |
+| init 启动脚本 | 替换平台 init 脚本（部分方案） |
+| SELinux 宽容模式 | 关闭 SELinux 强制（提高开机率） |
+| 开启 ADB 调试 | 打开 ro.secure=0 / ro.debuggable=1 / adb |
+| 生成刷机脚本 | 输出 zip 时生成 updater-script |
+| 自定义 update-binary | 使用内置 update-binary |
+
+**硬件驱动 / Hardware HAL & Drivers**：
+
+| 条目 / Item | 说明 / Description |
+|---|---|
+| 音频驱动 HAL（高风险） | 替换 audio.primary 等；跨厂商极易不兼容，默认不勾选 |
+| 音频引擎/音效配置 | 音效库与配置文件 |
+| TFA 智能功放 | 功放驱动（外放无声相关） |
+| 蓝牙 vendor 库 | 蓝牙 HAL/库 |
+| 相机 HAL/库 | camera HAL |
+| 硬件固件 firmware | 各类硬件固件文件 |
+| GPS HAL | gps HAL |
+| 显示合成 HAL（gralloc） | 需与 hwcomposer 成套替换 |
+| 显示合成 HAL（hwcomposer） | 需与 gralloc 成套替换 |
+| GPU Mali 驱动 | Mali 图形驱动 |
+| mddb 传感器坐标 | 传感器坐标数据 |
+| 按键布局 mtk-kpd | 按键映射布局 |
+| 电源 HAL | power HAL |
+| 基带 RIL | 通信基带 HAL |
+| 传感器 HAL | sensors |
+| 温控 HAL | thermal |
+| 震动 HAL | vibrator |
+| WiFi | wifi 相关文件 |
+| 开机画面 logo | 开机 logo 画面 |
+| 自动识别同平台硬件 | auto 模式：按配置表精准扫描替换 |
+
+**设备信息 / Device Info**：
+
+| 条目 / Item | 说明 / Description |
+|---|---|
+| 同步设备型号 | 设备型号（build.prop） |
+| 同步平台/芯片信息 | 平台/芯片信息 |
+| 同步时区 | 时区设置 |
+| 同步语言区域 | 语言/区域设置 |
+| 同步屏幕 DPI | 屏幕密度 |
+| 国内网络/时间服务器 | WiFi 连通性检测 + NTP 国内节点 |
+| 存储修复（收敛外置存储） | 修复外置存储挂载（仅 6572/6582/6592 方案） |
+| 单卡配置 | 单 SIM 卡配置 |
+| 双卡配置 | 双 SIM 卡配置 |
+
+<a name="cli"></a>
 ## CLI 桥接接口 / CLI Bridge Interface
 
 工具内置纯命令行桥接入口 `porttool_cli.py`（与 main.py 同级），供 **Java / C / C++ / Rust** 等其它平台的 UI 壳复用本工具能力：参数传入（方案、路径、条目开关、输出类型），日志与结果经 stdout 传出（可选 `--log-file` 落盘），退出码约定 **0=成功 / 1=参数·校验错误 / 2=执行失败**。
@@ -97,12 +202,14 @@ The tool ships a pure command-line bridge entry `porttool_cli.py` (in the same d
 
 Full interface spec: [TASK_UI_SHELL.md](mtk-garbage-porttool-master/TASK_UI_SHELL.md) in the same directory (also shipped inside the release zip asset, so the spec is available even if you only download the release).
 
+<a name="env"></a>
 ## 环境要求 / Environment Requirements
 
 - **运行环境 / Runtime Environment：**
 - Python 3.10 及以上版本（需自带 tkinter 库，Windows 通常默认安装）
 - Python 3.10 or higher (requires the built-in tkinter library, usually pre-installed on Windows).
 
+<a name="usage"></a>
 ## 使用步骤 / Usage Steps
 
 - **1. 准备文件 / Prepare Files：**
@@ -140,6 +247,7 @@ Full interface spec: [TASK_UI_SHELL.md](mtk-garbage-porttool-master/TASK_UI_SHEL
 - 等待流程完成，输出文件会保存在 out 目录下
 - Wait for the process to complete. Output files will be saved in the out directory.
 
+<a name="process"></a>
 ## 移植核心流程 / Core Porting Process
 
 工具自动执行以下步骤：
@@ -166,6 +274,7 @@ The tool automatically executes the following steps:
 - 仅移植内核（kernel-only）模式：只执行第1～3步并输出 boot.img，跳过 system 处理。
 - Kernel-only mode: only executes steps 1-3 and outputs boot.img, skipping system processing.
 
+<a name="notes"></a>
 ## 注意事项 / Notes
 
 - **1. 兼容性前提 / Compatibility Prerequisites：**
@@ -192,6 +301,7 @@ The tool automatically executes the following steps:
 - 请确保底包boot已去除加密/签名校验，本工具不负责去除校验
 - Make sure the base boot has encryption/signature verification removed; this tool does not handle that.
 
+<a name="faq"></a>
 ## 常见问题 / FAQ
 
 - **Q：** 点击“一键移植”后按钮变灰，无其他反应？
@@ -218,12 +328,14 @@ The tool automatically executes the following steps:
 - **Q:** Stuck at first screen or no external speaker sound after porting?
 - **A:** Usually caused by driver incompatibility when base/donor are not from the same platform. Make sure they are the same chip series, prefer the auto mode or a matching preset; for audio issues, check whether audio drivers/params were replaced from the base package.
 
+<a name="disclaimer"></a>
 ## 免责声明 / Disclaimer
 
 本工具仅用于ROM移植技术学习与交流，请勿用于侵犯他人知识产权、违反设备厂商协议的行为。因使用本工具导致的设备损坏、数据丢失等问题，开发者不承担任何责任。
 
 This tool is intended only for technical learning and exchange regarding ROM porting. Do not use it for infringing on others' intellectual property rights or violating device manufacturer agreements. The developer bears no responsibility for device damage, data loss, or other issues arising from the use of this tool.
 
+<a name="screenshots"></a>
 ## 软件截图 / Software Screenshots
 
 <img width="1356" height="670" alt="image" src="https://github.com/user-attachments/assets/42c1f934-4bac-420e-8b2a-12f6ebea2713" />
@@ -235,6 +347,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
 
 <img width="678" height="335" alt="image" src="https://github.com/user-attachments/assets/5248154e-76f8-4493-9bd2-dee941b6987e" />
 
+<a name="early-changes"></a>
 ## 早期改动 / Early Changes
 
 - 修复了处理build.prop文件时遇到非utf-8字符导致报错
@@ -255,7 +368,11 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - 符号链接丢失/GDT_CSUM校验和/inode bitmap/bootimg全局变量不重置（卡开机根因）等致命bug修复，硬件驱动配置全面适配现代MTK设备（vendor分区）
 - Fatal bugs including lost symlinks / GDT_CSUM checksum / inode bitmap / bootimg module globals not reset (boot-loop root cause); hardware driver configs fully adapted to modern MTK devices (vendor partition).
 
+<a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
+
+- **1.3-beta5**：新增「存储修复（收敛外置存储）」移植条目（仅 mt6572/mt6582/mt6592 方案）——boot 侧 fstab 收敛 + init.rc 挂载修正，system 侧底包 sdcard/vold 替换；打包过滤加固（`del_`/`tmp_` 前缀开发脚本不再混入发行包）；修复单实例弹窗 NameError（`Tk`/`singleton` 未定义，触发“同目录已有实例”必崩）；README 补充仓库地址（GitHub/Gitee）、目录快速跳转、支持方案与移植条目说明
+  - **1.3-beta5**: new "Storage fix (converge external storage)" porting item (mt6572/mt6582/mt6592 only) — boot-side fstab convergence + init.rc mount fix, system-side base sdcard/vold replacement; packaging filter hardened (`del_`/`tmp_`-prefixed dev scripts no longer leak into release); fixed single-instance dialog NameError (`Tk`/`singleton` undefined, crash when "already running" pops up); README adds repository links (GitHub/Gitee), TOC jump links, presets & porting-item docs.
 
 - **1.3-beta4**：新增风险提示（窗口底部刷机备份提醒）、日志分割线（每次任务前打印 `=` 分割线便于定位）、国内服务器移植条目（WiFi 连通性检测 + NTP 对时改为国内节点）；Python 3.10 启动探测修复（#178——文件级 import 在版本探测前就因 match-case 语法崩溃，改为延迟导入，低版本现在能看到友好提示而非 SyntaxError）；启动日志首行显示 Python 环境；pyaes Python 2 残留代码清理；OPPO 解密 Linux NameError 修复；brotli.py Pylance 警告消除；auto 模式精准扫描配置微调
   - **1.3-beta4**: added risk warning (bottom backup reminder), log divider line before each run, and a new porting item to switch WiFi connectivity check + NTP to China nodes; Python 3.10 startup probe fixed (#178 — lazy imports so old Python shows a friendly message instead of SyntaxError); startup log shows Python environment; pyaes Python 2 dead code removed; OPPO decrypt Linux NameError fix; brotli.py Pylance warnings silenced; auto-mode precise scan config tweaks.
@@ -286,6 +403,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - 1.2-beta4：更新检查（GitHub/Gitee双源、静默启动检查、30s超时）；base缓存与“完成后清除base目录”选项；API版本检测与跨大版本/VNDK警告；sparse镜像支持；仅移植内核只输出boot；左下角版本号显示、Magisk选择按钮
   - 1.2-beta4: Update check (GitHub/Gitee sources, silent startup check, 30s timeout); base cache & "clear base after completion" option; API version detection with cross-version/VNDK warnings; sparse image support; kernel-only outputs boot only; version label at bottom-left, Magisk picker button.
 
+<a name="performance"></a>
 ## 性能参考 / Performance Reference
 
 > 估算基准 / Baseline：底包 system 2.8GB + 移植源 system 0.94GB，全量移植（boot+system），img 镜像输出。
@@ -314,6 +432,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
 - 流程串行，多核基本用不上，单核快才是关键 / Pipeline is serial; single-core speed matters more than core count.
 - 输出 zip 卡刷包比 img 多一段 img2sdat 差分计算（约 +10～20%）/ Zip output adds img2sdat diffing (～+10-20%).
 
+<a name="benchmark"></a>
 ### 实机测试 / Real-Machine Test
 
 2026-09-26 实测（底包 山寨机 szj 2.8GB + 移植源 巴枪 bq 0.94GB，方案 mt6572/mt6582/mt6592 kernel-3.4.67，全量 img 输出）：
@@ -330,12 +449,15 @@ This tool is intended only for technical learning and exchange regarding ROM por
 | 打包（make_ext4fs 2.79GB + 符号链接修复 + 一致性自查） | 2.5s |
 | **总时长 / Total** | **14.8s** |
 
+<a name="contact"></a>
 ## 改进者QQ/邮箱 / Improver's QQ/Email
 
 3368436451@qq.com
 
+<a name="group"></a>
 ## 相关群聊 / Related Chat Group
 
 <img width="1284" height="2280" alt="qrcode_1790395495264" src="https://github.com/user-attachments/assets/60010279-d11e-4c42-8148-3f69d9283a9a" />
 
 <img width="1284" height="2280" alt="qrcode_1790395471488" src="https://github.com/user-attachments/assets/4e67f913-927e-4108-8fad-6470730f57e1" />
+

@@ -35,7 +35,7 @@ def _setup_high_dpi():
         return 1.0
 
 
-def _show_already_running(pid):
+def _show_already_running(pid, singleton):
     """同目录已有实例在运行：弹出提示窗口。
 
     可选：跳转至已运行窗口 / 清除残留状态锁后继续 / 直接退出。
@@ -44,7 +44,7 @@ def _show_already_running(pid):
     import tkinter as tk
     from tkinter import ttk
 
-    root = Tk()
+    root = tk.Tk()
     root.title("MTK 移植工具")
     root.resizable(False, False)
     root.attributes("-topmost", True)
@@ -134,7 +134,7 @@ def main():
     ok, pid = singleton.acquire()
     if not ok:
         # 用户清除状态锁成功时（_show_already_running 返回 True）已在本进程重新上锁，继续启动
-        if not _show_already_running(pid):
+        if not _show_already_running(pid, singleton):
             return
     import atexit
     atexit.register(singleton.release)

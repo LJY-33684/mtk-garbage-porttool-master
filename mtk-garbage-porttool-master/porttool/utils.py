@@ -258,7 +258,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta4'
+tool_author = 'affggh'; tool_version = '1.3-beta5'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -895,6 +895,112 @@ class portutils:
                         print(f"  - ADB调试已开启", file=self.std)
                     else:
                         print(f"  - 跳过（未找到default.prop）", file=self.std)
+                case 'fix_storage':
+                    # AMG 教程：收敛外置存储拓扑（删 /devices/ 声明 + 补标准 voldmanaged 行 + init.rc 存储修正）
+                    print(f"【移植项】存储修复（AMG 教程）...", file=self.std)
+                    fixdir = portdir.joinpath("initrd")
+                    if not fixdir.is_dir():
+                        print(f"  - 跳过（未找到 initrd 目录）", file=self.std)
+                        continue
+                    # 1) fstab：删除带 /devices/ 的存储行，补 msdc.1 + usbotg 标准行
+                    fstabs = sorted(p for p in fixdir.glob("fstab*") if p.is_file())
+                    if not fstabs:
+                        print(f"  - 跳过 fstab（initrd 中未找到 fstab 文件）", file=self.std)
+                    for fstab in fstabs:
+                        try:
+                            lines = fstab.read_text(encoding="utf-8", errors="ignore").splitlines()
+                        except Exception as e:
+                            print(f"  - 跳过 {fstab.name}（读取失败：{e}）", file=self.std)
+                            continue
+                        keep = [ln for ln in lines if not (ln.lstrip().startswith("/devices/") and "voldmanaged=" in ln)]
+                        add = []
+                        if not any("voldmanaged=sdcard1:auto" in ln for ln in keep):
+                            add.append("/devices/platform/mtk-msdc.1/mmc_host* auto auto defaults voldmanaged=sdcard1:auto,encryptable=userdata")
+                        if not any("voldmanaged=usbotg:auto" in ln for ln in keep):
+                            add.append("/devices/platform/mt_usb auto auto defaults voldmanaged=usbotg:auto")
+                        removed = len(lines) - len(keep)
+                        if removed or add:
+                            out = keep + ([""] + add if add else [])
+                            fstab.write_text("\n".join(out) + "\n", encoding="utf-8")
+                            print(f"  - 修正 {fstab.name}（删除 {removed} 行 /devices/ 存储声明，补充 sdcard1/usbotg 标准行）", file=self.std)
+                        else:
+                            print(f"  - {fstab.name} 无需修改", file=self.std)
+                    # 2) init.rc：删 ro.vold.primary_physical、补 symlink、on fs 块补 protect/mount_all
+                    #    （AMG 教程只改平台主 rc：init.mtXXXX.rc，芯片名取自 fstab.mtXXXX；
+                    #      其余 init*.rc（usb/aee/environ 等变体）不动，避免误改）
+                    rcs = []
+                    if fstabs:
+                        chip_fstabs = [p.name for p in fstabs if ".mt" in p.name]
+                        chip_name = chip_fstabs[0].replace("fstab.", "") if chip_fstabs else None
+                        if chip_name:
+                            rcs = sorted(p for p in fixdir.glob(f"init.{chip_name}.rc") if p.is_file())
+                    if not rcs:
+                        print(f"  - 跳过 init.rc（未定位到平台主文件 init.<chip>.rc）", file=self.std)
+                    fstab_name = None
+                    if fstabs:
+                        # 优先 fstab.mtXXXX（芯片名形式，符合教程），其次裸 fstab
+                        chip_fstabs = [p.name for p in fstabs if ".mt" in p.name]
+                        fstab_name = chip_fstabs[0] if chip_fstabs else fstabs[0].name
+                    for rc in rcs:
+                        try:
+                            lines = rc.read_text(encoding="utf-8", errors="ignore").splitlines()
+                        except Exception as e:
+                            print(f"  - 跳过 {rc.name}（读取失败：{e}）", file=self.std)
+                            continue
+                        orig_len = len(lines)
+                        # 2.1) 删除 setprop ro.vold.primary_physical 1
+                        lines = [ln for ln in lines if "setprop ro.vold.primary_physical 1" not in ln]
+                        # 2.2) on init 块：将旧式 sdcard symlink 替换为标准形式
+                        #      （symlink storage/sdcard /sdcard + /mnt/sdcard；已是标准形式则跳过）
+                        init_idx = None
+                        for i, ln in enumerate(lines):
+                            if ln.strip() == "on init":
+                                init_idx = i
+                                break
+                        if init_idx is not None:
+                            end = len(lines)
+                            for j in range(init_idx + 1, len(lines)):
+                                if lines[j].strip().startswith("on ") and lines[j].strip() != "on init":
+                                    end = j
+                                    break
+                            block = lines[init_idx:end]
+                            has_std = any("symlink storage/sdcard /sdcard" in ln for ln in block) and \
+                                      any("symlink storage/sdcard /mnt/sdcard" in ln for ln in block)
+                            if not has_std:
+                                # 去掉块内旧式 /sdcard symlink 行（如 symlink /sdcard /mnt/sdcard）
+                                block = [ln for ln in block
+                                         if not (ln.strip().startswith("symlink") and "/sdcard" in ln
+                                                 and "storage/sdcard" not in ln)]
+                                new_block = block[:1] + [
+                                    "    symlink storage/sdcard /sdcard",
+                                    "    symlink storage/sdcard /mnt/sdcard",
+                                ] + block[1:]
+                                lines = lines[:init_idx] + new_block + lines[end:]
+                        # 2.3) on fs 块补 mkdir protect_f/protect_s、mount_all、Mount_END
+                        fs_idx = None
+                        for i, ln in enumerate(lines):
+                            if ln.strip() == "on fs":
+                                fs_idx = i
+                                break
+                        if fs_idx is not None:
+                            add_fs = []
+                            if not any(ln.strip().startswith("mkdir /protect_f") for ln in lines):
+                                add_fs.append("    mkdir /protect_f 0771 system system")
+                            if not any(ln.strip().startswith("mkdir /protect_s") for ln in lines):
+                                add_fs.append("    mkdir /protect_s 0771 system system")
+                            if not any(ln.strip().startswith("mount_all /fstab") for ln in lines) and fstab_name:
+                                add_fs.append(f"    mount_all /{fstab_name}")
+                            if not any("INIT:NAND:Mount_END" in ln for ln in lines):
+                                add_fs.append('    write /proc/bootprof "INIT:NAND:Mount_END"')
+                            if add_fs:
+                                lines[fs_idx + 1:fs_idx + 1] = add_fs
+                        changed = len(lines) != orig_len
+                        if changed:
+                            rc.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                            print(f"  - 修正 {rc.name}（删除 primary_physical、补充存储 symlink/protect/mount_all）", file=self.std)
+                        else:
+                            print(f"  - {rc.name} 无需修改", file=self.std)
+                    print(f"  - 存储修复完成", file=self.std)
         
         # 重新打包镜像
         print(f"【打包{imgname}】正在重新打包移植后的{imgname}...", file=self.std)
@@ -1243,6 +1349,22 @@ class portutils:
                         print(f"  - 国内节点已写入build.prop（WiFi 连通性检测+NTP对时）", file=self.std)
                     else:
                         print(f"  - 跳过（未找到system/build.prop）", file=self.std)
+                case 'fix_storage':
+                    # AMG 教程补充节：6582 设备移植 6572 固件后存储仍异常时，
+                    # 从同版本 6582 移植包提取 sdcard/vold 替换进移植后 system。
+                    # 工具替换方向为 底包 -> 移植源，底包即"同版本原厂/移植包"，直接套用。
+                    print(f"【移植项】存储修复·system侧（替换sdcard/vold）...", file=self.std)
+                    for f in ('bin/sdcard', 'bin/vold'):
+                        src = base_prefix.joinpath(f)
+                        dst = port_prefix.joinpath(f)
+                        if src.is_file():
+                            dst.parent.mkdir(parents=True, exist_ok=True)
+                            _clear_attrs(dst)
+                            dst.write_bytes(src.read_bytes())
+                            print(f"  - 替换 {f}（底包 -> 移植源）", file=self.std)
+                        else:
+                            print(f"  - 跳过 {f}（底包中不存在）", file=self.std)
+                    print(f"  - system侧存储修复完成", file=self.std)
                 case 'enable_adb':
                     print(f"【移植项】开启ADB调试...", file=self.std)
                     build_prop_path = port_prefix.joinpath("build.prop")
