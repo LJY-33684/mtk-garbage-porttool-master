@@ -2,7 +2,7 @@ import re
 import time
 from io import StringIO
 from pathlib import Path
-from zipfile import ZipFile, ZIP_DEFLATED
+from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 from os import walk, getcwd, chdir, symlink, readlink, name as osname, stat, unlink, chmod
 import os
 import os.path as op
@@ -258,7 +258,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta5p1'
+tool_author = 'affggh'; tool_version = '1.3-beta5p2'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -266,7 +266,7 @@ class proputil:
         if proppath.exists():
             self.propfile = propfile
             self.encoding = self.__detect_encoding(propfile)
-            self.propfd = Path(propfile).open('r+', encoding=self.encoding.rstrip('-sig'))  # 写句柄去 sig，避免给无 BOM 文件注入 BOM
+            self.propfd = Path(propfile).open('r+', encoding=self.encoding.rstrip('-sig'), newline='\n')  # 写句柄去 sig，避免给无 BOM 文件注入 BOM；newline='\n' 强制 LF，防止 Windows 把 Android 属性文件 CRLF 化
         else:
             raise FileNotFoundError(f"File {propfile} does not exist!")
         self.prop = self.__loadprop
@@ -284,6 +284,8 @@ class proputil:
 
     @property
     def __loadprop(self) -> list:
+        # 默认 universal newline：读入时 \r\n/\r 统一转 \n，避免修改后混入混合行尾；
+        # 写句柄已设 newline='\n'，保证落盘纯 LF（Android 属性文件不允许 CRLF）
         with open(self.propfile, 'r', encoding=self.encoding) as f:
             return f.readlines()
 
@@ -321,7 +323,8 @@ def _infer_fs_mode(unix_path: str, st_mode: int = 0) -> str:
     suid = '4' if st_mode & 0o4000 else '0'
     parts = unix_path.lstrip('/').split('/')
     path_exec = len(parts) > 2 and parts[0] == 'system' and (
-        parts[1] in ('bin', 'xbin') or (parts[1] == 'vendor' and parts[2] == 'bin'))
+        parts[1] in ('bin', 'xbin') or (parts[1] == 'vendor' and parts[2] == 'bin')
+        or (parts[1] == 'etc' and parts[2] == 'init.d'))  # init.d 脚本需可执行位
     is_exec = bool(st_mode & 0o111) or path_exec
     return suid + ('755' if is_exec else '644')
 
@@ -355,15 +358,17 @@ audio_cross_version = cross_major_version
 # 原则：
 #  - 独立服务型 HAL（音频/相机/媒体硬解/RIL/WiFi/蓝牙）跨大版本 ABI 不兼容，覆盖底包旧库
 #    会让对应独立进程（audioserver/cameraserver/mediacodec/rild/wpa_supplicant/bluetooth）
-#    崩溃；这些进程崩溃一般不阻断开机，故跨版本一律跳过、保留移植源自带实现以保开机
-#    （代价是对应功能可能不可用）。
+#    崩溃；这些进程崩溃一般不阻断开机，故跨版本【提示高风险但仍执行替换】，
+#    由用户自行权衡（个别设备跨版本替换反而可用，如 mt6582 词典笔补 WiFi 三库）。
 #  - 图形栈（gralloc/hwcomposer/GPU EGL）是 surfaceflinger 开机合成必需，不换必黑屏/卡一；
 #    Treble(8.0) 前为稳定的 gralloc1/HWC1/EGL C ABI，故跨版本仍成套替换（仅给黑屏警告）。
 #  - sensors/lights/power/vibrator/gps 等老式 C HAL 在 8.0 前 ABI 稳定；
 #    firmware/mddb/.tp/keylayout 是与硬件绑定的数据，均继续替换。
 
-# 手动 replace 循环：跨版本整组跳过的替换项（音频/相机/RIL/WiFi/蓝牙）；
+# 手动 replace 循环：跨版本高风险替换项（音频/相机/RIL/WiFi/蓝牙）。
 # 这些组里的 modem/wifi/bt 固件与射频数据由独立的 firmware、mddb 组继续替换，不受影响。
+# 注意：跨大版本时不再整组静默跳过，而是【提示高风险但仍执行】，
+# 由用户自行决定是否用底包 HAL 覆盖移植源（个别设备跨版本替换反而可用）。
 CROSS_SKIP_REPLACE_GROUPS = frozenset({
     'audiodriver', 'audioengine', 'tfa',
     'camera', 'ril', 'wifi', 'bluetooth',
@@ -376,6 +381,16 @@ CROSS_SKIP_REPLACE_GROUPS = frozenset({
 # 保留移植源整套以优先保证开机；仅当用户手动勾选时执行，并打印醒目风险警告。
 AUDIO_REPLACE_GROUPS = frozenset({
     'audiodriver', 'audioengine', 'tfa',
+})
+
+# 图形栈：GPU(mali等)/gralloc 与移植源 ROM 的 surfaceflinger/图形框架强成套，且是开机合成必需。
+# 实测跨大版本（5.0→7.1.2）用底包旧 GPU/gralloc 覆盖移植源 → 黑屏/壁纸异常（mt6582 词典笔实证），
+# 故跨大版本【保留移植源、跳过替换】；同 Android 大版本内 C ABI 稳定可替换、照常替换。
+# hwcomposer 例外：它直接与底包内核 DISP/DSI 驱动强绑定（走 ioctl 通道，非纯 framework ABI），
+# 移植源高版本 hwcomposer 在底包内核上黑屏/壁纸异常（词典笔 5.0→7.1.2 实测：保留移植源 → 黑屏；
+# 设备侧换回底包 hwcomposer → 壁纸立即正常）。故 hwcomposer 不在本集合内，跨大版本照常替换=保留底包。
+GRAPHICS_REPLACE_GROUPS = frozenset({
+    'malidriver', 'gralloc',
 })
 
 class updaterutil:
@@ -509,6 +524,22 @@ class ziputil:
         if not target.startswith(outdir_abs + op.sep) and target != outdir_abs:
             raise ValueError(f"非法 zip 条目（路径穿越）: {name}")
         zipf.extract(name, outdir_abs)
+        # #193：S_IFLNK 条目经 zipfile.extract 后类型信息丢失（Windows 解成普通文件、
+        # 无 !<symlink> 标记），导致 decompress→compress 往返后符号链接变普通文件。
+        # 此处还原为与 Windows 解包产物一致的 !<symlink> 标记文件（目标转 UTF-16 带 BOM），
+        # compress 侧统一识别（#122 词典笔 WiFi 根因同源）——闭环。
+        try:
+            _zi = zipf.getinfo(name)
+            _is_symlink = (_zi.create_system == 3 and
+                           ((_zi.external_attr >> 16) & 0o170000) == 0o120000)
+            if _is_symlink and not op.islink(target):
+                with open(target, 'rb') as _f:
+                    _raw = _f.read()
+                _text = _raw.decode('utf-8', errors='replace').rstrip('\0')
+                with open(target, 'wb') as _f:
+                    _f.write(b"!<symlink>" + _text.encode('utf-16') + b'\0\0')
+        except (OSError, KeyError, UnicodeError):
+            pass
 
     def decompress(zippath: str, outdir: str):
         with ZipFile(zippath, 'r') as zipf:
@@ -521,11 +552,44 @@ class ziputil:
             ziputil._safe_extract_member(zipf, filename, outdir)
     
     def compress(zippath: str, indir: str):
+        _symlink_mark = bytes.fromhex('213C73796D6C696E6B3EFFFE')
         with ZipFile(zippath, 'w', ZIP_DEFLATED) as zipf:
             for root, dirs, files in walk(indir):
                 for file in files:
                     file_path = op.join(root, file)
-                    zip_path = op.relpath(op.abspath(file_path), op.abspath(indir))
+                    zip_path = op.relpath(op.abspath(file_path), op.abspath(indir)).replace('\\', '/')
+                    # 真符号链接（类 Unix 环境解包 S_IFLNK 条目时 zipfile 直接建 os.symlink，
+                    # 无 !<symlink> 标记）→ 读取链接目标，写回带 Unix 软链接属性的条目；
+                    # 否则 zipf.write 会跟随链接把目标内容当普通文件写入，往返后类型丢失。
+                    if op.islink(file_path):
+                        try:
+                            _target = readlink(file_path)
+                            _zi = ZipInfo(zip_path)
+                            _zi.create_system = 3                 # Unix
+                            _zi.external_attr = 0o120777 << 16    # S_IFLNK | rwxrwxrwx
+                            _zi.compress_type = ZIP_DEFLATED
+                            zipf.writestr(_zi, _target)
+                            continue
+                        except OSError:
+                            pass
+                    # Windows 解包产物中的软链接标记文件（!<symlink>）→ 转成带 Unix 软链接
+                    # 属性的 zip 条目（数据为链接目标文本），刷机侧才能恢复为真正的符号链接；
+                    # 否则会被当作普通小文件刷入，命令不可执行（#122 词典笔 WiFi 根因）。
+                    try:
+                        with open(file_path, 'rb') as _f:
+                            _head = _f.read(12)
+                        if _head == _symlink_mark:
+                            with open(file_path, 'rb') as _f:
+                                _f.seek(12)
+                                _target = _f.read().decode('utf-16').rstrip('\0')
+                            _zi = ZipInfo(zip_path)
+                            _zi.create_system = 3                 # Unix
+                            _zi.external_attr = 0o120777 << 16    # S_IFLNK | rwxrwxrwx
+                            _zi.compress_type = ZIP_DEFLATED
+                            zipf.writestr(_zi, _target)
+                            continue
+                    except OSError:
+                        pass
                     zipf.write(file_path, zip_path)
 
 class xz_util:
@@ -600,8 +664,9 @@ class portutils:
         self.std = stdlog if stdlog else stdout
         self.sdat = False  # 提前赋值，确保属性始终存在
         # 跨 Android 大版本标志：底包与移植源主版本不同时为 True。
-        # 在 __port_system 版本检测后置位；置位后自动跳过音频/相机/媒体硬解/RIL/WiFi/蓝牙
-        # 等独立服务型 HAL 的跨版本替换以保开机，图形 gralloc/hwcomposer/GPU 仍成套替换。
+        # 在 __port_system 版本检测后置位；置位后对音频/相机/媒体硬解/RIL/WiFi/蓝牙
+        # 等独立服务型 HAL 的跨版本替换打印【高风险提示但仍执行】（由用户自行决定），
+        # 图形 gralloc/hwcomposer/GPU 仍成套替换。
         self._cross_major = False
         if not self.__check_exist:
             print("【检查失败】必要文件不存在，移植流程终止", file=self.std)
@@ -864,7 +929,7 @@ class portutils:
                 case 'selinux_permissive':
                     print(f"【移植项】开启SELinux宽容模式...", file=self.std)
                     if portdir.joinpath("bootinfo.txt").exists():
-                        with portdir.joinpath("bootinfo.txt").open("r+", encoding="utf-8-sig") as f:
+                        with portdir.joinpath("bootinfo.txt").open("r+", encoding="utf-8-sig", newline='\n') as f:
                             lines = [i.rstrip() for i in f.readlines()]
                             if any("androidboot.selinux=permissive" in line for line in lines):
                                 print(f"  - 已开启SELinux宽容模式，无需重复操作", file=self.std)
@@ -921,7 +986,7 @@ class portutils:
                         removed = len(lines) - len(keep)
                         if removed or add:
                             out = keep + ([""] + add if add else [])
-                            fstab.write_text("\n".join(out) + "\n", encoding="utf-8")
+                            fstab.write_text("\n".join(out) + "\n", encoding="utf-8", newline='\n')  # newline='\n' 强制 LF：CRLF 会让 fstab 解析残留 \r（三张SD卡/挂载异常）
                             print(f"  - 修正 {fstab.name}（删除 {removed} 行 /devices/ 存储声明，补充 sdcard1/usbotg 标准行）", file=self.std)
                         else:
                             print(f"  - {fstab.name} 无需修改", file=self.std)
@@ -996,12 +1061,118 @@ class portutils:
                                 lines[fs_idx + 1:fs_idx + 1] = add_fs
                         changed = len(lines) != orig_len
                         if changed:
-                            rc.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                            rc.write_text("\n".join(lines) + "\n", encoding="utf-8", newline='\n')  # newline='\n' 强制 LF：CRLF 会破坏 init 按 \n 切行（service 注册残留 \r，WiFi 不可用根因）
                             print(f"  - 修正 {rc.name}（删除 primary_physical、补充存储 symlink/protect/mount_all）", file=self.std)
                         else:
                             print(f"  - {rc.name} 无需修改", file=self.std)
                     print(f"  - 存储修复完成", file=self.std)
-        
+
+        # 7.1+ 移植适配：p2p_supplicant 服务标志与底包对齐（只补齐，绝不删除）
+        # wpa_supplicant / p2p_supplicant 在 AOSP 中本就是 disabled + oneshot：
+        #   disabled —— 开机不由 init 自动拉起，由 framework 通过 ctl.start 管理生命周期；
+        #   oneshot  —— 退出后 init 不自动重启，崩溃后等 framework 干净地重新 ctl.start。
+        # 若移植源（通常是更低安卓版本）缺少这两个标志，按底包补齐；移植源已具备时保持原样（空操作）。
+        # 严禁删除 oneshot：否则 init 会在 supplicant 每次退出后无限自动重启，这些实例 framework
+        # 无法接管，表现为每约 5 秒 "Successfully initialized wpa_supplicant" 后静默死亡、
+        # framework 永久 "Supplicant not running, cannot connect"（实测 MTK combo 机型必现）。
+        try:
+            bdir = basedir.joinpath("initrd")
+            pdir = portdir.joinpath("initrd")
+
+            def parse_services(text):
+                lines = text.splitlines()
+                blocks = {}
+                i = 0
+                while i < len(lines):
+                    s = lines[i].strip()
+                    if s.startswith("service "):
+                        parts = s.split()
+                        svc = parts[1] if len(parts) > 1 else ""
+                        j = i + 1
+                        while j < len(lines):
+                            l2 = lines[j]
+                            if l2.strip() == "" or l2[:1] in (" ", "\t"):
+                                j += 1
+                                continue
+                            break
+                        blocks[svc] = (i, j, lines[i:j])
+                        i = j
+                    else:
+                        i += 1
+                return lines, blocks
+
+            if bdir.is_dir() and pdir.is_dir():
+                for brc in sorted(bdir.glob("init.mt*.rc")):
+                    prc = pdir.joinpath(brc.name)
+                    if not prc.is_file():
+                        continue
+                    btext = brc.read_text(encoding="utf-8", errors="ignore")
+                    ptext = prc.read_text(encoding="utf-8", errors="ignore")
+                    if not ('service p2p_supplicant' in btext and 'socket wpa_wlan0' in btext
+                            and 'service p2p_supplicant' in ptext):
+                        continue
+                    _, bblocks = parse_services(btext)
+                    plines, pblocks = parse_services(ptext)
+                    if 'p2p_supplicant' not in bblocks or 'p2p_supplicant' not in pblocks:
+                        continue
+                    bblk = bblocks['p2p_supplicant'][2]
+                    pbi, pbj, pblk = pblocks['p2p_supplicant']
+
+                    def opt_present(blk, opt):
+                        return any(l.strip() == opt for l in blk)
+
+                    need = [o for o in ('disabled', 'oneshot')
+                            if opt_present(bblk, o) and not opt_present(pblk, o)]
+                    if not need:
+                        print(f"  - {brc.name} p2p_supplicant 服务标志（disabled/oneshot）已与底包一致，无需修改", file=self.std)
+                        continue
+                    indent = "\t"
+                    for l in pblk:
+                        st = l.strip()
+                        if st in ('class main', 'disabled', 'oneshot') or st.startswith(('socket ', 'class ', 'group ', 'user ')):
+                            indent = l[:len(l) - len(l.lstrip())] or "\t"
+                            break
+                    newblk = list(pblk)
+                    while newblk and newblk[-1].strip() == "":
+                        newblk.pop()
+                    newblk.extend(f"{indent}{o}" for o in need)
+                    prc.write_text("\n".join(plines[:pbi] + newblk + plines[pbj:]) + "\n", encoding="utf-8", newline='\n')  # newline='\n' 强制 LF，与 init.rc 同防 CRLF 破坏
+                    print(f"  - 适配 {brc.name}：p2p_supplicant 对齐底包补齐 {'/'.join(need)}（disabled+oneshot，由 framework 管理 supplicant 生命周期）", file=self.std)
+        except Exception as e:
+            print(f"  - 跳过 p2p_supplicant 服务对齐（{e}）", file=self.std)
+
+        # 网络修复（set_cn_servers）依赖 CM 系 init.d 机制：/system/bin/sysinit 遍历执行 /system/etc/init.d/*。
+        # 若 boot ramdisk 的 init.rc 无 sysinit 服务定义（如 replace_init 用底包 init.rc 覆盖移植源、
+        # MTK 原厂底包通常无 sysinit），则 init.d 脚本开机不会执行、网络修复失效。
+        # 此处在 repack 前向根 init.rc 补齐标准 sysinit 服务（仅在勾选网络修复时，无副作用最小改动）。
+        if self._flag('set_cn_servers'):
+            try:
+                initrc_path = portdir.joinpath("initrd/init.rc")
+                if initrc_path.is_file():
+                    rc_text = initrc_path.read_text(encoding="utf-8", errors="ignore")
+                    if "service sysinit" not in rc_text:
+                        with initrc_path.open('a', encoding='utf-8', newline='\n') as f:  # newline='\n' 强制 LF：CRLF 会破坏 init 按 \n 切行
+                            f.write(
+                                "\n# MTK 移植工具注入：启用 /system/etc/init.d 开机执行（网络修复等依赖此机制）\n"
+                                "service sysinit /system/bin/sysinit\n"
+                                "    class main\n"
+                                "    user root\n"
+                                "    group root\n"
+                                "    oneshot\n"
+                                "\n"
+                                "# 显式触发器：sys.boot_completed=1 由框架必经设置，确保 sysinit 在 settings 服务就绪后执行。\n"
+                                "# 仅靠 class main 在部分 MTK 底包 init 上不会拉起（class_start 挂在 on nonencrypted/decrypt，时机不可靠）\n"
+                                "on property:sys.boot_completed=1\n"
+                                "    start sysinit\n"
+                            )
+                        print("  - 已向 init.rc 注入 sysinit 服务（启用 init.d 开机执行，网络修复依赖）", file=self.std)
+                    else:
+                        print("  - init.rc 已含 sysinit 服务，无需注入", file=self.std)
+                else:
+                    print("  - 跳过 sysinit 注入（boot ramdisk 未找到 init.rc）", file=self.std)
+            except OSError as e:
+                print(f"  - 注入 sysinit 服务失败（{e}）", file=self.std)
+
         # 重新打包镜像
         print(f"【打包{imgname}】正在重新打包移植后的{imgname}...", file=self.std)
         bootutil(str(port)).repack()
@@ -1205,13 +1376,14 @@ class portutils:
             bv = _API_VER.get(base_sdk, f"API {base_sdk}")
             pv = _API_VER.get(port_sdk, f"API {port_sdk}")
             print(f"【严重警告】检测到跨 Android 大版本移植：底包 Android {bv} → 移植源 Android {pv}", file=self.std)
-            print(f"  为保证正常开机，已自动跳过下列【独立服务型】HAL/库的跨版本替换（保留移植源自带实现）：", file=self.std)
-            print(f"    · 音频（audio HAL/音频引擎/TFA 功放）——不跳过会使 audioserver 崩溃卡第二屏", file=self.std)
-            print(f"    · 相机（camera HAL/libcam*/libmtkcam 等）、媒体硬解（OMX/codec）", file=self.std)
-            print(f"    · 基带 RIL（rild/ccci/libril）、WiFi（wpa_supplicant/hostapd 及客户端库）、蓝牙 vendor 库", file=self.std)
-            print(f"  跳过上述项后，外放/相机/硬解/信号/WiFi/蓝牙可能不可用，但不影响开机。", file=self.std)
-            print(f"  图形 gralloc/hwcomposer/GPU 是开机合成必需，仍会【成套替换】；", file=self.std)
-            print(f"    Treble 前为稳定 C ABI，多数可开机；若仍黑屏/卡第一屏，请改用同 Android 大版本的底包。", file=self.std)
+            print(f"  下列【独立服务型】HAL/库（音频/相机/媒体硬解/RIL/WiFi/蓝牙）跨大版本 ABI 不兼容，", file=self.std)
+            print(f"  用底包旧库覆盖移植源可能导致对应进程崩溃（音频即卡第二屏、WiFi/蓝牙/信号不可用）。", file=self.std)
+            print(f"  若已勾选这些替换项，本工具会【继续执行替换】但强烈建议取消；", file=self.std)
+            print(f"  若未勾选，则保留移植源自带实现以保证开机（代价是对应功能可能不可用）。", file=self.std)
+            print(f"  图形 gralloc/GPU(mali) 与移植源图形框架强成套，跨大版本已【保留移植源】、跳过替换；", file=self.std)
+            print(f"    用底包旧 gralloc/GPU 覆盖会黑屏/壁纸异常（词典笔 5.0→7.1.2 实证）；同版本移植则照常替换。", file=self.std)
+            print(f"    hwcomposer 例外：与底包内核 DISP/DSI 驱动强绑定，跨大版本【保留底包】（照常替换），", file=self.std)
+            print(f"    移植源高版本 hwcomposer 在底包内核上黑屏/壁纸异常（词典笔实证：换回底包 hwcomposer 立即正常）。", file=self.std)
             print(f"  传感器/灯/电源/震动/GPS 等稳定 HAL，以及 firmware/mddb/按键布局等硬件数据照常替换；", file=self.std)
             print(f"    modem/WiFi/蓝牙固件与射频数据（firmware、mddb）与硬件绑定，也照常替换。", file=self.std)
 
@@ -1226,7 +1398,7 @@ class portutils:
         # 改为与手动方案【统一】：下方遍历 flags / replace 组，以 configs.json 各组里的路径/通配符为“识别词”，
         # 在底包 system 中精准 glob 命中后再替换；是否替换完全由该组 flag（界面勾选 / 默认开关）决定。
         # 默认矩阵（均衡）：GPU/显示HAL、传感器/灯/GPS/电源/震动/散热、firmware/mddb/按键/开机画面默认替换；
-        # 相机/基带/WiFi/蓝牙同平台默认替换、跨大版本自动跳过；音频 HAL/引擎/功放默认【不替换】。
+        # 相机/基带/WiFi/蓝牙同平台默认替换、跨大版本【提示高风险仍执行】；音频 HAL/引擎/功放默认【不替换】。
         if self._flag('auto_replace'):
             print(f"【自动移植】未列芯片·同平台模式：按内置硬件识别表精准匹配底包文件并替换...", file=self.std)
 
@@ -1237,14 +1409,30 @@ class portutils:
             
             if item.startswith("replace_"):
                 replace_type = item[len("replace_"):]
-                # 跨 Android 大版本：音频/相机/RIL/WiFi/蓝牙组整体跳过（独立服务型 HAL ABI 不兼容，
+                # 跨 Android 大版本：音频/相机/RIL/WiFi/蓝牙组为高风险项（独立服务型 HAL ABI 不兼容，
                 # 覆盖会让对应进程崩溃，音频即表现为卡第二屏；详见版本检测处的严重警告）。
-                # 图形 gralloc/hwcomposer/malidriver 与 sensors/gps/power/vibrator/thermal 不跳过；
-                # modem/wifi/bt 固件与射频数据由独立的 firmware、mddb 组继续替换。
+                # 不再整组静默跳过——改为提示高风险但仍执行，由用户自行决定（个别设备跨版本替换反而可用）。
+                # 图形 gralloc/malidriver：跨大版本【跳过替换、保留移植源】——
+                # 实测底包旧图形栈盖进高版本移植源会黑屏/壁纸异常（mt6582 词典笔 5.0→7.1.2 实证）。
+                # hwcomposer 例外：直接与底包内核 DISP/DSI 驱动强绑定，跨大版本【保留底包】（照常替换），
+                # 移植源高版本 hwcomposer 在底包内核上黑屏/壁纸异常（词典笔实证：换回底包 hwcomposer 立即正常）。
+                # 同版本时照常替换；modem/wifi/bt 固件与射频数据由独立的 firmware、mddb 组继续替换。
+                if self._cross_major and replace_type in GRAPHICS_REPLACE_GROUPS:
+                    print(f"【移植项】替换{replace_type}相关文件...", file=self.std)
+                    print(f"  ! 跨大版本图形栈：{replace_type} 与移植源图形框架（surfaceflinger）强成套，", file=self.std)
+                    print(f"  ! 用底包旧图形栈覆盖移植源会导致黑屏/壁纸异常（词典笔 5.0→7.1.2 实证）。", file=self.std)
+                    print(f"  ! 已【保留移植源】图形栈、跳过替换；同版本移植仍会正常替换。", file=self.std)
+                    continue
+                if self._cross_major and replace_type == 'hwcomposer':
+                    print(f"【移植项】替换hwcomposer相关文件...", file=self.std)
+                    print(f"  ! 跨大版本：hwcomposer 与底包内核 DISP/DSI 驱动强绑定，", file=self.std)
+                    print(f"  ! 移植源高版本 hwcomposer 在底包内核上黑屏/壁纸异常（词典笔 5.0→7.1.2 实证），", file=self.std)
+                    print(f"  ! 已【保留底包】hwcomposer（照常替换）；gralloc/GPU 仍保留移植源。", file=self.std)
                 if self._cross_major and replace_type in CROSS_SKIP_REPLACE_GROUPS:
                     print(f"【移植项】替换{replace_type}相关文件...", file=self.std)
-                    print(f"  - 跨大版本：已自动跳过{replace_type}全部替换（保留移植源自带实现以保证开机）", file=self.std)
-                    continue
+                    print(f"  ! 跨大版本高风险：{replace_type} 为独立服务型 HAL，底包旧库覆盖移植源", file=self.std)
+                    print(f"  ! 可能导致对应进程崩溃（音频卡第二屏 / WiFi/蓝牙/信号不可用）。", file=self.std)
+                    print(f"  ! 已按勾选继续执行替换；若刷入后功能异常，请取消该项后重新移植。", file=self.std)
                 # auto 模式下手动选项优先：若 replace 字典有配置则用手动路径覆盖自动替换结果
                 if not self.items.get('replace', {}).get(replace_type):  # #55补：空值也跳过（防空转）
                     continue  # 该方案未配置此替换项的路径，跳过
@@ -1346,9 +1534,57 @@ class portutils:
                             for key, value in kv:
                                 p.setprop(key, value)
                                 print(f"  - 设置 {key} = {value}", file=self.std)
-                        print(f"  - 国内节点已写入build.prop（WiFi 连通性检测+NTP对时）", file=self.std)
+                        print(f"  - 已写入 build.prop（兜底：部分框架/老版本仍读取 ro.* 属性）", file=self.std)
                     else:
-                        print(f"  - 跳过（未找到system/build.prop）", file=self.std)
+                        print(f"  - 跳过 build.prop（未找到 system/build.prop）", file=self.std)
+                    # Android 7.1+ 网络验证/时间服务器只读 settings 全局表（captive_portal_* / ntp_server），
+                    # 不读 build.prop 的 ro.* 属性；settings 表存在 /data，system 镜像侧改不到。
+                    # 方案：注入开机自启脚本，首次开机自动写 settings 后自删（需 root/ADB 权限执行）。
+                    initd_dir = port_prefix.joinpath("etc/init.d")
+                    try:
+                        initd_dir.mkdir(parents=True, exist_ok=True)
+                        script_path = initd_dir.joinpath("99cnfix.sh")
+                        script = (
+                            "#!/system/bin/sh\n"
+                            "# MTK 移植工具注入：国内网络连通性检测 + NTP 时间服务器\n"
+                            "# 开机自动写入 settings 全局表；幂等：已生效则跳过（恢复出厂清表后自动重写，持续生效）\n"
+                            "if [ \"$(id -u)\" != \"0\" ]; then\n"
+                            "  echo \"[cnfix] 非 root，跳过（需 root/ADB 权限）\" >> /data/local/tmp/cnfix.log 2>/dev/null\n"
+                            "  exit 0\n"
+                            "fi\n"
+                            "# 等待系统完全启动、settings 服务可用（最多 120s）\n"
+                            "i=0\n"
+                            "while [ \"$(getprop sys.boot_completed)\" != \"1\" ] && [ $i -lt 60 ]; do\n"
+                            "  sleep 2; i=$((i+1))\n"
+                            "done\n"
+                            "# 幂等守卫：已生效则跳过；恢复出厂设置会清空 settings 表，此处自动重写\n"
+                            "if [ \"$(settings get global captive_portal_http_url 2>/dev/null)\" = \"http://connect.rom.miui.com/generate_204\" ]; then\n"
+                            "  exit 0\n"
+                            "fi\n"
+                            "settings put global captive_portal_http_url http://connect.rom.miui.com/generate_204\n"
+                            "settings put global captive_portal_https_url https://connect.rom.miui.com/generate_204\n"
+                            "settings put global captive_portal_use_https 0\n"
+                            "settings put global ntp_server ntp.aliyun.com\n"
+                        )
+                        # newline='\n' 强制 LF：CRLF 会破坏 sh 脚本（WiFi 修复同源教训）
+                        with script_path.open('w', encoding='utf-8', newline='\n') as f:
+                            f.write(script)
+                        print(f"  - 已注入开机自启脚本 {script_path}（开机自动写 settings，幂等持续生效）", file=self.std)
+                        # init.d 执行器检查：99cnfix.sh 依赖 /system/bin/sysinit 开机遍历执行；
+                        # boot 侧 sysinit 服务注入已在 __port_boot 完成（勾选本条目时自动补齐）。
+                        sysinit_exec = None
+                        for cand in ("bin/sysinit", "xbin/sysinit"):
+                            if port_prefix.joinpath(cand).exists():
+                                sysinit_exec = cand
+                                break
+                        if sysinit_exec:
+                            print(f"  - init.d 执行器已就位（/system/{sysinit_exec}），开机将自动执行 99cnfix.sh", file=self.std)
+                        else:
+                            print("  - 警告：移植源未发现 /system/bin/sysinit（init.d 执行器），网络修复可能无法开机自动生效；", file=self.std)
+                            print("    可开机后手动执行 /system/etc/init.d/99cnfix.sh 一次", file=self.std)
+                        print(f"  - 生效条件：设备有 root 或 ADB 有权限；CM 系 ROM（含 init.d 支持）刷完即生效；恢复出厂清表后自动重写", file=self.std)
+                    except OSError as e:
+                        print(f"  - 注入自启脚本失败（{e}），仅保留 build.prop 兜底", file=self.std)
                 case 'fix_storage_system':
                     # AMG 教程补充节：6582 设备移植 6572 固件后存储仍异常时，
                     # 从同版本 6582 移植包提取 sdcard/vold 替换进移植后 system。
@@ -1364,9 +1600,9 @@ class portutils:
                             base_rel = b.getprop('ro.build.version.release')
                             port_rel = p.getprop('ro.build.version.release')
                     if base_rel and port_rel and base_rel != port_rel:
-                        print(f"  - 跳过 system 侧（底包 Android {base_rel} vs 移植源 Android {port_rel}，", file=self.std)
-                        print(f"    跨大版本 vold/sdcard 可能不兼容；仅 boot 侧修复已生效）", file=self.std)
-                        continue
+                        print(f"  ! 注意：底包 Android {base_rel} vs 移植源 Android {port_rel} 版本不一致，", file=self.std)
+                        print(f"  ! vold/sdcard 与 Android 版本强绑定，跨版本替换可能直接不可用；", file=self.std)
+                        print(f"  ! 已按勾选继续执行 system 侧替换（若刷入后存储异常，请取消此项）", file=self.std)
                     for f in ('bin/sdcard', 'bin/vold'):
                         src = base_prefix.joinpath(f)
                         dst = port_prefix.joinpath(f)
@@ -1430,7 +1666,88 @@ class portutils:
                         print(f"  - 平台/WLAN信息同步完成", file=self.std)
                     else:
                         print(f"  - 跳过（未找到build.prop）", file=self.std)
-        
+
+        # === 补齐移植源缺失的 bin/xbin 命令软链接 ===
+        # 老芯片 ROM（CM/AOSP/类原生 zip）打包时常丢失 /system/bin、/system/xbin 的
+        # toybox 命令软链接（cat/ls/cp/mknod/insmod/mount...），而 init 脚本用绝对路径
+        # 调用（如 init.mt6582.rc: exec /system/bin/mknod /dev/wmtWifi），缺失会导致
+        # 设备节点创建失败、WiFi/蓝牙等启动链路异常（词典笔 MT6582 实证：旧版产物
+        # 含底包软链接 WiFi 正常，新版产物缺失 WiFi 打不开）。
+        # 从底包补齐：仅补缺失条目，不覆盖移植源已有文件（纯命令入口，跨大版本安全）。
+        # 目标重写：底包 5.x 的命令软链接指向 toolbox，而 Android 7+ 移植源的核心命令
+        # 由 toybox 提供（toolbox 仅剩 start/stop 等少量命令，无 mknod/cat/insmod）。
+        # 若照抄底包目标，init 用绝对路径执行 /system/bin/mknod 时仍会失败（词典笔
+        # MT6582 实证：底包目标 toolbox 实机 WiFi 依旧打不开；旧版产物目标 toybox 正常）。
+        # 因此补齐时按移植源实际命令表重写解释器目标：命令在 toybox 命令表内 -> toybox，
+        # 否则回退 toolbox；特殊目标（app_process32/dalvikvm32 等）保留原样。
+        print(f"【软链接补齐】从底包补齐 bin/xbin 命令软链接（按移植源解释器重写目标）...", file=self.std)
+        _symlink_mark = bytes.fromhex('213C73796D6C696E6B3EFFFE')
+
+        # 探测移植源命令解释器与 toybox 命令表
+        _port_toybox = port_prefix.joinpath('bin/toybox')
+        _port_toolbox = port_prefix.joinpath('bin/toolbox')
+        _toybox_cmds = set()
+        if _port_toybox.is_file():
+            try:
+                for _m in re.finditer(rb'[A-Za-z][A-Za-z0-9_]{1,19}', _port_toybox.read_bytes()):
+                    _t = _m.group().decode('ascii', 'ignore')
+                    if _t.isalpha() or _t.isalnum():
+                        _toybox_cmds.add(_t)
+            except OSError:
+                pass
+
+        def _rewrite_symlink(_raw: bytes, _name: str) -> bytes:
+            if _raw[:len(_symlink_mark)] != _symlink_mark:
+                return _raw
+            try:
+                _tgt = _raw[10:].decode('utf-16-le').rstrip('\x00').lstrip('\ufeff')
+            except Exception:
+                return _raw
+            if _tgt not in ('toolbox', 'toybox'):
+                return _raw  # 特殊目标（app_process32/dalvikvm32 等）保留原样
+            if _port_toybox.is_file() and _name in _toybox_cmds:
+                _new = 'toybox'
+            elif _port_toolbox.is_file():
+                _new = 'toolbox'
+            else:
+                return _raw  # 移植源无解释器，保留原目标
+            return _symlink_mark + _new.encode('utf-16-le') + b'\x00\x00'
+
+        _merged = 0
+        for _rel in ('bin', 'xbin'):
+            _bd = base_prefix.joinpath(_rel)
+            _pd = port_prefix.joinpath(_rel)
+            if not _bd.is_dir():
+                continue
+            _pd.mkdir(parents=True, exist_ok=True)
+            for _e in sorted(_bd.iterdir()):
+                if not _e.is_file():
+                    continue
+                try:
+                    _raw = _e.read_bytes()
+                    if _raw[:12] != _symlink_mark:
+                        continue
+                except OSError:
+                    continue
+                _dst = _pd.joinpath(_e.name)
+                if _dst.exists():
+                    continue  # 移植源已有同名条目，不覆盖
+                try:
+                    _new_raw = _rewrite_symlink(_raw, _e.name)
+                    _dst.write_bytes(_new_raw)
+                    _merged += 1
+                    if _new_raw[:len(_symlink_mark)] == _symlink_mark:
+                        _t_disp = _new_raw[10:].decode('utf-16-le').rstrip('\x00').lstrip('\ufeff')
+                    else:
+                        _t_disp = '(原样)'
+                    print(f"  - 补齐 {_rel}/{_e.name} -> {_t_disp}", file=self.std)
+                except OSError as _err:
+                    print(f"  - 跳过 {_rel}/{_e.name}（复制失败：{_err}）", file=self.std)
+        if _merged:
+            print(f"  - 共补齐 {_merged} 个命令软链接（来自底包，仅补缺失）", file=self.std)
+        else:
+            print(f"  - 无需补齐（移植源命令软链接已完整）", file=self.std)
+
         print(f"【system移植完成】system.img处理完毕", file=self.std)
         return True
     
@@ -1453,7 +1770,7 @@ class portutils:
                     print(f"【定制项】生成自动刷机脚本...", file=self.std)
                     updater_script_path = Path("tmp/rom/META-INF/com/google/android/updater-script")
                     if updater_script_path.exists():
-                        with updater_script_path.open('r+', encoding='utf-8') as f:
+                        with updater_script_path.open('r+', encoding='utf-8', newline='\n') as f:
                             author = self.items.get('author') or tool_author
                             version = self.items.get('version') or tool_version
                             new_script = updaterutil(f).generate(author, version, self.items['partitions'], self.sdat)
@@ -1489,7 +1806,7 @@ class portutils:
             # 清理文件上下文配置
             fc_path = config_dir.joinpath("system_file_contexts")
             if fc_path.exists():
-                with fc_path.open('r+', encoding='utf-8-sig') as fc:
+                with fc_path.open('r+', encoding='utf-8-sig', newline='\n') as fc:
                     fc_info = list(dict.fromkeys([i.rstrip() for i in fc]))
                     fc.seek(0, 0)
                     fc.truncate()
@@ -1526,8 +1843,8 @@ class portutils:
                             fs_label.append([unix_path.lstrip('/'), '0', '2000', mode])
                         fs_files.append(unix_path)
             
-            # 写入文件系统配置
-            with config_dir.joinpath("system_fs_config").open('w', encoding='utf-8') as f:
+            # 写入文件系统配置（newline='\n' 强制 LF：fs_config 是 Android 侧文件，CRLF 会污染权限解析）
+            with config_dir.joinpath("system_fs_config").open('w', encoding='utf-8', newline='\n') as f:
                 for fs in sorted(fs_label):
                     f.write(" ".join(fs) + '\n')
             print(f"  - 生成文件系统配置：{len(fs_label)} 条记录", file=self.std)
@@ -1747,13 +2064,13 @@ class portutils:
         
         print(f"  - 补充 {config_count} 条缺失的权限配置，总计 {len(fs_label)} 条", file=self.std)
         
-        # 生成配置文件
+        # 生成配置文件（newline='\n' 强制 LF，Android 侧文件防 CRLF）
         print(f"【配置生成】写入权限配置文件...", file=self.std)
-        with config_dir.joinpath("system_fs_config").open('w', encoding='utf-8') as f:
+        with config_dir.joinpath("system_fs_config").open('w', encoding='utf-8', newline='\n') as f:
             for fs in sorted(fs_label):
                 f.write(" ".join(filter(None, fs)) + '\n')
         
-        with config_dir.joinpath("system_file_contexts").open('w', encoding='utf-8') as f:
+        with config_dir.joinpath("system_file_contexts").open('w', encoding='utf-8', newline='\n') as f:
             for fc in sorted(fc_label):
                 f.write(" ".join(fc) + '\n')
         print(f"  - 配置文件已写入到 tmp/config 目录", file=self.std)

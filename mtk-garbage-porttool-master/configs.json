@@ -181,7 +181,11 @@
                 "bin/wpa_cli",
                 "etc/wifi",
                 "lib/libwpa_client.so",
-                "lib/libwifi-service.so"
+                "lib/libwifi-service.so",
+                "lib/libpalwlan_mtk.so",
+                "lib/libwifitest.so",
+                "lib/libem_wifi_jni.so",
+                "lib/libpalsecurity.so"
             ]
         }
     },

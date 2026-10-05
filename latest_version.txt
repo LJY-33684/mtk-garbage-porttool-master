@@ -1,3 +1,13 @@
-latest_version=1.3-beta5p1
-update_url_1=https://github.com/LJY-33684/mtk-garbage-porttool-master/releases/download/1.3-beta5p1/mtk-garbage-porttool-master.zip
-update_url_2=https://gitee.com/Q3368436451/mtk-garbage-porttool-master/releases/download/1.3-beta5p1/mtk-garbage-porttool-master.zip
+> **⚠️ 重要提醒：如果您正在使用 1.3-beta3p2 之前的版本，请务必立即更新。**
+> 旧版本存在严重 bug——移植时会误覆盖音频/图形 HAL 导致卡第二屏、外放无声、不开机。本版本已修复。
+
+## 1.3-beta5p2（紧急修补）
+
+### 修复
+- **国内网络/时间服务器修复**：移植时注入开机自启脚本，将网络连通性检测服务器与 NTP 时间同步服务器切换为国内节点，执行完成后自动清理脚本；设备具备 root/ADB 权限时直接生效
+- **软链接（symlink）往返修复**（#193）：解包时还原带软链接属性的 zip 条目，打包时正确转回软链接——避免软链接文件（如 toybox）被当作普通小文件刷入导致命令不可执行
+- **Linux 真软链接往返补强**：类 Unix 环境解包产生的真 symlink 现在也能正确写回软链接条目
+
+### 说明
+- 本版本为紧急修补（p 系列）：修复国内网络/时间服务器注入生效问题与软链接往返丢失问题
+- 请使用 1.3-beta5p2 或更新版本
