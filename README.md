@@ -1,6 +1,6 @@
-﻿# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
+# MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta5p1**
+> 当前版本 / Current version：**1.3-beta5p2**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -372,6 +372,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3-beta5p2**：国内网络/时间服务器修复（移植时注入开机自启脚本，将网络连通性检测服务器与 NTP 时间同步服务器切换为国内节点，执行完成后自动清理脚本，设备具备 root/ADB 权限时直接生效）；软链接（symlink）往返修复（#193——解包还原软链接属性、打包正确转回软链接，避免 toybox 等被当作普通小文件刷入导致命令不可执行）；Linux 真软链接往返补强（类 Unix 环境解包产生的真 symlink 正确写回软链接条目）
+  - **1.3-beta5p2**: China network/time-server fix (injects a boot-time self-cleaning script that switches the WiFi connectivity check + NTP to China nodes; effective when the device has root/ADB); symlink round-trip fix (#193 — restores symlink attributes on unpack and writes back real symlink entries on pack, so toybox etc. are no longer flashed as ordinary small files); Linux real-symlink round-trip hardening (real symlinks produced on Unix-like systems now map back to symlink entries correctly).
 - **1.3-beta5p1**：存储修复拆分为两个独立条目——`存储修复·boot侧`（fstab 收敛 + init.rc 挂载修正，**默认勾选**）与 `存储修复·system侧`（兜底替换 sdcard/vold，默认不勾选，仅当 boot 侧修复失效时尝试）；system 侧新增**版本一致性守卫**（底包与移植源 Android 大版本不一致时自动跳过，避免 vold/sdcard 跨版本不兼容）
   - **1.3-beta5p1**: split storage fix into two independent items — "Storage fix · boot-side" (fstab convergence + init.rc mount fix, **checked by default**) and "Storage fix · system-side" (fallback sdcard/vold replacement, unchecked by default, try only when boot-side fix fails); system-side now has a **version-consistency guard** (auto-skips when base and porting source are on different Android major versions to avoid vold/sdcard cross-version incompatibility).
 - **1.3-beta5**：新增「存储修复（收敛外置存储）」移植条目（仅 mt6572/mt6582/mt6592 方案）——boot 侧 fstab 收敛 + init.rc 挂载修正，system 侧底包 sdcard/vold 替换；打包过滤加固（`del_`/`tmp_` 前缀开发脚本不再混入发行包）；修复单实例弹窗 NameError（`Tk`/`singleton` 未定义，触发“同目录已有实例”必崩）；README 补充仓库地址（GitHub/Gitee）、目录快速跳转、支持方案与移植条目说明
