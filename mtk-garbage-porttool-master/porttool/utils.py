@@ -258,7 +258,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta5p3'
+tool_author = 'affggh'; tool_version = '1.3-beta5p4'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -979,7 +979,9 @@ class portutils:
                         print(f"  - 跳过（未找到 initrd 目录）", file=self.std)
                         continue
                     # 1) fstab：删除带 /devices/ 的存储行，补 msdc.1 + usbotg 标准行
-                    fstabs = sorted(p for p in fixdir.glob("fstab*") if p.is_file())
+                    #    （兼容两种命名：fstab.mtXXXX / mtXXXX.fstab，教程注明后者同样存在）
+                    fstabs = sorted({fixdir.joinpath(n) for n in
+                                     {p.name for p in list(fixdir.glob("fstab*")) + list(fixdir.glob("*.fstab")) if p.is_file()}})
                     if not fstabs:
                         print(f"  - 跳过 fstab（initrd 中未找到 fstab 文件）", file=self.std)
                     for fstab in fstabs:
@@ -988,15 +990,30 @@ class portutils:
                         except Exception as e:
                             print(f"  - 跳过 {fstab.name}（读取失败：{e}）", file=self.std)
                             continue
-                        keep = [ln for ln in lines if not (ln.lstrip().startswith("/devices/") and "voldmanaged=" in ln)]
+                        # AMG 教程第 3-4 步（严格按原文）：删除**所有**携带 /devices/ 的存储声明行，
+                        # 无论是否含 voldmanaged——包括损坏的 sdcard0 行：sdcard0:<数字分区号> 形式
+                        # 会让老 MTK vold 解析失败，回退把所有 mmc 节点（mmcblk0/boot0/boot1）当
+                        # SD 卡扫描，表现为三张 SD 卡全部"已损坏"。删完后只补 sdcard1 + usbotg
+                        # 两行标准声明（内置 emulated 存储由 /data + vold 默认逻辑承载，无需
+                        # sdcard0 声明；教程删完图证实：只剩 5 行 /emmc@ 主分区行）。
+                        keep = [ln for ln in lines if not ln.lstrip().startswith("/devices/")]
+                        removed_dev = [ln for ln in lines if ln.lstrip().startswith("/devices/")]
                         add = []
                         if not any("voldmanaged=sdcard1:auto" in ln for ln in keep):
                             add.append("/devices/platform/mtk-msdc.1/mmc_host* auto auto defaults voldmanaged=sdcard1:auto,encryptable=userdata")
                         if not any("voldmanaged=usbotg:auto" in ln for ln in keep):
                             add.append("/devices/platform/mt_usb auto auto defaults voldmanaged=usbotg:auto")
                         removed = len(lines) - len(keep)
-                        if removed or add:
-                            out = keep + ([""] + add if add else [])
+                        # 等价判定：若删掉的 voldmanaged 行集合与待补标准行集合完全一致（值相同），
+                        # 说明 fstab 已处于教程第 4 步的目标形态（标准两行），重写只会生成相同内容，
+                        # 报"无需修改"避免误导（例：标准 fstab 的 sdcard1/usbotg 两行被删后原样重补，
+                        # 日志却写"删除 2 行/补充 2 行"，实际内容零变化）
+                        removed_std = {ln.strip() for ln in removed_dev if "voldmanaged=" in ln}
+                        need_std = {ln.strip() for ln in add}
+                        if removed_std and need_std and removed_std == need_std:
+                            print(f"  - {fstab.name} 无需修改（已是标准 voldmanaged 形态）", file=self.std)
+                        elif removed or add:
+                            out = keep + add  # 补行紧跟末行，不加空行分隔（与正确修补产物 boot-new.img 一致）
                             fstab.write_text("\n".join(out) + "\n", encoding="utf-8", newline='\n')  # newline='\n' 强制 LF：CRLF 会让 fstab 解析残留 \r（三张SD卡/挂载异常）
                             print(f"  - 修正 {fstab.name}（删除 {removed} 行 /devices/ 存储声明，补充 sdcard1/usbotg 标准行）", file=self.std)
                         else:
@@ -1006,17 +1023,52 @@ class portutils:
                     #      其余 init*.rc（usb/aee/environ 等变体）不动，避免误改）
                     rcs = []
                     if fstabs:
-                        chip_fstabs = [p.name for p in fstabs if ".mt" in p.name]
-                        chip_name = chip_fstabs[0].replace("fstab.", "") if chip_fstabs else None
+                        # 兼容 fstab.mtXXXX 与 mtXXXX.fstab 两种命名（教程注明变体存在）
+                        chip_cands = [p.name.replace("fstab.", "").replace(".fstab", "") for p in fstabs]
+                        chip_cands = [c for c in chip_cands if c.startswith("mt")]
+                        chip_name = chip_cands[0] if chip_cands else None
                         if chip_name:
                             rcs = sorted(p for p in fixdir.glob(f"init.{chip_name}.rc") if p.is_file())
+                        if not rcs:
+                            # 从包内其他文件名推补芯片名：init.mtXXXX.usb.rc / ueventd.mtXXXX.rc 等
+                            # （正则统计全部文件名中 mt\d{4} 出现次数，取最多者，比裸 glob 取第一个更准）
+                            mt_re = re.compile(r'mt\d{4}', re.I)
+                            cands = {}
+                            for p in fixdir.rglob('*'):
+                                m = mt_re.search(p.name)
+                                if m:
+                                    c = m.group(0).lower()
+                                    cands[c] = cands.get(c, 0) + 1
+                            if cands:
+                                chip_name = max(cands, key=cands.get)
+                                rcs = sorted(p for p in fixdir.glob(f"init.{chip_name}.rc") if p.is_file())
+                                print(f"  - 从包内文件名推补芯片名：{chip_name}", file=self.std)
+                        if not rcs:
+                            # 兜底：仍取 init.mt*.rc 第一个（裸 fstab 设备通常仅一个平台主 rc）
+                            mt_rcs = sorted(p for p in fixdir.glob("init.mt*.rc") if p.is_file())
+                            if mt_rcs:
+                                rcs = [mt_rcs[0]]
+                                print(f"  - 未推出芯片名，回退定位平台主 rc：{mt_rcs[0].name}", file=self.std)
                     if not rcs:
                         print(f"  - 跳过 init.rc（未定位到平台主文件 init.<chip>.rc）", file=self.std)
                     fstab_name = None
                     if fstabs:
-                        # 优先 fstab.mtXXXX（芯片名形式，符合教程），其次裸 fstab
-                        chip_fstabs = [p.name for p in fstabs if ".mt" in p.name]
-                        fstab_name = chip_fstabs[0] if chip_fstabs else fstabs[0].name
+                        # mount_all 必须引用真实文件名，优先级：
+                        # 1) 芯片名形式 fstab.mtXXXX / mtXXXX.fstab（最标准，教程形态）
+                        # 2) 裸 fstab（无芯片名设备的唯一主挂载表）
+                        # 3) 其他辅助文件（fstab.nand / fstab.fat 等子表）不适用作 mount_all 目标，
+                        #    跳过补丁并提示，避免 sorted 误取 fstab.fat 等导致挂载错误
+                        chip_cands = [p.name for p in fstabs
+                                      if p.name.replace("fstab.", "").replace(".fstab", "").startswith("mt")]
+                        if chip_cands:
+                            fstab_name = chip_cands[0]
+                        else:
+                            bare = [p.name for p in fstabs if p.name == "fstab"]
+                            if bare:
+                                fstab_name = "fstab"
+                            else:
+                                print(f"  - 跳过 mount_all 补丁（fstab 均无芯片名且非裸 fstab："
+                                      f"{sorted(p.name for p in fstabs)}）", file=self.std)
                     for rc in rcs:
                         try:
                             lines = rc.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -1024,11 +1076,18 @@ class portutils:
                             print(f"  - 跳过 {rc.name}（读取失败：{e}）", file=self.std)
                             continue
                         orig_len = len(lines)
-                        # 2.1) 删除 setprop ro.vold.primary_physical 1
-                        lines = [ln for ln in lines if "setprop ro.vold.primary_physical 1" not in ln]
-                        # 2.2) on init 块：将旧式 sdcard symlink 替换为标准形式
+                        had_primary = any("setprop ro.vold.primary_physical 1" in ln for ln in lines)
+                        # 2.1) 删除 setprop ro.vold.primary_physical 1（AMG 教程第 6 步：
+                        #      教程"删之前/删之后"对比图实证：仅删除 setprop 行，
+                        #      上一行注释 "# By default, primary storage is physical" 保留）
+                        lines = [ln for ln in lines
+                                 if "setprop ro.vold.primary_physical 1" not in ln]
+                        # 2.2) on init 块：将旧式 sdcard symlink 原位替换为标准形式
                         #      （symlink storage/sdcard /sdcard + /mnt/sdcard；已是标准形式则跳过）
+                        #      AMG 教程第 7 步：替换发生在原 symlink 位置（# Support legacy paths 下），
+                        #      且必须与上行对齐（错误演示图：symlink 前多出缩进 → 替换失效）
                         init_idx = None
+                        symlink_fixed = False
                         for i, ln in enumerate(lines):
                             if ln.strip() == "on init":
                                 init_idx = i
@@ -1042,40 +1101,119 @@ class portutils:
                             block = lines[init_idx:end]
                             has_std = any("symlink storage/sdcard /sdcard" in ln for ln in block) and \
                                       any("symlink storage/sdcard /mnt/sdcard" in ln for ln in block)
-                            if not has_std:
-                                # 去掉块内旧式 /sdcard symlink 行（如 symlink /sdcard /mnt/sdcard）
-                                block = [ln for ln in block
-                                         if not (ln.strip().startswith("symlink") and "/sdcard" in ln
-                                                 and "storage/sdcard" not in ln)]
-                                new_block = block[:1] + [
-                                    "    symlink storage/sdcard /sdcard",
-                                    "    symlink storage/sdcard /mnt/sdcard",
-                                ] + block[1:]
-                                lines = lines[:init_idx] + new_block + lines[end:]
+                            old_idxs = [i for i in range(init_idx + 1, end)
+                                        if lines[i].strip().startswith("symlink")
+                                        and "storage/sdcard" not in lines[i]]
+                            if old_idxs and not has_std:
+                                replace_pos = old_idxs[0]
+                                old_set = set(old_idxs)
+                                new_lines = []
+                                # 继承原 symlink 行的行首缩进，保证替换行与上行逐列对齐
+                                #（AMG 教程："注意与上行对齐，否则替换失效"，错误演示图即第二行多出缩进）
+                                prefix = lines[replace_pos][:len(lines[replace_pos]) - len(lines[replace_pos].lstrip())]
+                                for i in range(len(lines)):
+                                    if i == replace_pos:
+                                        new_lines.append(prefix + "symlink storage/sdcard /sdcard")
+                                        new_lines.append(prefix + "symlink storage/sdcard /mnt/sdcard")
+                                    elif i in old_set:
+                                        continue
+                                    else:
+                                        new_lines.append(lines[i])
+                                lines = new_lines
+                                symlink_fixed = True
                         # 2.3) on fs 块补 mkdir protect_f/protect_s、mount_all、Mount_END
+                        #      AMG 教程第 8 步：插在挂载块结束处——即 eMMC 挂载 4 行
+                        #      （Mount_All_START→mount_all→Mount_All_END→Mount_START）之后、
+                        #      第一个 service 之前（"在该块的第一小块下添加"，添加后图实证
+                        #      Mount_START 之后紧跟 mkdir protect_f）
                         fs_idx = None
                         for i, ln in enumerate(lines):
                             if ln.strip() == "on fs":
                                 fs_idx = i
                                 break
                         if fs_idx is not None:
-                            add_fs = []
-                            if not any(ln.strip().startswith("mkdir /protect_f") for ln in lines):
-                                add_fs.append("    mkdir /protect_f 0771 system system")
-                            if not any(ln.strip().startswith("mkdir /protect_s") for ln in lines):
-                                add_fs.append("    mkdir /protect_s 0771 system system")
-                            if not any(ln.strip().startswith("mount_all /fstab") for ln in lines) and fstab_name:
-                                add_fs.append(f"    mount_all /{fstab_name}")
-                            if not any("INIT:NAND:Mount_END" in ln for ln in lines):
-                                add_fs.append('    write /proc/bootprof "INIT:NAND:Mount_END"')
-                            if add_fs:
-                                lines[fs_idx + 1:fs_idx + 1] = add_fs
+                            fs_end = len(lines)
+                            for j in range(fs_idx + 1, len(lines)):
+                                if lines[j].strip().startswith("on ") and lines[j].strip() != "on fs":
+                                    fs_end = j
+                                    break
+                        add_fs = []
+                        # AMG 教程第 8 步：on fs 块"第一小块下"固定添加这 4 行（原文"添加如下代码"，
+                        # 无条件添加、不查重）——正确修补产物实证（群友手工 boot-new.img）：即使块内
+                        # 已有 mount_all / Mount_All_END，仍按教程原文重复添加 mount_all 与
+                        # "INIT:NAND:Mount_END"（bootprof 为日志标记，重复/风格混用不影响挂载；
+                        # 与正确修补产物逐行一致为准）
+                        add_fs.append("    mkdir /protect_f 0771 system system")
+                        add_fs.append("    mkdir /protect_s 0771 system system")
+                        if fstab_name:
+                            add_fs.append(f"    mount_all /{fstab_name}")
+                        add_fs.append('    write /proc/bootprof "INIT:NAND:Mount_END"')
+                        if add_fs:
+                            if fs_idx is not None:
+                                # 定位插入点：挂载块最后一个 bootprof 标记（Mount_START/Mount_All_END）之后，
+                                # 若块内只有 service（无挂载标记），则插在第一个 service 之前
+                                fs_end = len(lines)
+                                for j in range(fs_idx + 1, len(lines)):
+                                    if lines[j].strip().startswith("on ") and lines[j].strip() != "on fs":
+                                        fs_end = j
+                                        break
+                                insert_at = fs_idx + 1
+                                last_mount_prof = None
+                                for j in range(fs_idx + 1, fs_end):
+                                    if "bootprof" in lines[j] and ("Mount_START" in lines[j]
+                                                                   or "Mount_END" in lines[j]
+                                                                   or "Mount_All" in lines[j]):
+                                        last_mount_prof = j
+                                    if lines[j].strip().startswith("service "):
+                                        break
+                                if last_mount_prof is not None:
+                                    insert_at = last_mount_prof + 1
+                                lines[insert_at:insert_at] = add_fs
+                            else:
+                                # AMG 教程第 8 步要求在 on fs 块补挂载逻辑；平台主 rc 缺失 on fs 块时
+                                # 在文件末尾新建（init 合并加载全部 rc 的 on fs 块执行，语义一致），
+                                # 修复"只改 fstab、未改 init.mtXXXX.rc"导致存储修复不到位的问题
+                                lines += ["", "on fs"] + add_fs
                         changed = len(lines) != orig_len
                         if changed:
                             rc.write_text("\n".join(lines) + "\n", encoding="utf-8", newline='\n')  # newline='\n' 强制 LF：CRLF 会破坏 init 按 \n 切行（service 注册残留 \r，WiFi 不可用根因）
-                            print(f"  - 修正 {rc.name}（删除 primary_physical、补充存储 symlink/protect/mount_all）", file=self.std)
+                            # 按实际改动项打印明细，避免笼统文案与实际不符（如只删了 primary_physical
+                            # 却打印"补充 symlink/protect/mount_all"，误导排查）
+                            changes = []
+                            if had_primary and not any("setprop ro.vold.primary_physical 1" in ln for ln in lines):
+                                changes.append("删除 primary_physical")
+                            if symlink_fixed:
+                                changes.append("补充 sdcard symlink 标准形")
+                            if any(x.strip().startswith("mkdir /protect_f") for x in add_fs):
+                                changes.append("补充 mkdir /protect_f")
+                            if any(x.strip().startswith("mkdir /protect_s") for x in add_fs):
+                                changes.append("补充 mkdir /protect_s")
+                            if any(x.strip().startswith("mount_all") for x in add_fs):
+                                changes.append("补充 mount_all 挂载行")
+                            if any("Mount_END" in x or "Mount_All_END" in x for x in add_fs):
+                                changes.append("补充 Mount_END 标记")
+                            if fs_idx is None and add_fs:
+                                changes.append("新建 on fs 块")
+                            if not changes:
+                                changes.append("有改动")
+                            print(f"  - 修正 {rc.name}（{', '.join(changes)}）", file=self.std)
                         else:
-                            print(f"  - {rc.name} 无需修改", file=self.std)
+                            # 打印核对依据，避免"无需修改"误导
+                            #（此前 on fs 块缺失被整段跳过时同样误报无需修改，实际 init 侧未修）
+                            checks = []
+                            if not any("setprop ro.vold.primary_physical 1" in ln for ln in lines):
+                                checks.append("primary_physical 已清理")
+                            if any("symlink storage/sdcard /sdcard" in ln for ln in lines) and \
+                               any("symlink storage/sdcard /mnt/sdcard" in ln for ln in lines):
+                                checks.append("sdcard symlink 标准形")
+                            if any(ln.strip().startswith("mkdir /protect_f") for ln in lines) and \
+                               any(ln.strip().startswith("mkdir /protect_s") for ln in lines):
+                                checks.append("protect 分区 mkdir 已含")
+                            if any(ln.strip().startswith("mount_all /") for ln in lines):
+                                checks.append("mount_all 已含")
+                            if any("INIT:NAND:Mount_END" in ln or "Mount_All_END" in ln for ln in lines):
+                                checks.append("Mount_END 已含")
+                            print(f"  - {rc.name} 无需修改（核对通过：{', '.join(checks) if checks else '未检测到需改动项'}）", file=self.std)
                     print(f"  - 存储修复完成", file=self.std)
 
         # 7.1+ 移植适配：p2p_supplicant 服务标志与底包对齐（只补齐，绝不删除）
