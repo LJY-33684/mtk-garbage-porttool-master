@@ -247,6 +247,11 @@ class _Fixer:
             if not data_blocks:
                 return False
             db = data_blocks[0]
+            # #222：目标超过一个块（4KB）时 (块大小-目标长度) 为负 → 补零数为负，
+            # 实际写入跨块但 i_blocks 仍按单块计，镜像结构损坏；
+            # Android 符号链接路径实际 <100B，此处防御性截断到块内
+            if len(tbytes) >= self._bs:
+                tbytes = tbytes[:self._bs - 1]
             self._write(db * self._bs, tbytes + b'\x00' * (self._bs - len(tbytes)))
             struct.pack_into('<I', i_block_area, 0, db)
             new_blocks = self._bs // 512
