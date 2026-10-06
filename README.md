@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta5p4**
+> 当前版本 / Current version：**1.3-beta5p5**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -372,6 +372,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3-beta5p5**：国内网络/时间服务器修复机制重构——由依赖 init.d/sysinit 执行器的开机自启脚本，改为向 boot 侧 init.rc 注入原生 `service cnfix`（`on property:sys.boot_completed=1` 触发，Android 4.x 起通用），开机由 init 以 root 直接执行 `/system/bin/cnfix.sh` 写 settings 全局表；脚本不再自删、改为逐键先检测后写入（幂等），恢复出厂/清空 settings 表后下次开机自动重写、持续生效；无需 root/ADB、不依赖 init.d/sysinit（词典笔等精简 ROM 无 init.d 执行器也能生效，实机验证：清表后刷入自动写回 ntp_server 与 captive portal 国内节点）
+  - **1.3-beta5p5**: China network/time-server fix mechanism reworked — replaced the init.d/sysinit-dependent boot script with a native `service cnfix` injected into boot-side init.rc (`on property:sys.boot_completed=1`, syntax works since Android 4.x); init now runs `/system/bin/cnfix.sh` as root at boot to write the settings table; the script no longer self-deletes and is idempotent (per-key check-then-write), so after a factory reset / settings wipe it rewrites automatically on next boot; no root/ADB needed, no init.d/sysinit dependency (works on slim ROMs like the dictionary pen without an init.d executor — verified on-device: settings wiped, re-flashed, ntp_server + captive portal China nodes auto-restored).
 - **1.3-beta5p4**：存储修复按 AMG 教程原文重做（无条件删除所有 `/devices/` 存储声明、仅补 sdcard1/usbotg 标准 voldmanaged 行；init.rc 删除 `ro.vold.primary_physical` 但保留注释行、存储 symlink 逐列对齐、on fs 块无条件添加教程固定 4 行——产物与群友手工按教程正确修补的 boot-new.img 逐行一致，修复“单卡槽设备刷入后冒出多个损坏 SD 卡卷”）；fstab 无芯片名场景加固（`mount_all` 引用优先级：芯片名 fstab → 裸 fstab → 仅辅助表时跳过并提示）；芯片名推补（无法从 fstab 文件名推出时，扫描包内 `init.mtXXXX.rc` / `ueventd.mtXXXX.rc` 等文件名正则统计推导，不再因裸 fstab 跳过 init.rc 修补）
   - **1.3-beta5p4**: storage fix reworked strictly per the AMG tutorial (unconditionally removes all `/devices/` storage lines, adds only standard sdcard1/usbotg voldmanaged lines; init.rc drops `ro.vold.primary_physical` while keeping the comment, aligns storage symlinks column-by-column, unconditionally inserts the tutorial's fixed 4 lines in the on fs block — output now line-identical to a peer's hand-made boot-new.img correctly patched per the tutorial, fixing the "multiple damaged SD volumes on a single-slot device" issue); fstab-without-chipname hardening (mount_all reference priority: chip-named fstab → bare fstab → skip with notice when only auxiliary tables exist); chip-name inference (when the fstab filename yields no chip name, scans filenames such as `init.mtXXXX.rc` / `ueventd.mtXXXX.rc` and infers by regex count, so a bare fstab no longer skips the init.rc patch).
 - **1.3-beta5p3**：权限/SELinux 配置全局去重（system_fs_config 按路径去重，与 system_file_contexts 对齐，修复镜像打包时重复条目导致 make_ext4fs 生成失败）；卡刷脚本移除冗余格式化（updater-script 不再重复执行 mke2fs，卡刷打包耗时减半）；updater-script 解析健壮性（symlink 纯数字目标强制加引号、解析/重写正则支持参数内括号）；解包/软链接边界修复（tmp/install 目录排除改精确匹配、symlink 目标超 4KB 防御性截断、imgextractor 配置目录参数化）；CLI 帮助文案修正（fscheck 位置参数必填说明与实现对齐，接口不变）

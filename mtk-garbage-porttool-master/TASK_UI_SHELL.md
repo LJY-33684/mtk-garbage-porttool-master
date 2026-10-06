@@ -35,7 +35,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3-beta5p4`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3-beta5p5`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -101,7 +101,7 @@ python porttool_cli.py port \
 | `replace_gralloc` / `replace_hwcomposer` | 替换 gralloc / hwcomposer |
 | `fit_density` / `change_model` | 同步 DPI / 型号信息 |
 | `change_timezone` / `change_locale` | 同步时区 / 语言区域 |
-| `set_cn_servers` | 切换国内网络/时间服务器（captive portal→小米、NTP→阿里云）。双通道：①写入 build.prop（兜底，部分框架仍读 ro.*）；②注入开机自启脚本 `/system/etc/init.d/99cnfix.sh`，开机自动写 settings 全局表，**幂等持续生效**（已生效则跳过；恢复出厂设置清空 settings 表后开机自动重写，无需再次移植/手动设置）（Android 7.1+ 网络验证/NTP 只读 settings，不读 build.prop）。**生效条件：设备有 root 或 ADB 有权限，且 ROM 支持 init.d（CM 系）**；非 root 时脚本跳过并写 `/data/local/tmp/cnfix.log` |
+| `set_cn_servers` | 切换国内网络/时间服务器（captive portal→小米、NTP→阿里云）。双通道：①写入 build.prop（兜底，部分框架仍读 ro.*）；②boot 侧向 init.rc 注入 `service cnfix`（`on property:sys.boot_completed=1` 触发，Android 4.x 起通用语法），开机由 init 以 root 直接执行 `/system/bin/cnfix.sh` 写 settings 全局表；**脚本保留不删除、幂等**：逐个键检测，已设置的键跳过，恢复出厂/清空 settings 表后下次开机自动重写，持续生效（Android 7.1+ 网络验证/NTP 只读 settings，不读 build.prop）。**无需 root/ADB、不依赖 init.d/sysinit**（精简 ROM 无 init.d 执行器也能生效） |
 | `single_simcard` / `dual_simcard` | 单 / 双卡配置 |
 | `fix_storage` | 存储修复·boot 侧（AMG 教程，仅 mt6572/mt6582/mt6592 方案提供）：收敛 fstab 外置存储声明（删除 `/devices/` 存储行、补标准 sdcard1/usbotg 行），并在 init.rc 删除 `ro.vold.primary_physical`、补充 protect 挂载 / `mount_all` / 存储 symlink，修复"单卡槽设备刷入后冒出多个损坏 SD 卡卷"的问题。多数设备此条目即可解决 |
 | `fix_storage_system` | 存储修复·system 侧（兜底，仅 mt6572/mt6582/mt6592 方案提供，默认关闭）：**仅当 fix_storage（boot 侧）修复后存储仍异常时勾选**。将底包 `system/bin/sdcard` + `system/bin/vold` 替换进移植源（对应 AMG 教程"6582 移植 6572 固件后仍异常时从同版本 6582 包提取这两个文件"）。带版本守卫：底包与移植源 Android 大版本不一致时自动跳过（vold/sdcard 跨版本不兼容），仅保留 boot 侧修复 |
@@ -242,5 +242,5 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3-beta5p4`
+- 本桥接接口随工具版本发布：当前 `1.3-beta5p5`
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）

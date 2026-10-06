@@ -258,7 +258,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta5p4'
+tool_author = 'affggh'; tool_version = '1.3-beta5p5'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -1290,37 +1290,40 @@ class portutils:
         except Exception as e:
             print(f"  - 跳过 p2p_supplicant 服务对齐（{e}）", file=self.std)
 
-        # 网络修复（set_cn_servers）依赖 CM 系 init.d 机制：/system/bin/sysinit 遍历执行 /system/etc/init.d/*。
-        # 若 boot ramdisk 的 init.rc 无 sysinit 服务定义（如 replace_init 用底包 init.rc 覆盖移植源、
-        # MTK 原厂底包通常无 sysinit），则 init.d 脚本开机不会执行、网络修复失效。
-        # 此处在 repack 前向根 init.rc 补齐标准 sysinit 服务（仅在勾选网络修复时，无副作用最小改动）。
+        # 网络修复（set_cn_servers）：改为 init.rc 原生 service 直接执行 /system/bin/cnfix.sh，
+        # 不再依赖 CM 系 init.d 机制（/system/bin/sysinit 遍历执行 /system/etc/init.d/*）。
+        # 词典笔等精简 ROM 通常没有 sysinit 执行器，init.d 脚本开机不会执行、网络修复失效（实测 ntp_server 为空）。
+        # 此处在 repack 前向根 init.rc 补齐 cnfix 服务（仅在勾选网络修复时，无副作用最小改动）。
+        # 语法用 service + oneshot + disabled + on property:sys.boot_completed=1：该组合自 Android 4.x 起通用，
+        # 规避 7.1 专属 init 项在 6.0 及以下不生效的坑；显式触发确保 settings 服务就绪后再写表。
         if self._flag('set_cn_servers'):
             try:
                 initrc_path = portdir.joinpath("initrd/init.rc")
                 if initrc_path.is_file():
                     rc_text = initrc_path.read_text(encoding="utf-8", errors="ignore")
-                    if "service sysinit" not in rc_text:
+                    if "service cnfix" not in rc_text:
                         with initrc_path.open('a', encoding='utf-8', newline='\n') as f:  # newline='\n' 强制 LF：CRLF 会破坏 init 按 \n 切行
                             f.write(
-                                "\n# MTK 移植工具注入：启用 /system/etc/init.d 开机执行（网络修复等依赖此机制）\n"
-                                "service sysinit /system/bin/sysinit\n"
-                                "    class main\n"
+                                "\n# MTK 移植工具注入：国内网络/时间服务器（开机自动执行 /system/bin/cnfix.sh，幂等保留）\n"
+                                "service cnfix /system/bin/cnfix.sh\n"
+                                "    class late_start\n"
                                 "    user root\n"
                                 "    group root\n"
                                 "    oneshot\n"
+                                "    disabled\n"
                                 "\n"
-                                "# 显式触发器：sys.boot_completed=1 由框架必经设置，确保 sysinit 在 settings 服务就绪后执行。\n"
-                                "# 仅靠 class main 在部分 MTK 底包 init 上不会拉起（class_start 挂在 on nonencrypted/decrypt，时机不可靠）\n"
+                                "# 显式触发器：sys.boot_completed=1 由框架必经设置，确保 settings 服务就绪后执行。\n"
+                                "# 仅靠 class 拉起在部分 MTK 底包 init 上时机不可靠（class_start 挂载时机差异），故显式触发。\n"
                                 "on property:sys.boot_completed=1\n"
-                                "    start sysinit\n"
+                                "    start cnfix\n"
                             )
-                        print("  - 已向 init.rc 注入 sysinit 服务（启用 init.d 开机执行，网络修复依赖）", file=self.std)
+                        print("  - 已向 init.rc 注入 cnfix 服务（开机自动执行 /system/bin/cnfix.sh，不依赖 init.d/sysinit）", file=self.std)
                     else:
-                        print("  - init.rc 已含 sysinit 服务，无需注入", file=self.std)
+                        print("  - init.rc 已含 cnfix 服务，无需注入", file=self.std)
                 else:
-                    print("  - 跳过 sysinit 注入（boot ramdisk 未找到 init.rc）", file=self.std)
+                    print("  - 跳过 cnfix 服务注入（boot ramdisk 未找到 init.rc）", file=self.std)
             except OSError as e:
-                print(f"  - 注入 sysinit 服务失败（{e}）", file=self.std)
+                print(f"  - 注入 cnfix 服务失败（{e}）", file=self.std)
 
         # 重新打包镜像
         print(f"【打包{imgname}】正在重新打包移植后的{imgname}...", file=self.std)
@@ -1688,52 +1691,37 @@ class portutils:
                         print(f"  - 跳过 build.prop（未找到 system/build.prop）", file=self.std)
                     # Android 7.1+ 网络验证/时间服务器只读 settings 全局表（captive_portal_* / ntp_server），
                     # 不读 build.prop 的 ro.* 属性；settings 表存在 /data，system 镜像侧改不到。
-                    # 方案：注入开机自启脚本，首次开机自动写 settings 后自删（需 root/ADB 权限执行）。
-                    initd_dir = port_prefix.joinpath("etc/init.d")
+                    # 方案：boot 侧注入 cnfix 服务（service cnfix），开机由 init 以 root 直接执行 /system/bin/cnfix.sh 写 settings。
+                    # 脚本不删除：恢复出厂/清空 settings 表后脚本仍在，下次开机自动重写，持续生效。
+                    # 幂等：逐个键检测，已设置的键跳过。
+                    script_path = port_prefix.joinpath("bin/cnfix.sh")
                     try:
-                        initd_dir.mkdir(parents=True, exist_ok=True)
-                        script_path = initd_dir.joinpath("99cnfix.sh")
                         script = (
                             "#!/system/bin/sh\n"
                             "# MTK 移植工具注入：国内网络连通性检测 + NTP 时间服务器\n"
-                            "# 开机自动写入 settings 全局表；幂等：已生效则跳过（恢复出厂清表后自动重写，持续生效）\n"
-                            "if [ \"$(id -u)\" != \"0\" ]; then\n"
-                            "  echo \"[cnfix] 非 root，跳过（需 root/ADB 权限）\" >> /data/local/tmp/cnfix.log 2>/dev/null\n"
-                            "  exit 0\n"
-                            "fi\n"
-                            "# 等待系统完全启动、settings 服务可用（最多 120s）\n"
+                            "# 开机由 init 的 cnfix 服务自动执行（root 权限，无需 ADB/手动操作）；脚本保留不删除，恢复出厂后自动重写，持续生效\n"
+                            "# 幂等：逐个键检测，已设置的键跳过（恢复出厂/清空 settings 表后自动补齐）\n"
+                            "# 等待系统完全启动、settings 服务可用（最多 120s，init 触发时通常已就绪，双保险）\n"
                             "i=0\n"
                             "while [ \"$(getprop sys.boot_completed)\" != \"1\" ] && [ $i -lt 60 ]; do\n"
                             "  sleep 2; i=$((i+1))\n"
                             "done\n"
-                            "# 幂等守卫：已生效则跳过；恢复出厂设置会清空 settings 表，此处自动重写\n"
-                            "if [ \"$(settings get global captive_portal_http_url 2>/dev/null)\" = \"http://connect.rom.miui.com/generate_204\" ]; then\n"
-                            "  exit 0\n"
+                            "if [ \"$(settings get global captive_portal_http_url 2>/dev/null)\" != \"http://connect.rom.miui.com/generate_204\" ]; then\n"
+                            "  settings put global captive_portal_http_url http://connect.rom.miui.com/generate_204\n"
+                            "  settings put global captive_portal_https_url https://connect.rom.miui.com/generate_204\n"
+                            "  settings put global captive_portal_use_https 0\n"
                             "fi\n"
-                            "settings put global captive_portal_http_url http://connect.rom.miui.com/generate_204\n"
-                            "settings put global captive_portal_https_url https://connect.rom.miui.com/generate_204\n"
-                            "settings put global captive_portal_use_https 0\n"
-                            "settings put global ntp_server ntp.aliyun.com\n"
+                            "if [ \"$(settings get global ntp_server 2>/dev/null)\" != \"ntp.aliyun.com\" ]; then\n"
+                            "  settings put global ntp_server ntp.aliyun.com\n"
+                            "fi\n"
                         )
                         # newline='\n' 强制 LF：CRLF 会破坏 sh 脚本（WiFi 修复同源教训）
                         with script_path.open('w', encoding='utf-8', newline='\n') as f:
                             f.write(script)
-                        print(f"  - 已注入开机自启脚本 {script_path}（开机自动写 settings，幂等持续生效）", file=self.std)
-                        # init.d 执行器检查：99cnfix.sh 依赖 /system/bin/sysinit 开机遍历执行；
-                        # boot 侧 sysinit 服务注入已在 __port_boot 完成（勾选本条目时自动补齐）。
-                        sysinit_exec = None
-                        for cand in ("bin/sysinit", "xbin/sysinit"):
-                            if port_prefix.joinpath(cand).exists():
-                                sysinit_exec = cand
-                                break
-                        if sysinit_exec:
-                            print(f"  - init.d 执行器已就位（/system/{sysinit_exec}），开机将自动执行 99cnfix.sh", file=self.std)
-                        else:
-                            print("  - 警告：移植源未发现 /system/bin/sysinit（init.d 执行器），网络修复可能无法开机自动生效；", file=self.std)
-                            print("    可开机后手动执行 /system/etc/init.d/99cnfix.sh 一次", file=self.std)
-                        print(f"  - 生效条件：设备有 root 或 ADB 有权限；CM 系 ROM（含 init.d 支持）刷完即生效；恢复出厂清表后自动重写", file=self.std)
+                        print(f"  - 已注入 /system/bin/cnfix.sh（开机由 init cnfix 服务自动执行，无需 root/ADB；幂等保留，恢复出厂清表后自动重写）", file=self.std)
+                        print("  - boot 侧已注入 cnfix 服务（service cnfix + boot_completed 触发），不依赖 init.d/sysinit", file=self.std)
                     except OSError as e:
-                        print(f"  - 注入自启脚本失败（{e}），仅保留 build.prop 兜底", file=self.std)
+                        print(f"  - 注入 cnfix 脚本失败（{e}），仅保留 build.prop 兜底", file=self.std)
                 case 'fix_storage_system':
                     # AMG 教程补充节：6582 设备移植 6572 固件后存储仍异常时，
                     # 从同版本 6582 移植包提取 sdcard/vold 替换进移植后 system。
