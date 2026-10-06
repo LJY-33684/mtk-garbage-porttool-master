@@ -340,7 +340,7 @@ def main(argv=None):
 
     # fscheck
     sf = sub.add_parser('fscheck', help='文件系统自查（对 system.img 做完整性检查）')
-    sf.add_argument('image', help='要检查的镜像路径（默认 out/system.img）')
+    sf.add_argument('image', help='要检查的镜像路径（位置参数，必填）')
     sf.add_argument('--log-file', default='', help='额外日志文件')
 
     # check-update
