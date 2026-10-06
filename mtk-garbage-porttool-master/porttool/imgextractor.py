@@ -666,7 +666,7 @@ class Extractor(object):
             return 'simg'
         return 'img'
 
-    def main(self, target, output_dir):
+    def main(self, target, output_dir, config_dir=None):
         self.BASE_DIR = (os.path.realpath(os.path.dirname(target)) + os.sep)
         self.BASE_MYDIR = output_dir + os.sep
         self.EXTRACT_DIR = os.path.realpath(os.path.dirname(output_dir)) + os.sep + self.__file_name(os.path.basename(output_dir)) #output_dir
@@ -675,7 +675,11 @@ class Extractor(object):
         self.MYFileName = os.path.basename(self.OUTPUT_IMAGE_FILE).replace(".img", "")
         self.FileName = self.__file_name(os.path.basename(target))
         target_type = self.__getTypeTarget(target)
-        if sys.argv.__len__() == 3:
+        # #229：CONFIG_DIR 参数化传入（库调用不再耦合 sys.argv）；
+        # 命令行模式（python imgextractor.py img out config）仍保留 sys.argv 兼容
+        if config_dir is not None:
+            self.CONFING_DIR = config_dir + os.sep + 'config'
+        elif sys.argv.__len__() == 3:
             self.CONFING_DIR = sys.argv[2] + os.sep + 'config'
         else:
             self.CONFING_DIR = output_dir + os.sep + ".." + os.sep + 'config'        
