@@ -258,7 +258,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta5p2'
+tool_author = 'affggh'; tool_version = '1.3-beta5p3'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -403,19 +403,29 @@ class updaterutil:
     @property
     def __parse_commands(self):
         self.fd.seek(0, 0)
-        commands = re.findall(r'(\w+)\((.*?)\)', self.fd.read().replace('\n', ''))
+        # #205：非贪婪 (.*?) 会被参数内的括号提前截断，这里允许括号内嵌套一对括号
+        commands = re.findall(r'(\w+)\(((?:[^()]*\([^()]*\))*[^()]*)\)', self.fd.read().replace('\n', ''))
         parsed_commands = [[command, *(arg[0] or arg[1] or arg[2] for arg in re.findall(r'(?:"([^"]+)"|(\b\d+\b)|(\b\S+\b))', args))] for command, args in commands]
         return parsed_commands
 
     def generate(self, author: str, version: str, partitions: dict, sdat: bool = False):
-        def add_quotes_if_needed(arg):
-            return arg if arg.isdigit() else f'"{arg}"'
+        def add_quotes_if_needed(arg, force_quote=False):
+            # #204：纯数字路径（如 symlink 目标为纯数字，罕见）也须加引号；
+            # 普通纯数字参数（uid/gid/mode）保持不加引号
+            return arg if (arg.isdigit() and not force_quote) else f'"{arg}"'
         self.fd.seek(0, 0)
         updater_script = self.fd.read().replace('\n', '')
-        pattern = r'(\w+)\((.*?)\)'
+        # #205：同上，正则支持参数内一对括号
+        pattern = r'(\w+)\(((?:[^()]*\([^()]*\))*[^()]*)\)'
         commands = re.findall(pattern, updater_script)
         filtered_commands = [(command, *(arg[0] or arg[1] or arg[2] for arg in re.findall(r'(?:"([^"]+)"|(\b\d+\b)|(\b\S+\b))', args))) for command, args in commands if command in {'symlink', 'set_metadata_recursive', 'set_metadata'}]
-        updater_script_content = [f"{command}({', '.join(map(add_quotes_if_needed, args))});" for command, *args in filtered_commands]
+        updater_script_content = []
+        for command, *args in filtered_commands:
+            if command == 'symlink' and len(args) > 1:
+                quoted = [add_quotes_if_needed(args[0])] + [add_quotes_if_needed(a, force_quote=True) for a in args[1:]]
+            else:
+                quoted = [add_quotes_if_needed(a) for a in args]
+            updater_script_content.append(f"{command}({', '.join(quoted)});")
 
         # #36：partitions 为空（6/7 方案默认无分区信息）时，从移植源 updater-script 自动解析分区路径
         parts = dict(partitions or {})
@@ -467,7 +477,8 @@ class updaterutil:
             ]
             if sys_ok:
                 body_commands += [
-                    f"run_program(\"mke2fs\", \"{parts['system']}\");",
+                    # 只保留 format（自带创建 ext4 文件系统能力）；run_program("mke2fs")
+                    # 与 format 重复格式化，耗时翻倍（#202/#209）
                     f"format(\"ext4\", \"EMMC\", \"{parts['system']}\", \"0\", \"/system\");",
                     "set_progress(0.1);",
                     "ui_print(\"- Mounting system partition...\");",
@@ -1316,7 +1327,7 @@ class portutils:
         
         if Path("tmp/rom/system.img").exists():
             print(f"【解包system.img】正在解包移植源system.img到 tmp/rom/system...", file=self.std)
-            Extractor().main("tmp/rom/system.img", "tmp/rom/system")
+            Extractor().main("tmp/rom/system.img", "tmp/rom/system", "tmp/rom")
             print(f"【解包完成】移植源system.img解包完毕", file=self.std)
 
         # 自动读取并打印底包/移植源 system 信息
@@ -2040,7 +2051,10 @@ class portutils:
         config_count = 0
         
         for root, dirs, files in walk("tmp/rom/system"):
-            if "tmp/install" in root.replace('\\', '/'):
+            # #214：精确匹配名为 tmp/install 的目录（刷机残留），不误伤
+            # system 内 tmp/install-xxx / tmp/installfoo 等同名前缀目录
+            _norm = root.replace('\\', '/').rstrip('/')
+            if _norm == 'tmp/install' or _norm.endswith('/tmp/install'):
                 continue
             
             for dir in dirs:
@@ -2065,14 +2079,28 @@ class portutils:
         print(f"  - 补充 {config_count} 条缺失的权限配置，总计 {len(fs_label)} 条", file=self.std)
         
         # 生成配置文件（newline='\n' 强制 LF，Android 侧文件防 CRLF）
+        # system_fs_config 必须按 path 全局去重（保留最后一条）：updater-script 中
+        # 同一路径可能被多条 set_metadata 隔开设置，仅 last_fpath 连续去重会漏；
+        # 保留最后一条 = 补充遍历的权限（更准确），与 system_file_contexts 去重对齐
         print(f"【配置生成】写入权限配置文件...", file=self.std)
+        fs_dedup = {}
+        for fs in fs_label:
+            fs_dedup[fs[0]] = fs
+        if len(fs_dedup) != len(fs_label):
+            print(f"  - 权限配置去重：{len(fs_label)} → {len(fs_dedup)} 条", file=self.std)
         with config_dir.joinpath("system_fs_config").open('w', encoding='utf-8', newline='\n') as f:
-            for fs in sorted(fs_label):
+            for fs in sorted(fs_dedup.values()):
                 f.write(" ".join(filter(None, fs)) + '\n')
         
+        # system_file_contexts 必须全局去重：updater-script 中同一路径可能被多条
+        # set_metadata 隔开设置（权限/selabel 分开），last_fpath 仅挡连续重复；
+        # make_ext4fs -S 遇到相同 (regex, selabel) 规格会报 Multiple same specifications 直接失败
+        fc_unique = list(dict.fromkeys(tuple(fc) for fc in fc_label))
         with config_dir.joinpath("system_file_contexts").open('w', encoding='utf-8', newline='\n') as f:
-            for fc in sorted(fc_label):
+            for fc in sorted(fc_unique):
                 f.write(" ".join(fc) + '\n')
+        if len(fc_unique) != len(fc_label):
+            print(f"  - SELinux上下文去重：{len(fc_label)} → {len(fc_unique)} 条", file=self.std)
         print(f"  - 配置文件已写入到 tmp/config 目录", file=self.std)
         
         # 生成system.img（日志核心优化）
