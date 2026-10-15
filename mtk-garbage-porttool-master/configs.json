@@ -12,12 +12,12 @@
             "enable_adb": true,
             "replace_firmware": true,
             "replace_mddb": true,
-            "replace_malidriver": true,
+            "replace_malidriver": false,
             "replace_audiodriver": false,
             "replace_libshowlogo": false,
             "replace_mtk-kpd": true,
-            "replace_gralloc": true,
-            "replace_hwcomposer": true,
+            "replace_gralloc": false,
+            "replace_hwcomposer": false,
             "replace_ril": false,
             "replace_sensors": false,
             "replace_gps": false,
@@ -39,7 +39,8 @@
         },
         "replace": {
             "kernel": [
-                "kernel"
+                "kernel",
+                "kernel.gz"
             ],
             "fstab": [
                 "initrd/fstab",
@@ -199,12 +200,12 @@
             "enable_adb": true,
             "replace_firmware": true,
             "replace_mddb": true,
-            "replace_malidriver": true,
+            "replace_malidriver": false,
             "replace_audiodriver": false,
             "replace_libshowlogo": false,
             "replace_mtk-kpd": false,
-            "replace_gralloc": true,
-            "replace_hwcomposer": true,
+            "replace_gralloc": false,
+            "replace_hwcomposer": false,
             "replace_ril": false,
             "replace_sensors": false,
             "replace_gps": false,
@@ -229,7 +230,8 @@
         },
         "replace": {
             "kernel": [
-                "kernel"
+                "kernel",
+                "kernel.gz"
             ],
             "fstab": [
                 "initrd/fstab",
@@ -514,12 +516,12 @@
             "enable_adb": true,
             "replace_firmware": true,
             "replace_mddb": true,
-            "replace_malidriver": true,
+            "replace_malidriver": false,
             "replace_audiodriver": false,
             "replace_libshowlogo": false,
             "replace_mtk-kpd": false,
-            "replace_gralloc": true,
-            "replace_hwcomposer": true,
+            "replace_gralloc": false,
+            "replace_hwcomposer": false,
             "replace_ril": false,
             "replace_sensors": false,
             "replace_gps": false,
@@ -540,7 +542,8 @@
         },
         "replace": {
             "kernel": [
-                "kernel"
+                "kernel",
+                "kernel.gz"
             ],
             "fstab": [
                 "initrd/fstab",
@@ -689,12 +692,12 @@
             "enable_adb": true,
             "replace_firmware": true,
             "replace_mddb": true,
-            "replace_malidriver": true,
+            "replace_malidriver": false,
             "replace_audiodriver": false,
             "replace_libshowlogo": false,
             "replace_mtk-kpd": false,
-            "replace_gralloc": true,
-            "replace_hwcomposer": true,
+            "replace_gralloc": false,
+            "replace_hwcomposer": false,
             "replace_sensors": false,
             "replace_power": false,
             "replace_bluetooth": false,
@@ -716,7 +719,8 @@
         },
         "replace": {
             "kernel": [
-                "kernel"
+                "kernel",
+                "kernel.gz"
             ],
             "fstab": [
                 "initrd/fstab",
@@ -871,14 +875,14 @@
             "enable_adb": true,
             "replace_firmware": true,
             "replace_mddb": true,
-            "replace_malidriver": true,
+            "replace_malidriver": false,
             "replace_audiodriver": false,
             "replace_audioengine": false,
             "replace_tfa": false,
             "replace_libshowlogo": false,
             "replace_mtk-kpd": false,
-            "replace_gralloc": true,
-            "replace_hwcomposer": true,
+            "replace_gralloc": false,
+            "replace_hwcomposer": false,
             "replace_ril": false,
             "replace_sensors": false,
             "replace_gps": false,
@@ -1198,11 +1202,11 @@
             "auto_replace": true,
             "replace_firmware": true,
             "replace_mddb": true,
-            "replace_malidriver": true,
+            "replace_malidriver": false,
             "replace_audiodriver": false,
             "replace_libshowlogo": true,
             "replace_mtk-kpd": true,
-            "replace_gralloc": true,
+            "replace_gralloc": false,
             "replace_ril": true,
             "replace_sensors": true,
             "replace_gps": true,

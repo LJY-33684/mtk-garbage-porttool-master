@@ -11,7 +11,7 @@ from stat import S_IWRITE
 import lzma
 import subprocess
 from sys import stdout
-from hashlib import md5
+from hashlib import md5, sha256
 from .bootimg import unpack_bootimg, repack_bootimg
 from .imgextractor import Extractor
 from .symlink_fix import fix_symlinks, fix_inode_bitmaps, verify_image_integrity
@@ -152,6 +152,82 @@ def _decompress_zimage_payload(raw):
     return None
 
 
+def _elf_class(p) -> int:
+    """读取 ELF 文件头 e_ident[EI_CLASS]：1=ELFCLASS32（32位）、2=ELFCLASS64（64位）。
+    支持 gzip 压缩的内核（kernel.gz，首字节 1f 8b）；非 ELF / 读取失败返回 None。"""
+    try:
+        with open(p, 'rb') as f:
+            head = f.read(8)
+    except OSError:
+        return None
+    if len(head) >= 2 and head[:2] == b'\x1f\x8b':
+        # gzip 压缩：流式解压只读前 8 字节，避免整包解压大内核
+        try:
+            with gzip.open(p, 'rb') as f:
+                head = f.read(8)
+        except (OSError, EOFError, zlib.error):
+            return None
+    if len(head) < 8 or head[:4] != b'\x7fELF':
+        return None
+    cls = head[4]  # e_ident[EI_CLASS]
+    return 1 if cls == 1 else (2 if cls == 2 else None)
+
+
+def _infer_boot_abi(bootdir) -> int:
+    """从解包后的 boot 目录推断 ABI：优先 kernel（未压缩）→ kernel.gz（解流）→ initrd/init。
+    返回 1=32位 / 2=64位 / None=未知。"""
+    for cand in ("kernel", "kernel.gz", "initrd/init"):
+        p = Path(bootdir).joinpath(cand)
+        if p.is_file():
+            c = _elf_class(p)
+            if c in (1, 2):
+                return c
+    return None
+
+
+# abilist 判定 64 位的关键 token（覆盖 ARM/x86/MIPS 三大架构的 64 位 ABI）
+_ABI64_TOKENS = ("arm64-v8a", "x86_64", "mips64")
+
+
+def _infer_dir_abi(sysdir) -> int:
+    """从解包后的 system 目录推断 ABI：优先 build.prop abilist（含 64 位 token 即 64 位系统，兼容运行 32 位），
+    其次 ELF 实测（固定候选），最后 lib64/lib 目录布局兜底。返回 1=32位 / 2=64位 / None=未知。"""
+    sysdir = Path(sysdir)
+    # 1) build.prop：abilist / abilist64 含 64 位 token → 64 位；否则按 32 位列表
+    bp = sysdir.joinpath("build.prop")
+    if bp.is_file():
+        try:
+            prop = _read_build_prop(str(bp))
+        except Exception:
+            prop = {}
+        abilist = (prop.get('ro.product.cpu.abilist') or '').strip()
+        abilist64 = (prop.get('ro.product.cpu.abilist64') or '').strip()
+        if abilist64 or abilist:
+            if any(t in abilist64 for t in _ABI64_TOKENS) or any(t in abilist for t in _ABI64_TOKENS):
+                return 2
+            return 1
+    # 2) ELF 实测：固定候选按优先级（linker64/app_process64 存在即 64 位；其余看 ELF class）
+    for cand in ("bin/linker64", "bin/app_process64", "bin/linker", "bin/app_process", "bin/sh", "bin/toybox"):
+        p = sysdir.joinpath(cand)
+        if p.is_file():
+            c = _elf_class(p)
+            if c in (1, 2):
+                return c
+    # 3) 目录布局兜底：lib64 下存在 64 位 ELF 或 .so → 64 位；lib 下存在 .so → 32 位
+    lib64 = sysdir.joinpath("lib64")
+    if lib64.is_dir():
+        for cand in ("linker64",):
+            c = _elf_class(lib64.joinpath(cand))
+            if c in (1, 2):
+                return c
+        if any(f.suffix == '.so' for f in lib64.iterdir()):
+            return 2
+    lib = sysdir.joinpath("lib")
+    if lib.is_dir() and any(f.suffix == '.so' for f in lib.iterdir()):
+        return 1
+    return None
+
+
 def _read_bootinfo(bootinfo_path):
     """读取 bootimg 解包生成的 bootinfo.txt（base/ramdisk_addr/name/cmdline 等）。"""
     p = Path(bootinfo_path)
@@ -258,7 +334,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta5p5'
+tool_author = 'affggh'; tool_version = '1.3-beta6'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -360,8 +436,11 @@ audio_cross_version = cross_major_version
 #    会让对应独立进程（audioserver/cameraserver/mediacodec/rild/wpa_supplicant/bluetooth）
 #    崩溃；这些进程崩溃一般不阻断开机，故跨版本【提示高风险但仍执行替换】，
 #    由用户自行权衡（个别设备跨版本替换反而可用，如 mt6582 词典笔补 WiFi 三库）。
-#  - 图形栈（gralloc/hwcomposer/GPU EGL）是 surfaceflinger 开机合成必需，不换必黑屏/卡一；
-#    Treble(8.0) 前为稳定的 gralloc1/HWC1/EGL C ABI，故跨版本仍成套替换（仅给黑屏警告）。
+#  - 图形栈（malidriver/gralloc/hwcomposer）默认【不替换】（与老工具一致，configs.json 默认 false）：
+#    图形 HAL 与移植源 ROM 的 surfaceflinger/图形框架强成套，跨机型用底包图形栈覆盖移植源
+#    会导致图形合成异常/黑屏/卡二（G79 新旧工具对比实证）。确需替换时由用户显式勾选。
+#    跨大版本：malidriver/gralloc 属于 GRAPHICS_REPLACE_GROUPS，【保留移植源】跳过替换；
+#    hwcomposer 例外——与底包内核 DISP/DSI 驱动强绑定，跨大版本【保留底包】（照常替换）。
 #  - sensors/lights/power/vibrator/gps 等老式 C HAL 在 8.0 前 ABI 稳定；
 #    firmware/mddb/.tp/keylayout 是与硬件绑定的数据，均继续替换。
 
@@ -677,7 +756,7 @@ class portutils:
         # 跨 Android 大版本标志：底包与移植源主版本不同时为 True。
         # 在 __port_system 版本检测后置位；置位后对音频/相机/媒体硬解/RIL/WiFi/蓝牙
         # 等独立服务型 HAL 的跨版本替换打印【高风险提示但仍执行】（由用户自行决定），
-        # 图形 gralloc/hwcomposer/GPU 仍成套替换。
+        # 图形栈默认不替换：malidriver/gralloc 跨大版本保留移植源跳过，hwcomposer 保留底包照常替换。
         self._cross_major = False
         if not self.__check_exist:
             print("【检查失败】必要文件不存在，移植流程终止", file=self.std)
@@ -762,6 +841,34 @@ class portutils:
         """自动读取并打印 system 镜像信息（build.prop 关键字段 + 目录布局）。"""
         _print_rows(self.std, f"【信息】{label} system.img",
                     _system_info_rows(prop_path, sys_dir))
+
+    def __check_abi_warning(self, side: str):
+        """移植包 vs 底包 ABI（32/64 位）一致性检查：不一致时【严重警告】但不阻断。
+        side='boot' 查 tmp/base 与 tmp/port（kernel/kernel.gz/initrd/init）；
+        side='system' 查 base/system 与 tmp/rom/system（abilist/ELF 实测/lib64 兜底）。"""
+        try:
+            if side == 'boot':
+                base_abi = _infer_boot_abi(Path("tmp/base"))
+                port_abi = _infer_boot_abi(Path("tmp/port"))
+                side_name = "boot"
+            else:
+                base_abi = _infer_dir_abi(Path("base/system"))
+                port_abi = _infer_dir_abi(Path("tmp/rom/system"))
+                side_name = "system"
+        except Exception:
+            print(f"【信息】{side} 架构检测异常，已跳过（不影响移植）", file=self.std)
+            return
+        base_tag = {1: '32位', 2: '64位'}.get(base_abi, '未知')
+        port_tag = {1: '32位', 2: '64位'}.get(port_abi, '未知')
+        if base_abi is not None and port_abi is not None and base_abi != port_abi:
+            print(f"【严重警告】{side_name} 架构不匹配：底包 {base_tag} vs 移植源 {port_tag}", file=self.std)
+            print(f"  32 位移植包配 64 位底包（或反之）会导致内核与用户态 ABI 不匹配，开机卡在第一屏（卡一）", file=self.std)
+            print(f"  请确认移植包与底包同为 32 位或同为 64 位后再移植；本工具按勾选继续执行，不阻断", file=self.std)
+        else:
+            if base_abi is None or port_abi is None:
+                print(f"【信息】{side_name} 架构：底包 {base_tag} / 移植源 {port_tag}（部分无法识别 ELF，仅作参考）", file=self.std)
+            else:
+                print(f"【信息】{side_name} 架构一致：底包 {base_tag} / 移植源 {port_tag}", file=self.std)
 
     def execv(self, cmd, verbose=False):
         """
@@ -889,6 +996,9 @@ class portutils:
         # 自动读取并打印底包/移植源 boot 信息
         self.__print_boot_info("底包", basedir)
         self.__print_boot_info("移植源", portdir)
+
+        # ABI 架构一致性检查（32/64 位不匹配 → 卡一，§160）
+        self.__check_abi_warning("boot")
         
         # 执行移植逻辑（recovery 模式下为 recovery.img）
         print(f"【开始移植】执行{imgname}移植逻辑...", file=self.std)
@@ -907,16 +1017,22 @@ class portutils:
                         else:
                             print(f"  - 跳过 {i}（底包中不存在）", file=self.std)
                     # 底包只有一种内核格式时，清掉移植源残留的另一格式，防止 repack 误选
+                    # 保护：删除前确认 portdir 里已有底包格式的内核（即替换已成功），否则不删并警告——
+                    # 避免 replace.kernel 未配对应格式时把唯一内核删掉导致 repack 报 FileNotFoundError
                     if basedir.joinpath('kernel').exists() and not basedir.joinpath('kernel.gz').exists():
                         stale = portdir.joinpath('kernel.gz')
-                        if stale.exists():
+                        if stale.exists() and portdir.joinpath('kernel').exists():
                             print("  - 移除移植源残留的 kernel.gz（底包为未压缩内核）", file=self.std)
                             stale.unlink()
+                        elif stale.exists():
+                            print("  - 保留移植源 kernel.gz（底包 kernel 未替换到移植源，删除将导致无内核可打包）", file=self.std)
                     if basedir.joinpath('kernel.gz').exists() and not basedir.joinpath('kernel').exists():
                         stale = portdir.joinpath('kernel')
-                        if stale.exists():
+                        if stale.exists() and portdir.joinpath('kernel.gz').exists():
                             print("  - 移除移植源残留的 kernel（底包为压缩内核）", file=self.std)
                             stale.unlink()
+                        elif stale.exists():
+                            print("  - 保留移植源 kernel（底包 kernel.gz 未替换到移植源，删除将导致无内核可打包）", file=self.std)
                 case 'replace_fstab':
                     print(f"【移植项】替换分区表文件...", file=self.std)
                     for i in self.items.get('replace', {}).get('fstab', []):
@@ -978,6 +1094,69 @@ class portutils:
                     if not fixdir.is_dir():
                         print(f"  - 跳过（未找到 initrd 目录）", file=self.std)
                         continue
+                    # 文本读取：UTF-8/GBK 严格解码保真（不静默丢字节），只按 \n 切分并归一化 \r 行尾
+                    # （避免 splitlines 按 U+000B/U+000C/U+0085/U+2028 额外断行，及 CRLF 残留破坏 fstab/init 解析）
+                    def _read_lines_safe(_p):
+                        try:
+                            _data = _p.read_bytes()
+                        except OSError as e:
+                            print(f"  - 跳过 {_p.name}（读取失败：{e}）", file=self.std)
+                            return None
+                        _text = None
+                        for _enc in ("utf-8", "gbk"):
+                            try:
+                                _text = _data.decode(_enc)
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                        if _text is None:
+                            print(f"  - 跳过 {_p.name}（检测到非 UTF-8/GBK 编码，保留原文件）", file=self.std)
+                            return None
+                        _out = [ln.rstrip("\r") for ln in _text.split("\n")]
+                        if _out and _out[-1] == "":  # 去掉文件末尾换行产生的空串，避免产物尾部多出空行
+                            _out.pop()
+                        return _out
+                    # 旧式 sdcard symlink 判定（H1/M4 修复）：symlink <target> <linkpath> 两端都必须落在
+                    # sdcard/sdcard0 命名空间才算"旧式存储链接"——精确覆盖 /sdcard→/mnt/sdcard、
+                    # /sdcard→/storage/sdcard0、/storage/sdcard0→/sdcard 等 legacy 形态；
+                    # 标准形 storage/sdcard 不命中；/system/etc→/etc 等无关链接、sdcard1 外置卡链接不误删
+                    _LEG_NODES = {"sdcard", "sdcard0", "mnt/sdcard", "mnt/sdcard0", "storage/sdcard0"}
+                    _STD_TGT = "storage/sdcard"
+
+                    def _p(s):
+                        return s.strip().strip('"').lstrip("/").rstrip("/")
+
+                    def _symlink_args(line):
+                        tok = line.strip().split()
+                        if len(tok) < 3 or tok[0] != "symlink":
+                            return None
+                        return _p(tok[1]), _p(tok[2])
+
+                    def _is_legacy_sdcard_symlink(line):
+                        a = _symlink_args(line)
+                        if not a:
+                            return False
+                        target, link = a
+                        return target in _LEG_NODES and link in _LEG_NODES
+
+                    def _is_std_sdcard_symlink(line):
+                        a = _symlink_args(line)
+                        if not a:
+                            return False
+                        target, link = a
+                        return target == _STD_TGT and link in {"sdcard", "mnt/sdcard"}
+
+                    # 平台主 rc 定位：芯片名大小写不敏感（fstab.MT6582 也能匹配 init.mt6582.rc/init.MT6582.rc），
+                    # 排除 usb/aee/environ 等变体 rc（L5 修复）
+                    def _chip_rcs(_chip):
+                        _out = []
+                        for _p_rc in fixdir.glob("init.*.rc"):
+                            if not _p_rc.is_file():
+                                continue
+                            _core = _p_rc.name[len("init."):-len(".rc")]  # init.mt6582.usb.rc → mt6582.usb
+                            if _core.lower() == _chip.lower():
+                                _out.append(_p_rc)
+                        return sorted(_out)
                     # 1) fstab：删除带 /devices/ 的存储行，补 msdc.1 + usbotg 标准行
                     #    （兼容两种命名：fstab.mtXXXX / mtXXXX.fstab，教程注明后者同样存在）
                     fstabs = sorted({fixdir.joinpath(n) for n in
@@ -985,10 +1164,8 @@ class portutils:
                     if not fstabs:
                         print(f"  - 跳过 fstab（initrd 中未找到 fstab 文件）", file=self.std)
                     for fstab in fstabs:
-                        try:
-                            lines = fstab.read_text(encoding="utf-8", errors="ignore").splitlines()
-                        except Exception as e:
-                            print(f"  - 跳过 {fstab.name}（读取失败：{e}）", file=self.std)
+                        lines = _read_lines_safe(fstab)
+                        if lines is None:
                             continue
                         # AMG 教程第 3-4 步（严格按原文）：删除**所有**携带 /devices/ 的存储声明行，
                         # 无论是否含 voldmanaged——包括损坏的 sdcard0 行：sdcard0:<数字分区号> 形式
@@ -1004,18 +1181,20 @@ class portutils:
                         if not any("voldmanaged=usbotg:auto" in ln for ln in keep):
                             add.append("/devices/platform/mt_usb auto auto defaults voldmanaged=usbotg:auto")
                         removed = len(lines) - len(keep)
-                        # 等价判定：若删掉的 voldmanaged 行集合与待补标准行集合完全一致（值相同），
-                        # 说明 fstab 已处于教程第 4 步的目标形态（标准两行），重写只会生成相同内容，
-                        # 报"无需修改"避免误导（例：标准 fstab 的 sdcard1/usbotg 两行被删后原样重补，
-                        # 日志却写"删除 2 行/补充 2 行"，实际内容零变化）
-                        removed_std = {ln.strip() for ln in removed_dev if "voldmanaged=" in ln}
-                        need_std = {ln.strip() for ln in add}
-                        if removed_std and need_std and removed_std == need_std:
+                        # 等价判定（M3 修复）：不再用"删除行集合 vs 待补行集合"比较（会漏删带空格的
+                        # /devices/ 损坏行），改为整份新内容 vs 原文比较——内容等价才报"无需修改"
+                        out = keep + add  # 补行紧跟末行，不加空行分隔（与正确修补产物 boot-new.img 一致）
+                        new_text = "\n".join(out) + "\n"
+                        orig_text = "\n".join(lines) + "\n"
+                        if new_text == orig_text:
                             print(f"  - {fstab.name} 无需修改（已是标准 voldmanaged 形态）", file=self.std)
                         elif removed or add:
-                            out = keep + add  # 补行紧跟末行，不加空行分隔（与正确修补产物 boot-new.img 一致）
-                            fstab.write_text("\n".join(out) + "\n", encoding="utf-8", newline='\n')  # newline='\n' 强制 LF：CRLF 会让 fstab 解析残留 \r（三张SD卡/挂载异常）
-                            print(f"  - 修正 {fstab.name}（删除 {removed} 行 /devices/ 存储声明，补充 sdcard1/usbotg 标准行）", file=self.std)
+                            try:
+                                fstab.write_text(new_text, encoding="utf-8", newline='\n')  # newline='\n' 强制 LF：CRLF 会让 fstab 解析残留 \r（三张SD卡/挂载异常）
+                            except OSError as e:
+                                print(f"  - 跳过 {fstab.name}（写入失败：{e}，保留原文件）", file=self.std)
+                                continue
+                            print(f"  - 修正 {fstab.name}（删除 {removed} 行 /devices/ 存储声明，补充 {len(add)} 行标准声明）", file=self.std)
                         else:
                             print(f"  - {fstab.name} 无需修改", file=self.std)
                     # 2) init.rc：删 ro.vold.primary_physical、补 symlink、on fs 块补 protect/mount_all
@@ -1025,27 +1204,35 @@ class portutils:
                     if fstabs:
                         # 兼容 fstab.mtXXXX 与 mtXXXX.fstab 两种命名（教程注明变体存在）
                         chip_cands = [p.name.replace("fstab.", "").replace(".fstab", "") for p in fstabs]
-                        chip_cands = [c for c in chip_cands if c.startswith("mt")]
+                        chip_cands = [c for c in chip_cands if c.lower().startswith("mt")]  # M1：大小写不敏感
                         chip_name = chip_cands[0] if chip_cands else None
                         if chip_name:
-                            rcs = sorted(p for p in fixdir.glob(f"init.{chip_name}.rc") if p.is_file())
+                            rcs = _chip_rcs(chip_name)  # L5：大小写不敏感 + 排除变体 rc
                         if not rcs:
                             # 从包内其他文件名推补芯片名：init.mtXXXX.usb.rc / ueventd.mtXXXX.rc 等
-                            # （正则统计全部文件名中 mt\d{4} 出现次数，取最多者，比裸 glob 取第一个更准）
+                            # （正则统计限定文件名形态：init*/ueventd*/fstab*，排除第三方文件干扰——L6 修复）
                             mt_re = re.compile(r'mt\d{4}', re.I)
                             cands = {}
-                            for p in fixdir.rglob('*'):
-                                m = mt_re.search(p.name)
-                                if m:
-                                    c = m.group(0).lower()
-                                    cands[c] = cands.get(c, 0) + 1
+                            try:
+                                for p in fixdir.rglob('*'):
+                                    if not p.name.startswith(("init", "ueventd", "fstab")):
+                                        continue
+                                    m = mt_re.search(p.name)
+                                    if m:
+                                        c = m.group(0).lower()
+                                        cands[c] = cands.get(c, 0) + 1
+                            except OSError as e:
+                                print(f"  - 推补芯片名遍历中断（{e}），跳过", file=self.std)
                             if cands:
                                 chip_name = max(cands, key=cands.get)
-                                rcs = sorted(p for p in fixdir.glob(f"init.{chip_name}.rc") if p.is_file())
+                                rcs = _chip_rcs(chip_name)
                                 print(f"  - 从包内文件名推补芯片名：{chip_name}", file=self.std)
                         if not rcs:
-                            # 兜底：仍取 init.mt*.rc 第一个（裸 fstab 设备通常仅一个平台主 rc）
-                            mt_rcs = sorted(p for p in fixdir.glob("init.mt*.rc") if p.is_file())
+                            # 兜底：取 init.mt*.rc 第一个（排除 usb/aee/environ 等变体——L5 修复；
+                            # 裸 fstab 设备通常仅一个平台主 rc）
+                            _variant_suffixes = (".usb.rc", ".aee.rc", ".environ.rc")
+                            mt_rcs = sorted(p for p in fixdir.glob("init.mt*.rc") if p.is_file()
+                                            and not any(p.name.endswith(v) for v in _variant_suffixes))
                             if mt_rcs:
                                 rcs = [mt_rcs[0]]
                                 print(f"  - 未推出芯片名，回退定位平台主 rc：{mt_rcs[0].name}", file=self.std)
@@ -1059,9 +1246,9 @@ class portutils:
                         # 3) 其他辅助文件（fstab.nand / fstab.fat 等子表）不适用作 mount_all 目标，
                         #    跳过补丁并提示，避免 sorted 误取 fstab.fat 等导致挂载错误
                         chip_cands = [p.name for p in fstabs
-                                      if p.name.replace("fstab.", "").replace(".fstab", "").startswith("mt")]
+                                      if p.name.replace("fstab.", "").replace(".fstab", "").lower().startswith("mt")]  # M1：大小写不敏感
                         if chip_cands:
-                            fstab_name = chip_cands[0]
+                            fstab_name = chip_cands[0]  # 保留真实文件名（大小写），mount_all 引用它
                         else:
                             bare = [p.name for p in fstabs if p.name == "fstab"]
                             if bare:
@@ -1070,84 +1257,83 @@ class portutils:
                                 print(f"  - 跳过 mount_all 补丁（fstab 均无芯片名且非裸 fstab："
                                       f"{sorted(p.name for p in fstabs)}）", file=self.std)
                     for rc in rcs:
-                        try:
-                            lines = rc.read_text(encoding="utf-8", errors="ignore").splitlines()
-                        except Exception as e:
-                            print(f"  - 跳过 {rc.name}（读取失败：{e}）", file=self.std)
+                        lines = _read_lines_safe(rc)
+                        if lines is None:
                             continue
                         orig_len = len(lines)
-                        had_primary = any("setprop ro.vold.primary_physical 1" in ln for ln in lines)
+                        _setprop_primary = "setprop ro.vold.primary_physical 1"
+                        had_primary = any(ln.strip() == _setprop_primary for ln in lines)
                         # 2.1) 删除 setprop ro.vold.primary_physical 1（AMG 教程第 6 步：
                         #      教程"删之前/删之后"对比图实证：仅删除 setprop 行，
-                        #      上一行注释 "# By default, primary storage is physical" 保留）
-                        lines = [ln for ln in lines
-                                 if "setprop ro.vold.primary_physical 1" not in ln]
+                        #      上一行注释 "# By default, primary storage is physical" 保留；
+                        #      精确匹配行首指令，注释行不被误删——L3 修复）
+                        lines = [ln for ln in lines if ln.strip() != _setprop_primary]
                         # 2.2) on init 块：将旧式 sdcard symlink 原位替换为标准形式
-                        #      （symlink storage/sdcard /sdcard + /mnt/sdcard；已是标准形式则跳过）
+                        #      （symlink storage/sdcard /sdcard + /mnt/sdcard；已是标准形式则不补行，
+                        #       但旧式行仍须删除——残留 sdcard0 链接会导致设置→存储打不开）
                         #      AMG 教程第 7 步：替换发生在原 symlink 位置（# Support legacy paths 下），
                         #      且必须与上行对齐（错误演示图：symlink 前多出缩进 → 替换失效）
-                        init_idx = None
+                        #      H1/M4 修复：判定按 sdcard/sdcard0 命名空间精确匹配，不误删无关 symlink、
+                        #      不漏删 /storage/sdcard0 旧式行；L4 修复：遍历所有 on init 块逐块处理
                         symlink_fixed = False
-                        for i, ln in enumerate(lines):
-                            if ln.strip() == "on init":
-                                init_idx = i
-                                break
-                        if init_idx is not None:
-                            end = len(lines)
-                            for j in range(init_idx + 1, len(lines)):
-                                if lines[j].strip().startswith("on ") and lines[j].strip() != "on init":
-                                    end = j
+                        while True:
+                            _tgt_block = None
+                            for i, ln in enumerate(lines):
+                                if ln.strip() != "on init":
+                                    continue
+                                end = len(lines)
+                                for j in range(i + 1, len(lines)):
+                                    if lines[j].strip().startswith("on "):  # 下一个 on 行即块边界（含 on init）
+                                        end = j
+                                        break
+                                legacy_idxs = [k for k in range(i + 1, end)
+                                               if _is_legacy_sdcard_symlink(lines[k])]
+                                if legacy_idxs:
+                                    _tgt_block = (i, end, legacy_idxs)
                                     break
-                            block = lines[init_idx:end]
-                            has_std = any("symlink storage/sdcard /sdcard" in ln for ln in block) and \
-                                      any("symlink storage/sdcard /mnt/sdcard" in ln for ln in block)
-                            old_idxs = [i for i in range(init_idx + 1, end)
-                                        if lines[i].strip().startswith("symlink")
-                                        and "storage/sdcard" not in lines[i]]
-                            if old_idxs and not has_std:
-                                replace_pos = old_idxs[0]
-                                old_set = set(old_idxs)
-                                new_lines = []
-                                # 继承原 symlink 行的行首缩进，保证替换行与上行逐列对齐
-                                #（AMG 教程："注意与上行对齐，否则替换失效"，错误演示图即第二行多出缩进）
-                                prefix = lines[replace_pos][:len(lines[replace_pos]) - len(lines[replace_pos].lstrip())]
-                                for i in range(len(lines)):
-                                    if i == replace_pos:
-                                        new_lines.append(prefix + "symlink storage/sdcard /sdcard")
-                                        new_lines.append(prefix + "symlink storage/sdcard /mnt/sdcard")
-                                    elif i in old_set:
-                                        continue
-                                    else:
-                                        new_lines.append(lines[i])
-                                lines = new_lines
-                                symlink_fixed = True
+                            if not _tgt_block:
+                                break
+                            _init_i, _end_i, legacy_idxs = _tgt_block
+                            has_std = any(_is_std_sdcard_symlink(lines[k]) for k in range(_init_i + 1, _end_i))
+                            replace_pos = legacy_idxs[0]
+                            old_set = set(legacy_idxs)
+                            new_lines = []
+                            # 继承原 symlink 行的行首缩进，保证替换行与上行逐列对齐
+                            #（AMG 教程："注意与上行对齐，否则替换失效"，错误演示图即第二行多出缩进）
+                            prefix = lines[replace_pos][:len(lines[replace_pos]) - len(lines[replace_pos].lstrip())]
+                            for i in range(len(lines)):
+                                if i == replace_pos and not has_std:
+                                    new_lines.append(prefix + "symlink storage/sdcard /sdcard")
+                                    new_lines.append(prefix + "symlink storage/sdcard /mnt/sdcard")
+                                elif i in old_set:
+                                    continue
+                                else:
+                                    new_lines.append(lines[i])
+                            lines = new_lines
+                            symlink_fixed = True
                         # 2.3) on fs 块补 mkdir protect_f/protect_s、mount_all、Mount_END
                         #      AMG 教程第 8 步：插在挂载块结束处——即 eMMC 挂载 4 行
                         #      （Mount_All_START→mount_all→Mount_All_END→Mount_START）之后、
                         #      第一个 service 之前（"在该块的第一小块下添加"，添加后图实证
                         #      Mount_START 之后紧跟 mkdir protect_f）
-                        fs_idx = None
-                        for i, ln in enumerate(lines):
-                            if ln.strip() == "on fs":
-                                fs_idx = i
-                                break
-                        if fs_idx is not None:
-                            fs_end = len(lines)
-                            for j in range(fs_idx + 1, len(lines)):
-                                if lines[j].strip().startswith("on ") and lines[j].strip() != "on fs":
-                                    fs_end = j
-                                    break
+                        fs_idxs = [i for i, ln in enumerate(lines) if ln.strip() == "on fs"]
+                        fs_idx = fs_idxs[0] if fs_idxs else None
+                        if len(fs_idxs) > 1:
+                            # L4：多 on fs 块只注入第一个（避免重复 mount_all），打印告警
+                            print(f"  - 检测到 {len(fs_idxs)} 个 on fs 块，仅处理第一个（其余块内旧式配置未动）", file=self.std)
                         add_fs = []
                         # AMG 教程第 8 步：on fs 块"第一小块下"固定添加这 4 行（原文"添加如下代码"，
                         # 无条件添加、不查重）——正确修补产物实证（群友手工 boot-new.img）：即使块内
                         # 已有 mount_all / Mount_All_END，仍按教程原文重复添加 mount_all 与
                         # "INIT:NAND:Mount_END"（bootprof 为日志标记，重复/风格混用不影响挂载；
                         # 与正确修补产物逐行一致为准）
-                        add_fs.append("    mkdir /protect_f 0771 system system")
-                        add_fs.append("    mkdir /protect_s 0771 system system")
+                        # L2：无可挂载主 fstab 时整体不注入（mkdir/Mount_END 无挂载动作且标记会误导排查，
+                        # 上方 fstab 段已打印"跳过 mount_all 补丁"提示）
                         if fstab_name:
+                            add_fs.append("    mkdir /protect_f 0771 system system")
+                            add_fs.append("    mkdir /protect_s 0771 system system")
                             add_fs.append(f"    mount_all /{fstab_name}")
-                        add_fs.append('    write /proc/bootprof "INIT:NAND:Mount_END"')
+                            add_fs.append('    write /proc/bootprof "INIT:NAND:Mount_END"')
                         if add_fs:
                             if fs_idx is not None:
                                 # 定位插入点：挂载块最后一个 bootprof 标记（Mount_START/Mount_All_END）之后，
@@ -1170,17 +1356,31 @@ class portutils:
                                     insert_at = last_mount_prof + 1
                                 lines[insert_at:insert_at] = add_fs
                             else:
-                                # AMG 教程第 8 步要求在 on fs 块补挂载逻辑；平台主 rc 缺失 on fs 块时
-                                # 在文件末尾新建（init 合并加载全部 rc 的 on fs 块执行，语义一致），
-                                # 修复"只改 fstab、未改 init.mtXXXX.rc"导致存储修复不到位的问题
-                                lines += ["", "on fs"] + add_fs
+                                # AMG 教程第 8 步要求在 on fs 块补挂载逻辑；平台主 rc 缺失 on fs 块时，
+                                # 优先把 4 行插到含 mount_all 的挂载动作之后（M2：避免落在 service 段后），
+                                # 仍无则文件尾新建并明确日志
+                                host_at = None
+                                for i, ln in enumerate(lines):
+                                    if ln.strip().startswith("mount_all"):
+                                        host_at = i
+                                        break
+                                if host_at is not None:
+                                    lines[host_at + 1:host_at + 1] = add_fs
+                                else:
+                                    lines += ["", "on fs"] + add_fs
+                                    print(f"  - 未找到 on fs/含 mount_all 的块，已在文件尾新建 on fs 块", file=self.std)
                         changed = len(lines) != orig_len
                         if changed:
-                            rc.write_text("\n".join(lines) + "\n", encoding="utf-8", newline='\n')  # newline='\n' 强制 LF：CRLF 会破坏 init 按 \n 切行（service 注册残留 \r，WiFi 不可用根因）
+                            try:
+                                rc.write_text("\n".join(lines) + "\n", encoding="utf-8", newline='\n')  # newline='\n' 强制 LF：CRLF 会破坏 init 按 \n 切行（service 注册残留 \r，WiFi 不可用根因）
+                            except OSError as e:
+                                # M5：写入失败不中断整次移植，跳过该 rc 并明确提示
+                                print(f"  - 跳过 {rc.name}（写入失败：{e}，保留原文件）", file=self.std)
+                                continue
                             # 按实际改动项打印明细，避免笼统文案与实际不符（如只删了 primary_physical
                             # 却打印"补充 symlink/protect/mount_all"，误导排查）
                             changes = []
-                            if had_primary and not any("setprop ro.vold.primary_physical 1" in ln for ln in lines):
+                            if had_primary and not any(ln.strip() == _setprop_primary for ln in lines):
                                 changes.append("删除 primary_physical")
                             if symlink_fixed:
                                 changes.append("补充 sdcard symlink 标准形")
@@ -1201,7 +1401,7 @@ class portutils:
                             # 打印核对依据，避免"无需修改"误导
                             #（此前 on fs 块缺失被整段跳过时同样误报无需修改，实际 init 侧未修）
                             checks = []
-                            if not any("setprop ro.vold.primary_physical 1" in ln for ln in lines):
+                            if not any(ln.strip() == _setprop_primary for ln in lines):
                                 checks.append("primary_physical 已清理")
                             if any("symlink storage/sdcard /sdcard" in ln for ln in lines) and \
                                any("symlink storage/sdcard /mnt/sdcard" in ln for ln in lines):
@@ -1475,6 +1675,9 @@ class portutils:
         self.__print_system_info("底包", "base/system/build.prop", "base/system")
         self.__print_system_info("移植源", "tmp/rom/system/build.prop", "tmp/rom/system")
 
+        # ABI 架构一致性检查（32/64 位不匹配 → 卡一，§160）
+        self.__check_abi_warning("system")
+
         # === API 版本检测与跨大版本警告 ===
         _API_VER = {19: "4.4", 20: "4.4W", 21: "5.0", 22: "5.1", 23: "6.0",
                     24: "7.0", 25: "7.1", 26: "8.0", 27: "8.1", 28: "9",
@@ -1549,8 +1752,9 @@ class portutils:
         # 跨机型音频 HAL/框架错配即致 audioserver 崩溃、卡第二屏，Dream. mt6582 实证）。
         # 改为与手动方案【统一】：下方遍历 flags / replace 组，以 configs.json 各组里的路径/通配符为“识别词”，
         # 在底包 system 中精准 glob 命中后再替换；是否替换完全由该组 flag（界面勾选 / 默认开关）决定。
-        # 默认矩阵（均衡）：GPU/显示HAL、传感器/灯/GPS/电源/震动/散热、firmware/mddb/按键/开机画面默认替换；
-        # 相机/基带/WiFi/蓝牙同平台默认替换、跨大版本【提示高风险仍执行】；音频 HAL/引擎/功放默认【不替换】。
+        # 默认矩阵（均衡）：传感器/灯/GPS/电源/震动/散热、firmware/mddb/按键/开机画面默认替换；
+        # 相机/基带/WiFi/蓝牙同平台默认替换、跨大版本【提示高风险仍执行】；
+        # 图形三组（malidriver/gralloc/hwcomposer）与音频 HAL/引擎/功放默认【不替换】（与手动方案一致）。
         if self._flag('auto_replace'):
             print(f"【自动移植】未列芯片·同平台模式：按内置硬件识别表精准匹配底包文件并替换...", file=self.std)
 
@@ -1694,31 +1898,45 @@ class portutils:
                     # 方案：boot 侧注入 cnfix 服务（service cnfix），开机由 init 以 root 直接执行 /system/bin/cnfix.sh 写 settings。
                     # 脚本不删除：恢复出厂/清空 settings 表后脚本仍在，下次开机自动重写，持续生效。
                     # 幂等：逐个键检测，已设置的键跳过。
+                    # 脚本独立化（1.3-beta6 起）：优先使用工具根目录的独立模板 cnfix.sh——
+                    # 用户可自行编辑该文件，在文末"自定义开机指令区"插入自己的命令，移植时随工具拷入产物开机执行；
+                    # 模板缺失时回退内置默认脚本（功能不退化）。
                     script_path = port_prefix.joinpath("bin/cnfix.sh")
+                    cnfix_template = Path(__file__).resolve().parent.parent.joinpath("cnfix.sh")
                     try:
-                        script = (
-                            "#!/system/bin/sh\n"
-                            "# MTK 移植工具注入：国内网络连通性检测 + NTP 时间服务器\n"
-                            "# 开机由 init 的 cnfix 服务自动执行（root 权限，无需 ADB/手动操作）；脚本保留不删除，恢复出厂后自动重写，持续生效\n"
-                            "# 幂等：逐个键检测，已设置的键跳过（恢复出厂/清空 settings 表后自动补齐）\n"
-                            "# 等待系统完全启动、settings 服务可用（最多 120s，init 触发时通常已就绪，双保险）\n"
-                            "i=0\n"
-                            "while [ \"$(getprop sys.boot_completed)\" != \"1\" ] && [ $i -lt 60 ]; do\n"
-                            "  sleep 2; i=$((i+1))\n"
-                            "done\n"
-                            "if [ \"$(settings get global captive_portal_http_url 2>/dev/null)\" != \"http://connect.rom.miui.com/generate_204\" ]; then\n"
-                            "  settings put global captive_portal_http_url http://connect.rom.miui.com/generate_204\n"
-                            "  settings put global captive_portal_https_url https://connect.rom.miui.com/generate_204\n"
-                            "  settings put global captive_portal_use_https 0\n"
-                            "fi\n"
-                            "if [ \"$(settings get global ntp_server 2>/dev/null)\" != \"ntp.aliyun.com\" ]; then\n"
-                            "  settings put global ntp_server ntp.aliyun.com\n"
-                            "fi\n"
-                        )
-                        # newline='\n' 强制 LF：CRLF 会破坏 sh 脚本（WiFi 修复同源教训）
-                        with script_path.open('w', encoding='utf-8', newline='\n') as f:
-                            f.write(script)
-                        print(f"  - 已注入 /system/bin/cnfix.sh（开机由 init cnfix 服务自动执行，无需 root/ADB；幂等保留，恢复出厂清表后自动重写）", file=self.std)
+                        if cnfix_template.is_file():
+                            raw = cnfix_template.read_bytes()
+                            # LF 归一化：CRLF 会破坏 sh 脚本（WiFi 修复同源教训），用户编辑模板可能引入 CRLF
+                            if b"\r\n" in raw or b"\r" in raw:
+                                raw = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                            script_path.parent.mkdir(parents=True, exist_ok=True)
+                            script_path.write_bytes(raw)
+                            print(f"  - 已注入 /system/bin/cnfix.sh（来自独立模板 cnfix.sh，可自行编辑插入开机指令）", file=self.std)
+                        else:
+                            script = (
+                                "#!/system/bin/sh\n"
+                                "# MTK 移植工具注入：国内网络连通性检测 + NTP 时间服务器\n"
+                                "# 开机由 init 的 cnfix 服务自动执行（root 权限，无需 ADB/手动操作）；脚本保留不删除，恢复出厂后自动重写，持续生效\n"
+                                "# 幂等：逐个键检测，已设置的键跳过（恢复出厂/清空 settings 表后自动补齐）\n"
+                                "# 等待系统完全启动、settings 服务可用（最多 120s，init 触发时通常已就绪，双保险）\n"
+                                "i=0\n"
+                                "while [ \"$(getprop sys.boot_completed)\" != \"1\" ] && [ $i -lt 60 ]; do\n"
+                                "  sleep 2; i=$((i+1))\n"
+                                "done\n"
+                                "if [ \"$(settings get global captive_portal_http_url 2>/dev/null)\" != \"http://connect.rom.miui.com/generate_204\" ]; then\n"
+                                "  settings put global captive_portal_http_url http://connect.rom.miui.com/generate_204\n"
+                                "  settings put global captive_portal_https_url https://connect.rom.miui.com/generate_204\n"
+                                "  settings put global captive_portal_use_https 0\n"
+                                "fi\n"
+                                "if [ \"$(settings get global ntp_server 2>/dev/null)\" != \"ntp.aliyun.com\" ]; then\n"
+                                "  settings put global ntp_server ntp.aliyun.com\n"
+                                "fi\n"
+                            )
+                            # newline='\n' 强制 LF：CRLF 会破坏 sh 脚本（WiFi 修复同源教训）
+                            script_path.parent.mkdir(parents=True, exist_ok=True)
+                            with script_path.open('w', encoding='utf-8', newline='\n') as f:
+                                f.write(script)
+                            print(f"  - 未找到独立模板 cnfix.sh，已注入内置默认 /system/bin/cnfix.sh（如需自定义请在工具根目录创建 cnfix.sh 后重跑移植）", file=self.std)
                         print("  - boot 侧已注入 cnfix 服务（service cnfix + boot_completed 触发），不依赖 init.d/sysinit", file=self.std)
                     except OSError as e:
                         print(f"  - 注入 cnfix 脚本失败（{e}），仅保留 build.prop 兜底", file=self.std)
@@ -1728,28 +1946,47 @@ class portutils:
                     # 工具替换方向为 底包 -> 移植源，底包即"同版本原厂/移植包"，直接套用。
                     # 独立条目：仅当 boot 侧 fix_storage 修复后存储仍异常时再勾选此兜底项。
                     print(f"【移植项】存储修复·system侧（替换sdcard/vold）...", file=self.std)
-                    # 版本一致性守卫：vold/sdcard 与 Android 版本强绑定，跨大版本替换可能直接不可用
-                    base_rel = port_rel = None
-                    base_bp = base_prefix.joinpath("build.prop")
-                    port_bp = port_prefix.joinpath("build.prop")
-                    if base_bp.exists() and port_bp.exists():
-                        with proputil(str(base_bp)) as b, proputil(str(port_bp)) as p:
-                            base_rel = b.getprop('ro.build.version.release')
-                            port_rel = p.getprop('ro.build.version.release')
-                    if base_rel and port_rel and base_rel != port_rel:
-                        print(f"  ! 注意：底包 Android {base_rel} vs 移植源 Android {port_rel} 版本不一致，", file=self.std)
+                    # 版本一致性守卫（M8 修复）：优先比 SDK（release 字符串无法区分 4.4.2/4.4.4 等
+                    # 同 API 小版本），读取失败时明确提示自行确认，不静默执行
+                    base_sdk = _read_sdk(str(base_prefix.joinpath("build.prop")))
+                    port_sdk = _read_sdk(str(port_prefix.joinpath("build.prop")))
+                    if base_sdk is not None and port_sdk is not None and base_sdk != port_sdk:
+                        print(f"  ! 注意：底包 API {base_sdk} vs 移植源 API {port_sdk} 不一致，", file=self.std)
                         print(f"  ! vold/sdcard 与 Android 版本强绑定，跨版本替换可能直接不可用；", file=self.std)
-                        print(f"  ! 已按勾选继续执行 system 侧替换（若刷入后存储异常，请取消此项）", file=self.std)
+                        print(f"  ! 已按勾选继续执行（提示不阻断，若刷入后存储异常请取消此项）", file=self.std)
+                    elif base_sdk is None or port_sdk is None:
+                        print(f"  ! 提示：未能读取底包/移植源 Android 版本（build.prop 缺失或无 SDK），", file=self.std)
+                        print(f"  ! 无法校验版本一致性，请自行确认底包与移植源为同安卓版本", file=self.std)
+                    _symlink_mark = bytes.fromhex('213C73796D6C696E6B3EFFFE')  # !<symlink> + UTF-16LE 目标（M9：识别软链接标记形态）
                     for f in ('bin/sdcard', 'bin/vold'):
                         src = base_prefix.joinpath(f)
                         dst = port_prefix.joinpath(f)
-                        if src.is_file():
+                        if not src.is_file():
+                            print(f"  - 跳过 {f}（底包中不存在）", file=self.std)
+                            continue
+                        try:
+                            data = src.read_bytes()
+                        except OSError as e:
+                            print(f"  - 跳过 {f}（读取失败：{e}）", file=self.std)
+                            continue
+                        _digest = sha256(data).hexdigest()[:12]
+                        if data[:len(_symlink_mark)] == _symlink_mark:
+                            try:
+                                _tgt = data[len(_symlink_mark):].decode('utf-16-le').rstrip('\x00').lstrip('\ufeff')
+                            except Exception:
+                                _tgt = '(无法解析)'
+                            _desc = f"底包为软链接 → {_tgt}"
+                        else:
+                            _desc = f"底包实体文件 {len(data)} 字节"
+                        try:
                             dst.parent.mkdir(parents=True, exist_ok=True)
                             _clear_attrs(dst)
-                            dst.write_bytes(src.read_bytes())
-                            print(f"  - 替换 {f}（底包 -> 移植源）", file=self.std)
-                        else:
-                            print(f"  - 跳过 {f}（底包中不存在）", file=self.std)
+                            dst.write_bytes(data)
+                        except OSError as e:
+                            # M10：复制失败不中断整次移植，跳过该项并明确提示
+                            print(f"  - 跳过 {f}（写入失败：{e}）", file=self.std)
+                            continue
+                        print(f"  - 替换 {f}（{_desc}，sha256:{_digest}，底包 -> 移植源）", file=self.std)
                     print(f"  - system侧存储修复完成", file=self.std)
                 case 'enable_adb':
                     print(f"【移植项】开启ADB调试...", file=self.std)

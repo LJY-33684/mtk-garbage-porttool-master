@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta5p5**
+> 当前版本 / Current version：**1.3-beta6**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -372,6 +372,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3-beta6**：新增 32/64 位架构校验（移植流程内自动对比底包与移植源 ABI，检测到不匹配时输出明确警告，提前规避"32 位移植包移植 64 位底包导致卡一"类问题）；kernel 替换组保护（kernel.gz 不再因打包流程被误清理或导致打包失败，G79 方案修复）；图形栈三组默认关闭（`replace_malidriver`/`replace_gralloc`/`replace_hwcomposer` 默认 `False`，与老工具一致，避免跨机型图形合成异常/黑屏/卡二）；内置 brotli 库补齐 Python 3.15（cp315）组件——Windows `win_amd64` 本地编译 + Linux `manylinux2014` 云编译，Python 3.15 用户开箱即用、无需 pip 安装；软链接全量补齐与多项解包/打包边界修复（#268~#272）
+  - **1.3-beta6**: added 32/64-bit architecture check (the porting flow now compares base ROM vs source ABI automatically and prints a clear warning on mismatch, preventing "32-bit source onto 64-bit base → stuck at logo" issues); kernel replacement group protection (kernel.gz no longer wrongly cleaned up or failing the pack step — G79 fix); graphics stack trio defaults off (`replace_malidriver`/`replace_gralloc`/`replace_hwcomposer` default `False`, matching the old tool, avoiding cross-model graphics compositing corruption/black screen/stuck-at-logo); vendored brotli now covers Python 3.15 (cp315) — Windows `win_amd64` built locally + Linux `manylinux2014` built in the cloud, so Python 3.15 users work out of the box with no pip install; full symlink backfill and more unpack/pack edge fixes (#268~#272).
 - **1.3-beta5p5**：国内网络/时间服务器修复机制重构——由依赖 init.d/sysinit 执行器的开机自启脚本，改为向 boot 侧 init.rc 注入原生 `service cnfix`（`on property:sys.boot_completed=1` 触发，Android 4.x 起通用），开机由 init 以 root 直接执行 `/system/bin/cnfix.sh` 写 settings 全局表；脚本不再自删、改为逐键先检测后写入（幂等），恢复出厂/清空 settings 表后下次开机自动重写、持续生效；无需 root/ADB、不依赖 init.d/sysinit（词典笔等精简 ROM 无 init.d 执行器也能生效，实机验证：清表后刷入自动写回 ntp_server 与 captive portal 国内节点）
   - **1.3-beta5p5**: China network/time-server fix mechanism reworked — replaced the init.d/sysinit-dependent boot script with a native `service cnfix` injected into boot-side init.rc (`on property:sys.boot_completed=1`, syntax works since Android 4.x); init now runs `/system/bin/cnfix.sh` as root at boot to write the settings table; the script no longer self-deletes and is idempotent (per-key check-then-write), so after a factory reset / settings wipe it rewrites automatically on next boot; no root/ADB needed, no init.d/sysinit dependency (works on slim ROMs like the dictionary pen without an init.d executor — verified on-device: settings wiped, re-flashed, ntp_server + captive portal China nodes auto-restored).
 - **1.3-beta5p4**：存储修复按 AMG 教程原文重做（无条件删除所有 `/devices/` 存储声明、仅补 sdcard1/usbotg 标准 voldmanaged 行；init.rc 删除 `ro.vold.primary_physical` 但保留注释行、存储 symlink 逐列对齐、on fs 块无条件添加教程固定 4 行——产物与群友手工按教程正确修补的 boot-new.img 逐行一致，修复“单卡槽设备刷入后冒出多个损坏 SD 卡卷”）；fstab 无芯片名场景加固（`mount_all` 引用优先级：芯片名 fstab → 裸 fstab → 仅辅助表时跳过并提示）；芯片名推补（无法从 fstab 文件名推出时，扫描包内 `init.mtXXXX.rc` / `ueventd.mtXXXX.rc` 等文件名正则统计推导，不再因裸 fstab 跳过 init.rc 修补）

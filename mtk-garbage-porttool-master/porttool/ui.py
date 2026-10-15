@@ -1,4 +1,5 @@
 # 导入必要的库和模块
+import queue
 import webbrowser
 import threading
 import os
@@ -293,17 +294,28 @@ class FileChooser(Toplevel):
                 return [self.baseboot.get(), self.basesys.get(), (self.portboot.get(), self.portsys.get()), 'img']
 
 class LogLabel(scrolledtext.ScrolledText):
-    """带滚动条的日志显示组件"""
+    """带滚动条的日志显示组件（线程安全：任意线程 print 只入队，主线程批量写入）"""
     def __init__(self, parent):
         super().__init__(parent)
-    
+        self._log_q = queue.Queue()
+        # 主线程轮询队列（Python 3.15 起子线程直接调任何 tkinter API 都会抛 RuntimeError）
+        self.after(100, self._log_pump)
+
     def write(self, *vars, end='\n'):
-        """自定义写入日志方法"""
-        for i in vars:
-            self.insert('end', i)
-        self.insert('end', end)
-        self.see('end')  # 自动滚动到末尾
-    
+        """自定义写入日志方法（任意线程可调，写入交给主线程 pump）"""
+        self._log_q.put(''.join(vars) + end)
+
+    def _log_pump(self):
+        """主线程：批量把队列中的日志写入 Text"""
+        try:
+            while True:
+                line = self._log_q.get_nowait()
+                self.insert('end', line)
+                self.see('end')  # 自动滚动到末尾
+        except queue.Empty:
+            pass
+        self.after(100, self._log_pump)
+
     def flush(self):
         """兼容stdout的flush方法"""
         pass
@@ -314,6 +326,10 @@ class MyUI(ttk.Labelframe):
         super().__init__(parent, text="MTK 低端机移植工具")
         self.update_source = StringVar(value='GitHub')  # 更新源：GitHub / Gitee
         self._update_lock = threading.Lock()  # 更新检查互斥锁（静默/手动串行）
+        # 主线程调度队列：子线程一律把要执行的 tkinter 回调放进队列，由主线程 after 轮询执行
+        # （Python 3.15 起子线程直接调用任何 tkinter API 都会抛 RuntimeError，含 event_generate/after）
+        self._main_q = queue.Queue()
+        self.after(100, self._main_pump)
         # 用 labelwidget 实现标题+检查更新按钮（必须在 super 之后创建，parent=self）
         self._header_frame = ttk.Frame(self)
         self._title_label = ttk.Label(self._header_frame, text="MTK 低端机移植工具", font=('Microsoft YaHei', 9, 'bold'))
@@ -345,7 +361,24 @@ class MyUI(ttk.Labelframe):
         self.item = []      # 移植条目列表
         self.itembox = []   # 移植条目复选框列表
         self.__setup_widgets()  # 初始化UI
-    
+
+    def _enqueue_main(self, cb):
+        """子线程安全地把回调排到主线程执行"""
+        self._main_q.put(cb)
+
+    def _main_pump(self):
+        """主线程：轮询执行子线程排队的回调"""
+        try:
+            while True:
+                cb = self._main_q.get_nowait()
+                try:
+                    cb()
+                except Exception:
+                    pass
+        except queue.Empty:
+            pass
+        self.after(100, self._main_pump)
+
     def __start_port(self):
         """一键移植按钮回调：执行移植逻辑（修复重复点击问题）"""
         # 1. 检查是否正在运行，防止重复点击
@@ -667,7 +700,8 @@ class MyUI(ttk.Labelframe):
             def restore():
                 self.oppo_start_btn.config(state='normal', text='开始解密')
                 self.oppo_status.set(msg)
-            self.after(0, restore)
+            # 调度回主线程（3.15 起子线程禁止调用 after 等任何 tkinter API）
+            self._enqueue_main(restore)
         threading.Thread(target=task, daemon=True).start()
 
     def __setup_widgets(self):
@@ -1167,7 +1201,9 @@ class MyUI(ttk.Labelframe):
         self.bind('<<UpdateResult>>', self._on_update_result_event)
 
         # 启动时静默检查更新（仅发现新版本时弹窗，失败/已是最新均不提示）
-        threading.Thread(target=lambda: self._fetch_update_worker(silent=True), daemon=True).start()
+        # 注意：tkinter 变量须在主线程读取后传入（Python 3.15 起子线程读 Tcl 变量会抛 RuntimeError）
+        src = self.update_source.get()
+        threading.Thread(target=lambda: self._fetch_update_worker(src, silent=True), daemon=True).start()
 
 
     # ========== 检查更新功能（网络逻辑见 update.py）==========
@@ -1175,31 +1211,24 @@ class MyUI(ttk.Labelframe):
     def _on_check_update(self):
         """检查更新按钮点击回调"""
         self._check_update_btn.config(text="检查更新中...", state="disabled")
-        # 后台线程请求，避免阻塞 UI
-        t = threading.Thread(target=self._fetch_update_worker, daemon=True)
+        # 后台线程请求，避免阻塞 UI（tkinter 变量在主线程读取后传入）
+        src = self.update_source.get()
+        t = threading.Thread(target=lambda: self._fetch_update_worker(src), daemon=True)
         t.start()
 
-    def _fetch_update_worker(self, silent=False):
+    def _fetch_update_worker(self, source, silent=False):
         """后台线程：请求 latest_version.txt + 更新内容（网络逻辑见 update.py）
         silent=True 时：失败不弹提示、版本相同不弹窗，仅在发现新版本时弹出更新窗口
+        source 由主线程读取传入（子线程读 tkinter 变量在 Python 3.15 起会抛 RuntimeError）
         """
         # 互斥锁：静默检查与手动检查串行，避免并发请求导致拉取失败
         with self._update_lock:
-            source = self.update_source.get()
             result = fetch_update_info(source)
 
-        # 调度到主线程更新 UI（Tkinter 非线程安全：后台线程只暂存结果并产生事件，由主线程处理）
-        try:
-            self._update_result = result
-            self._update_silent = silent
-            self.event_generate('<<UpdateResult>>')
-        except Exception:
-            # 如果事件调度失败（极端情况），非静默模式下直接在后台线程尝试恢复按钮
-            if not silent:
-                try:
-                    self._check_update_btn.config(text="检查更新", state="normal")
-                except Exception:
-                    pass
+        # 结果调度回主线程处理（3.15 起子线程禁止调用 event_generate 等任何 tkinter API）
+        self._update_result = result
+        self._update_silent = silent
+        self._enqueue_main(self._on_update_result_event)
 
     def _on_update_result_event(self, _event=None):
         """主线程处理更新结果（由后台线程 event_generate 触发）"""

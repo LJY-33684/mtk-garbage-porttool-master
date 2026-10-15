@@ -5,10 +5,10 @@ brotli.py — .br 解压统一入口（多后端探测，跨平台，开箱即�
 背景：Android 9+ OTA 卡刷包中 system/vendor 分区常为 new.dat.br（brotli 压缩）。
 brotli 没有可用的纯 Python 实现（唯一项目无许可证且极慢），故采用与
 openssl 加速组件一致的多后端策略，探测顺序依次为
-  1. 工具自带 brotli 二进制（Windows：bin\\win\\x86_64\\brotli.exe，随包分发；
+  1. 工具自带 brotli 二进制（Windows：bin/win/x86_64/brotli.exe，随包分发；
      Linux：系统命令或下方内置 vendor 库）
-  2. 工具内置 vendor brotli 库（porttool\\_vendor_brotli\\，按解释器 ABI 匹配
-     cp312/cp313/cp314 × win/linux，开箱即用，无需 pip 安装）
+  2. 工具内置 vendor brotli 库（porttool/_vendor_brotli/，按解释器 ABI 匹配
+     cp312/cp313/cp314/cp315 × win/linux，开箱即用，无需 pip 安装）
   3. 系统 PATH 中的 brotli 命令（Linux 发行版 apt/dnf 安装后即有）
   4. Python 的 brotli 库（pip install brotli，跨平台）
   5. Python 的 brotlicffi 库（pip install brotlicffi，跨平台）
@@ -111,8 +111,8 @@ def brotli_decompress(src_path, dst_path, emit=None):
     _probe()
     if _BACKEND_NAME == 'none':
         raise BrotliUnavailable(
-            "未找到可用的 brotli 解码后端：工具已内置 Windows brotli.exe（bin\\win\\x86_64）"
-            "与 Python 库（porttool\\_vendor_brotli\\，cp312-314），请确认这些文件未被删除或损坏；"
+            "未找到可用的 brotli 解码后端：工具已内置 Windows brotli.exe（bin/win/x86_64）"
+            "与 Python 库（porttool/_vendor_brotli/，cp312-315），请确认这些文件未被删除或损坏；"
             "Linux 可另行 apt/dnf install brotli 或 pip install brotli。"
             "（仅 Android 9+ 固件的 new.dat.br 需要，老固件不受影响）")
     os.makedirs(os.path.dirname(os.path.abspath(dst_path)) or '.', exist_ok=True)

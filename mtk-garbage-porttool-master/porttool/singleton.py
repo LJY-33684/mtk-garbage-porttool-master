@@ -90,7 +90,10 @@ def acquire():
     try:
         lp.write_text(str(os.getpid()), encoding="utf-8")
     except Exception:
-        pass
+        # 锁文件不可写（如工具位于只读目录/Program Files）：不静默，打印提示，
+        # 单实例保护降级为不生效，避免用户误以为已加锁
+        print("【警告】无法写入单实例锁文件 %s，单实例保护已降级（可继续运行）"
+              % lp, file=sys.stderr)
     return True, os.getpid()
 
 

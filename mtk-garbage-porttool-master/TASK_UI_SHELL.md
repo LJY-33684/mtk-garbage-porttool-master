@@ -18,6 +18,7 @@
 
 - Python 3.9+（Windows / Linux 均可；主战场 Windows）
 - 纯标准库，**无需第三方依赖**（CLI 不加载 tkinter；核心逻辑仅用 stdlib + 自带工具模块）
+- 内置 brotli 压缩组件已随包附带 **Python 3.9 ~ 3.15（含 cp315）** 各 ABI 预编译库（`porttool/_vendor_brotli/`，win_amd64 + manylinux2014），Python 3.15 用户开箱即用、无需 pip 安装
 - 工作目录 = 工具目录（mtk-garbage-porttool-master/，CLI 启动时自动 `chdir` 到该目录，壳无需关心）
 - 首次运行会生成 `tmp/`、`base/`、`out/` 运行目录（与 GUI 相同）
 
@@ -35,7 +36,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3-beta5p5`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3-beta6`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -101,7 +102,7 @@ python porttool_cli.py port \
 | `replace_gralloc` / `replace_hwcomposer` | 替换 gralloc / hwcomposer |
 | `fit_density` / `change_model` | 同步 DPI / 型号信息 |
 | `change_timezone` / `change_locale` | 同步时区 / 语言区域 |
-| `set_cn_servers` | 切换国内网络/时间服务器（captive portal→小米、NTP→阿里云）。双通道：①写入 build.prop（兜底，部分框架仍读 ro.*）；②boot 侧向 init.rc 注入 `service cnfix`（`on property:sys.boot_completed=1` 触发，Android 4.x 起通用语法），开机由 init 以 root 直接执行 `/system/bin/cnfix.sh` 写 settings 全局表；**脚本保留不删除、幂等**：逐个键检测，已设置的键跳过，恢复出厂/清空 settings 表后下次开机自动重写，持续生效（Android 7.1+ 网络验证/NTP 只读 settings，不读 build.prop）。**无需 root/ADB、不依赖 init.d/sysinit**（精简 ROM 无 init.d 执行器也能生效） |
+| `set_cn_servers` | 切换国内网络/时间服务器（captive portal→小米、NTP→阿里云）。双通道：①写入 build.prop（兜底，部分框架仍读 ro.*）；②boot 侧向 init.rc 注入 `service cnfix`（`on property:sys.boot_completed=1` 触发，Android 4.x 起通用语法），开机由 init 以 root 直接执行 `/system/bin/cnfix.sh` 写 settings 全局表；**脚本保留不删除、幂等**：逐个键检测，已设置的键跳过，恢复出厂/清空 settings 表后下次开机自动重写，持续生效（Android 7.1+ 网络验证/NTP 只读 settings，不读 build.prop）。**无需 root/ADB、不依赖 init.d/sysinit**（精简 ROM 无 init.d 执行器也能生效）。**1.3-beta6 起脚本独立化**：优先使用工具根目录的独立模板 `cnfix.sh`（可自行编辑，在文末"自定义开机指令区"插入自己的命令，开机自动以 root 执行），模板缺失时回退内置默认脚本 |
 | `single_simcard` / `dual_simcard` | 单 / 双卡配置 |
 | `fix_storage` | 存储修复·boot 侧（AMG 教程，仅 mt6572/mt6582/mt6592 方案提供）：收敛 fstab 外置存储声明（删除 `/devices/` 存储行、补标准 sdcard1/usbotg 行），并在 init.rc 删除 `ro.vold.primary_physical`、补充 protect 挂载 / `mount_all` / 存储 symlink，修复"单卡槽设备刷入后冒出多个损坏 SD 卡卷"的问题。多数设备此条目即可解决 |
 | `fix_storage_system` | 存储修复·system 侧（兜底，仅 mt6572/mt6582/mt6592 方案提供，默认关闭）：**仅当 fix_storage（boot 侧）修复后存储仍异常时勾选**。将底包 `system/bin/sdcard` + `system/bin/vold` 替换进移植源（对应 AMG 教程"6582 移植 6572 固件后仍异常时从同版本 6582 包提取这两个文件"）。带版本守卫：底包与移植源 Android 大版本不一致时自动跳过（vold/sdcard 跨版本不兼容），仅保留 boot 侧修复 |
@@ -113,14 +114,27 @@ python porttool_cli.py port \
 - 产物命名：`boot.img` / `system.img`（img 输出）；`recovery.img`（recovery-only 模式）；`zip 卡刷包`（zip 输出）
 - LK 模式：备份 `<名字>_original_backup`、补丁 `<名字>_patched` 同样落在 out 时间戳目录下
 
-### 5.5 跨 Android 大版本硬件自动跳过 / Cross-Major HAL Safety
+### 5.5 跨 Android 大版本硬件策略 / Cross-Major HAL Safety
 
-- 工具读取底包与移植源 `build.prop` 的 `ro.build.version.sdk`，当二者 **Android 主版本不同**（如 6.0 API23 → 7.1.2 API25；同主版本 7.0↔7.1、5.0↔5.1 不算跨版本）时自动进入跨版本安全策略：**即使对应条目被勾选，也会跳过**下列「独立服务型 HAL」的替换以保证开机，并在日志打印【严重警告】总说明 + 逐条 `【移植项】...跨大版本：已自动跳过...`：
-  - 音频（`audiodriver`/`audioengine`/`tfa`）、相机（`camera`）、媒体硬解（OMX/codec）、RIL（`ril`）、WiFi（`wifi` 的库与守护进程）、蓝牙（`bluetooth` 的 vendor 库）
-- **仍会替换**：图形 gralloc / hwcomposer / Mali GPU（开机合成链路必需，成套替换；若仍黑屏/卡一需同 Android 大版本底包，日志会显著警告）、sensors / lights / gps / power / vibrator / thermal 等老式 C HAL、`firmware` 与 `mddb`（含 wifi/bt/modem 固件与射频数据）、keylayout、wifi/bt 纯配置文件。
-- 读不到任一端 sdk 时保守不跳过（维持原替换行为，日志有【提示】）。
+- 工具读取底包与移植源 `build.prop` 的 `ro.build.version.sdk`，当二者 **Android 主版本不同**（如 6.0 API23 → 7.1.2 API25；同主版本 7.0↔7.1、5.0↔5.1 不算跨版本）时自动进入跨版本安全策略，日志打印【严重警告】总说明 + 逐条 `【移植项】...` 提示：
+  - **独立服务型 HAL**（音频 `audiodriver`/`audioengine`/`tfa`、相机 `camera`、媒体硬解 OMX/codec、RIL `ril`、WiFi `wifi` 的库与守护进程、蓝牙 `bluetooth` 的 vendor 库）：**不再整组静默跳过**——跨大版本时【提示高风险但仍执行替换】（个别设备跨版本替换反而可用），由用户自行权衡；若刷入后对应功能异常，取消该项重新移植即可
+  - **图形 malidriver / gralloc**：跨大版本【保留移植源、跳过替换】——底包旧 GPU/gralloc 覆盖移植源高版本会黑屏/壁纸异常（mt6582 词典笔 5.0→7.1.2 实证）
+  - **hwcomposer 例外**：与底包内核 DISP/DSI 驱动强绑定，跨大版本【保留底包】（照常替换）——移植源高版本 hwcomposer 在底包内核上黑屏/壁纸异常（词典笔实证：换回底包 hwcomposer 立即正常）
+- **图形栈三组默认关闭**（`replace_malidriver` / `replace_gralloc` / `replace_hwcomposer` 默认 `False`，1.3-beta5p5 起与老工具一致）：图形 HAL 与移植源 ROM 的 surfaceflinger/图形框架强成套，**即使同 Android 大版本**，跨机型用底包图形栈覆盖移植源也会导致图形合成异常/黑屏/卡二（G79 新旧工具对比实证：老工具默认不替换 → 能开机；新工具默认替换 → 卡二）。故默认保持移植源原样、不替换；确需替换时壳侧传 `--item replace_malidriver` 等并由用户自行承担风险。
 - **音频三组默认关闭**（`replace_audiodriver` / `replace_audioengine` / `replace_tfa` 默认 `False`）：即使**同芯片同 Android 版本**，不同厂商的 `audio.primary` / audio_policy 等 HAL 也不通用，盖错会导致 `audioserver` SIGSEGV（卡第二屏、ADB 可连、外放无声）。故默认保持移植源原样、不替换；确需替换时壳侧传 `--item replace_audiodriver` 并由用户自行承担风险。
-- 该策略对 GUI 与 CLI 完全一致、**无额外参数**；壳只需透传【严重警告】与各跳过明细行，无需自行判断版本。
+- **照常替换**：sensors / lights / gps / power / vibrator / thermal 等老式 C HAL、`firmware` 与 `mddb`（含 wifi/bt/modem 固件与射频数据）、keylayout、wifi/bt 纯配置文件。
+- 读不到任一端 sdk 时保守不跳过（维持原替换行为，日志有【提示】）。
+- 该策略对 GUI 与 CLI 完全一致、**无额外参数**；壳只需透传【严重警告】与各跳过/提示明细行，无需自行判断版本。
+
+### 5.6 架构（32/64 位）一致性检查 / ABI Consistency Check
+
+- 1.3-beta6 起，工具在移植流程内自动对比**底包 vs 移植源**的 ABI：
+  - **boot 侧**：解包后读 kernel（未压缩）/ kernel.gz（解流）/ initrd/init 的 ELF 头 `e_ident[EI_CLASS]`（1=32 位、2=64 位）
+  - **system 侧**：读 build.prop `ro.product.cpu.abilist` / `abilist64`（含 `arm64-v8a`/`x86_64`/`mips64` 任一 64 位 token 即 64 位）→ 回落 ELF 实测（`bin/linker64`/`app_process64`/`linker` 等）→ 再回落 `lib64`（含 .so 或 linker64 ELF）/`lib`（含 .so）目录布局
+- 两侧均能识别且不一致时打印【严重警告】`boot/system 架构不匹配：底包 X 位 vs 移植源 Y 位`，提示 32 位移植包配 64 位底包（或反之）会内核/用户态 ABI 不匹配、**开机卡第一屏（卡一）**；**仅警告、不阻断**，按勾选继续执行
+- 一致时打印【信息】`架构一致`；任一侧无法识别时打印【信息】并注明"仅作参考"（诚实告知检测未生效）
+- 纯内置流程，**无额外 CLI 参数**；该检查对 GUI 与 CLI 完全一致，壳只需透传警告/信息行
+
 
 ## 6. 日志接口（重点）/ Log Interface
 
@@ -242,5 +256,5 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3-beta5p5`
+- 本桥接接口随工具版本发布：当前 `1.3-beta6`
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）
