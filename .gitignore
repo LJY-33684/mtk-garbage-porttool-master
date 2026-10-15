@@ -1150,3 +1150,6 @@ main.onefile-build/static_src/OnefileBootstrap.o
 main.exe
 
 configs.json
+# 内置 brotli 二进制组件需入库（克隆源码开箱即用）
+!**/_vendor_brotli/**/*.so
+!**/_vendor_brotli/**/*.pyd
