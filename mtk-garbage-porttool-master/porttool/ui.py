@@ -12,6 +12,7 @@ from tkinter import (
     Canvas,
     Text,
     PhotoImage,
+    Label,
     END,
     WORD,
 )
@@ -345,6 +346,19 @@ class MyUI(ttk.Labelframe):
             'GitHub', 'Gitee'
         )
         self._update_source_menu.pack(side='left')
+        # 获取移植包链接（kocleo提供；1.3-beta6p1 起）
+        self._port_pkg_link = Label(
+            self._header_frame,
+            text="点击获取移植包（KoCleo提供）",
+            foreground='#0057e7',
+            cursor='hand2',
+            font=('Microsoft YaHei', 9),
+        )
+        self._port_pkg_link.pack(side='left', padx=(10, 0))
+        self._port_pkg_link.bind(
+            '<Button-1>',
+            lambda e: webbrowser.open('https://kc.fuquan.moe/5.%E7%A7%BB%E6%A4%8D%E5%8C%85%E5%A4%A7%E5%85%A8'),
+        )
         self.configure(labelwidget=self._header_frame)
         # 核心配置变量
         self.chipset_select = StringVar(value='mt65')  # 芯片类型
@@ -786,9 +800,9 @@ class MyUI(ttk.Labelframe):
         # 移植条目 key -> 中文显示名（#158：UI 直接显示中文，未收录的 key 回退显示英文 key）
         ITEM_LABEL = {
             'replace_kernel': '替换内核 kernel',
-            'replace_audiodriver': '音频驱动 HAL（高风险）',
-            'replace_audioengine': '音频引擎/音效配置',
-            'replace_tfa': 'TFA 智能功放',
+            'replace_audiodriver': '音频驱动（底层引擎/功放）',
+            'replace_audiohal': '音频HAL primary（设备无声可优先尝试此条目）',
+            'replace_audioconf': '音频配置/参数',
             'replace_bluetooth': '蓝牙 vendor 库',
             'replace_camera': '相机 HAL/库',
             'replace_firmware': '硬件固件 firmware',

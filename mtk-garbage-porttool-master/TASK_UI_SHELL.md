@@ -36,7 +36,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3-beta6`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3-beta6p1`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -98,7 +98,10 @@ python porttool_cli.py port \
 | `selinux_permissive` | 开启 SELinux 宽容模式 |
 | `enable_adb` | 开启 ADB 调试 |
 | `replace_firmware` / `replace_mddb` | 替换 firmware / mddb |
-| `replace_malidriver` / `replace_audiodriver` | 替换 Mali / 音频驱动 |
+| `replace_malidriver` | 替换 GPU Mali 驱动 |
+| `replace_audiodriver` | 替换音频底层引擎/功放库（libaudiocomp*/libaudioroute*/libaudioparam*/libtfa* 等） |
+| `replace_audiohal` | 替换音频 primary HAL（`audio.primary.*.so`） |
+| `replace_audioconf` | 替换音频配置/参数（`audio_policy.default.so`、`audio_effects.conf`、`audio_policy.conf`、`audio_param`、`audio_device.xml`） |
 | `replace_gralloc` / `replace_hwcomposer` | 替换 gralloc / hwcomposer |
 | `fit_density` / `change_model` | 同步 DPI / 型号信息 |
 | `change_timezone` / `change_locale` | 同步时区 / 语言区域 |
@@ -117,11 +120,11 @@ python porttool_cli.py port \
 ### 5.5 跨 Android 大版本硬件策略 / Cross-Major HAL Safety
 
 - 工具读取底包与移植源 `build.prop` 的 `ro.build.version.sdk`，当二者 **Android 主版本不同**（如 6.0 API23 → 7.1.2 API25；同主版本 7.0↔7.1、5.0↔5.1 不算跨版本）时自动进入跨版本安全策略，日志打印【严重警告】总说明 + 逐条 `【移植项】...` 提示：
-  - **独立服务型 HAL**（音频 `audiodriver`/`audioengine`/`tfa`、相机 `camera`、媒体硬解 OMX/codec、RIL `ril`、WiFi `wifi` 的库与守护进程、蓝牙 `bluetooth` 的 vendor 库）：**不再整组静默跳过**——跨大版本时【提示高风险但仍执行替换】（个别设备跨版本替换反而可用），由用户自行权衡；若刷入后对应功能异常，取消该项重新移植即可
+  - **独立服务型 HAL**（音频 `audiodriver`/`audiohal`/`audioconf`、相机 `camera`、媒体硬解 OMX/codec、RIL `ril`、WiFi `wifi` 的库与守护进程、蓝牙 `bluetooth` 的 vendor 库）：**不再整组静默跳过**——跨大版本时【提示高风险但仍执行替换】（个别设备跨版本替换反而可用），由用户自行权衡；若刷入后对应功能异常，取消该项重新移植即可
   - **图形 malidriver / gralloc**：跨大版本【保留移植源、跳过替换】——底包旧 GPU/gralloc 覆盖移植源高版本会黑屏/壁纸异常（mt6582 词典笔 5.0→7.1.2 实证）
   - **hwcomposer 例外**：与底包内核 DISP/DSI 驱动强绑定，跨大版本【保留底包】（照常替换）——移植源高版本 hwcomposer 在底包内核上黑屏/壁纸异常（词典笔实证：换回底包 hwcomposer 立即正常）
 - **图形栈三组默认关闭**（`replace_malidriver` / `replace_gralloc` / `replace_hwcomposer` 默认 `False`，1.3-beta5p5 起与老工具一致）：图形 HAL 与移植源 ROM 的 surfaceflinger/图形框架强成套，**即使同 Android 大版本**，跨机型用底包图形栈覆盖移植源也会导致图形合成异常/黑屏/卡二（G79 新旧工具对比实证：老工具默认不替换 → 能开机；新工具默认替换 → 卡二）。故默认保持移植源原样、不替换；确需替换时壳侧传 `--item replace_malidriver` 等并由用户自行承担风险。
-- **音频三组默认关闭**（`replace_audiodriver` / `replace_audioengine` / `replace_tfa` 默认 `False`）：即使**同芯片同 Android 版本**，不同厂商的 `audio.primary` / audio_policy 等 HAL 也不通用，盖错会导致 `audioserver` SIGSEGV（卡第二屏、ADB 可连、外放无声）。故默认保持移植源原样、不替换；确需替换时壳侧传 `--item replace_audiodriver` 并由用户自行承担风险。
+- **音频三组默认策略**（1.3-beta6 拆分、PA03 实证后）：三组**默认均不勾选**——底层引擎/功放 `replace_audiodriver`（libaudiocomp*/libaudioroute*/libaudioparam*/libtfa* 等）**默认不勾**（PA03 实证 2026-10-16：底包引擎库跨 Android 大版本与移植源框架不配套，勾选后媒体流无声、仅系统音正常；1.3-beta6 曾默认勾选，实证后改回默认不勾）；primary HAL `replace_audiohal` 与配置 `replace_audioconf` **默认不勾**——即使**同芯片同 Android 版本**，不同厂商的 `audio.primary` / audio_policy 等 HAL 也不通用，盖错会导致 `audioserver` SIGSEGV（卡第二屏、ADB 可连、外放无声）。确需替换 HAL 时壳侧传 `--item replace_audiohal`，工具自动按移植源 `ro.board.platform` 改名（PA03 实证：改名 primary 单独替换跨版本安全、媒体流正常）；旧键 `replace_audioengine` / `replace_tfa` 已并入 `replace_audiodriver`。
 - **照常替换**：sensors / lights / gps / power / vibrator / thermal 等老式 C HAL、`firmware` 与 `mddb`（含 wifi/bt/modem 固件与射频数据）、keylayout、wifi/bt 纯配置文件。
 - 读不到任一端 sdk 时保守不跳过（维持原替换行为，日志有【提示】）。
 - 该策略对 GUI 与 CLI 完全一致、**无额外参数**；壳只需透传【严重警告】与各跳过/提示明细行，无需自行判断版本。
@@ -256,5 +259,5 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3-beta6`
+- 本桥接接口随工具版本发布：当前 `1.3-beta6p1`
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）

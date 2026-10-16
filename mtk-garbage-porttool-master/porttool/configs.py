@@ -23,7 +23,9 @@ support_chipset_portstep = {
             'replace_firmware': True,
             'replace_mddb': True,
             'replace_malidriver': True,
-            'replace_audiodriver': True,
+            'replace_audiodriver': False,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
             'replace_libshowlogo': False,
             'replace_mtk-kpd': True,
             'replace_gralloc': True,
@@ -73,14 +75,40 @@ support_chipset_portstep = {
                 'vendor/lib/libpvrANDROID_WSEGL.so',
                 'vendor/lib/libgpu_aux.so'
             ],
-            'audiodriver': [
+            'audiohal': [
                 'lib/hw/audio.primary.*',
                 'vendor/lib/hw/audio.primary.*',
+            ],
+            'audioconf': [
                 'etc/audio_effects.conf',
                 'vendor/etc/audio_effects.conf',
                 'vendor/etc/audio_policy.conf',
                 'vendor/etc/audio_param',
-                'vendor/etc/audio_device.xml'
+                'lib/hw/audio_policy.default.so',
+                'lib64/hw/audio_policy.default.so',
+                'etc/audio_policy.conf',
+                'vendor/etc/audio_device.xml',
+            ],
+            'audiodriver': [
+                'lib/libaudiocomp*',
+                'lib64/libaudiocomp*',
+                'vendor/lib/libaudiocomp*',
+                'vendor/lib64/libaudiocomp*',
+                'lib/libaudioroute*',
+                'lib64/libaudioroute*',
+                'vendor/lib/libaudioroute*',
+                'vendor/lib64/libaudioroute*',
+                'lib/libaudioparam*',
+                'lib64/libaudioparam*',
+                'vendor/lib/libaudioparam*',
+                'vendor/lib64/libaudioparam*',
+                'etc/tfa*',
+                'lib/libtfa*',
+                'lib64/libtfa*',
+                'vendor/lib/libtfa*',
+                'vendor/lib64/libtfa*',
+                'lib/libaudiotfa*',
+                'lib64/libaudiotfa*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
@@ -196,7 +224,9 @@ support_chipset_portstep = {
             'replace_firmware': True,
             'replace_mddb': True,
             'replace_malidriver': False,
-            'replace_audiodriver': True,
+            'replace_audiodriver': False,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
             'replace_libshowlogo': False,
             'replace_mtk-kpd': False,
             'replace_gralloc': True,
@@ -210,8 +240,6 @@ support_chipset_portstep = {
             'replace_thermal': False,
             'replace_wifi': False,
             'replace_camera': False,
-            'replace_audioengine': True,
-            'replace_tfa': True,
             'replace_init': False,
             'change_platform': False,
             'single_simcard': False,
@@ -254,11 +282,13 @@ support_chipset_portstep = {
                 'vendor/lib/libpvrANDROID_WSEGL.so',
                 'vendor/lib/libgpu_aux.so'
             ],
-            'audiodriver': [
+            'audiohal': [
                 'lib/hw/audio.primary.*',
                 'lib64/hw/audio.primary.*',
                 'vendor/lib/hw/audio.primary.*',
                 'vendor/lib64/hw/audio.primary.*',
+            ],
+            'audioconf': [
                 'lib/hw/audio_policy.default.so',
                 'lib64/hw/audio_policy.default.so',
                 'etc/audio_effects.conf',
@@ -266,9 +296,9 @@ support_chipset_portstep = {
                 'etc/audio_policy.conf',
                 'vendor/etc/audio_policy.conf',
                 'vendor/etc/audio_param',
-                'vendor/etc/audio_device.xml'
+                'vendor/etc/audio_device.xml',
             ],
-            'audioengine': [
+            'audiodriver': [
                 'lib/libaudiocomp*',
                 'lib64/libaudiocomp*',
                 'vendor/lib/libaudiocomp*',
@@ -280,16 +310,14 @@ support_chipset_portstep = {
                 'lib/libaudioparam*',
                 'lib64/libaudioparam*',
                 'vendor/lib/libaudioparam*',
-                'vendor/lib64/libaudioparam*'
-            ],
-            'tfa': [
                 'etc/tfa*',
                 'lib/libtfa*',
                 'lib64/libtfa*',
                 'vendor/lib/libtfa*',
                 'vendor/lib64/libtfa*',
                 'lib/libaudiotfa*',
-                'lib64/libaudiotfa*'
+                'vendor/lib64/libaudioparam*',
+                'lib64/libaudiotfa*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
@@ -507,7 +535,9 @@ support_chipset_portstep = {
             'replace_firmware': True,
             'replace_mddb': True,
             'replace_malidriver': True,
-            'replace_audiodriver': True,
+            'replace_audiodriver': False,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
             'replace_libshowlogo': False,
             'replace_mtk-kpd': False,
             'replace_gralloc': True,
@@ -553,14 +583,40 @@ support_chipset_portstep = {
                 'vendor/lib/libpvrANDROID_WSEGL.so',
                 'vendor/lib/libgpu_aux.so'
             ],
-            'audiodriver': [
+            'audiohal': [
                 'lib/hw/audio.primary.*',
                 'vendor/lib/hw/audio.primary.*',
+            ],
+            'audioconf': [
                 'etc/audio_effects.conf',
                 'vendor/etc/audio_effects.conf',
                 'vendor/etc/audio_policy.conf',
                 'vendor/etc/audio_param',
-                'vendor/etc/audio_device.xml'
+                'lib/hw/audio_policy.default.so',
+                'lib64/hw/audio_policy.default.so',
+                'etc/audio_policy.conf',
+                'vendor/etc/audio_device.xml',
+            ],
+            'audiodriver': [
+                'lib/libaudiocomp*',
+                'lib64/libaudiocomp*',
+                'vendor/lib/libaudiocomp*',
+                'vendor/lib64/libaudiocomp*',
+                'lib/libaudioroute*',
+                'lib64/libaudioroute*',
+                'vendor/lib/libaudioroute*',
+                'vendor/lib64/libaudioroute*',
+                'lib/libaudioparam*',
+                'lib64/libaudioparam*',
+                'vendor/lib/libaudioparam*',
+                'vendor/lib64/libaudioparam*',
+                'etc/tfa*',
+                'lib/libtfa*',
+                'lib64/libtfa*',
+                'vendor/lib/libtfa*',
+                'vendor/lib64/libtfa*',
+                'lib/libaudiotfa*',
+                'lib64/libaudiotfa*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
@@ -671,7 +727,9 @@ support_chipset_portstep = {
             'replace_firmware': True,
             'replace_mddb': True,
             'replace_malidriver': True,
-            'replace_audiodriver': True,
+            'replace_audiodriver': False,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
             'replace_libshowlogo': False,
             'replace_mtk-kpd': False,
             'replace_gralloc': True,
@@ -685,8 +743,6 @@ support_chipset_portstep = {
             'replace_thermal': False,
             'replace_wifi': True,
             'replace_camera': True,
-            'replace_audioengine': True,
-            'replace_tfa': True,
             'change_platform': False,
             'single_simcard': False,
             'dual_simcard': False,
@@ -721,20 +777,23 @@ support_chipset_portstep = {
                 'lib/egl',
                 'vendor/lib/hw/vulkan.*'
             ],
-            'audiodriver': [
+            'audiohal': [
                 'lib/hw/audio.primary.*',
                 'lib64/hw/audio.primary.*',
                 'vendor/lib/hw/audio.primary.*',
                 'vendor/lib64/hw/audio.primary.*',
+            ],
+            'audioconf': [
                 'lib/hw/audio_policy.default.so',
                 'lib64/hw/audio_policy.default.so',
                 'etc/audio_effects.conf',
                 'vendor/etc/audio_effects.conf',
                 'vendor/etc/audio_policy.conf',
                 'vendor/etc/audio_param',
-                'vendor/etc/audio_device.xml'
+                'etc/audio_policy.conf',
+                'vendor/etc/audio_device.xml',
             ],
-            'audioengine': [
+            'audiodriver': [
                 'lib/libaudiocomp*',
                 'lib64/libaudiocomp*',
                 'vendor/lib/libaudiocomp*',
@@ -746,16 +805,14 @@ support_chipset_portstep = {
                 'lib/libaudioparam*',
                 'lib64/libaudioparam*',
                 'vendor/lib/libaudioparam*',
-                'vendor/lib64/libaudioparam*'
-            ],
-            'tfa': [
                 'etc/tfa*',
                 'lib/libtfa*',
                 'lib64/libtfa*',
                 'vendor/lib/libtfa*',
                 'vendor/lib64/libtfa*',
                 'lib/libaudiotfa*',
-                'lib64/libaudiotfa*'
+                'vendor/lib64/libaudioparam*',
+                'lib64/libaudiotfa*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
@@ -844,9 +901,9 @@ support_chipset_portstep = {
             'replace_firmware': True,
             'replace_mddb': True,
             'replace_malidriver': True,
-            'replace_audiodriver': True,
-            'replace_audioengine': True,
-            'replace_tfa': True,
+            'replace_audiodriver': False,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
             'replace_libshowlogo': False,
             'replace_mtk-kpd': False,
             'replace_gralloc': True,
@@ -906,11 +963,13 @@ support_chipset_portstep = {
                 'vendor/lib/hw/vulkan.*',
                 'vendor/lib64/hw/vulkan.*'
             ],
-            'audiodriver': [
+            'audiohal': [
                 'lib/hw/audio.primary.*',
                 'lib64/hw/audio.primary.*',
                 'vendor/lib/hw/audio.primary.*',
                 'vendor/lib64/hw/audio.primary.*',
+            ],
+            'audioconf': [
                 'lib/hw/audio_policy.default.so',
                 'lib64/hw/audio_policy.default.so',
                 'etc/audio_effects.conf',
@@ -918,9 +977,9 @@ support_chipset_portstep = {
                 'etc/audio_policy.conf',
                 'vendor/etc/audio_policy.conf',
                 'vendor/etc/audio_param',
-                'vendor/etc/audio_device.xml'
+                'vendor/etc/audio_device.xml',
             ],
-            'audioengine': [
+            'audiodriver': [
                 'lib/libaudiocomp*',
                 'lib64/libaudiocomp*',
                 'vendor/lib/libaudiocomp*',
@@ -932,16 +991,14 @@ support_chipset_portstep = {
                 'lib/libaudioparam*',
                 'lib64/libaudioparam*',
                 'vendor/lib/libaudioparam*',
-                'vendor/lib64/libaudioparam*'
-            ],
-            'tfa': [
                 'etc/tfa*',
                 'lib/libtfa*',
                 'lib64/libtfa*',
                 'vendor/lib/libtfa*',
                 'vendor/lib64/libtfa*',
                 'lib/libaudiotfa*',
-                'lib64/libaudiotfa*'
+                'vendor/lib64/libaudioparam*',
+                'lib64/libaudiotfa*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
@@ -1173,6 +1230,8 @@ support_chipset_portstep = {
             'replace_mddb': False,
             'replace_malidriver': False,
             'replace_audiodriver': False,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
             'replace_libshowlogo': False,
             'replace_mtk-kpd': False,
             'replace_gralloc': False,
@@ -1186,8 +1245,6 @@ support_chipset_portstep = {
             'replace_thermal': False,
             'replace_wifi': False,
             'replace_camera': False,
-            'replace_audioengine': False,
-            'replace_tfa': False,
             'replace_init': False,
             'change_platform': True,
             'single_simcard': False,
@@ -1231,11 +1288,13 @@ support_chipset_portstep = {
                 'vendor/lib/libpvrANDROID_WSEGL.so',
                 'vendor/lib/libgpu_aux.so'
             ],
-            'audiodriver': [
+            'audiohal': [
                 'lib/hw/audio.primary.*',
                 'lib64/hw/audio.primary.*',
                 'vendor/lib/hw/audio.primary.*',
                 'vendor/lib64/hw/audio.primary.*',
+            ],
+            'audioconf': [
                 'lib/hw/audio_policy.default.so',
                 'lib64/hw/audio_policy.default.so',
                 'etc/audio_effects.conf',
@@ -1243,9 +1302,9 @@ support_chipset_portstep = {
                 'etc/audio_policy.conf',
                 'vendor/etc/audio_policy.conf',
                 'vendor/etc/audio_param',
-                'vendor/etc/audio_device.xml'
+                'vendor/etc/audio_device.xml',
             ],
-            'audioengine': [
+            'audiodriver': [
                 'lib/libaudiocomp*',
                 'lib64/libaudiocomp*',
                 'vendor/lib/libaudiocomp*',
@@ -1257,16 +1316,14 @@ support_chipset_portstep = {
                 'lib/libaudioparam*',
                 'lib64/libaudioparam*',
                 'vendor/lib/libaudioparam*',
-                'vendor/lib64/libaudioparam*'
-            ],
-            'tfa': [
                 'etc/tfa*',
                 'lib/libtfa*',
                 'lib64/libtfa*',
                 'vendor/lib/libtfa*',
                 'vendor/lib64/libtfa*',
                 'lib/libaudiotfa*',
-                'lib64/libaudiotfa*'
+                'vendor/lib64/libaudioparam*',
+                'lib64/libaudiotfa*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',

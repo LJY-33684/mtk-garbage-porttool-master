@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta6**
+> 当前版本 / Current version：**1.3-beta6p1**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -46,6 +46,7 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 - 恢复模式移植参考 [@Xxinn034](https://github.com/Xxinn034/mtk-legacy-porttool) 分支实现 / Recovery-only porting based on [@Xxinn034](https://github.com/Xxinn034/mtk-legacy-porttool)'s branch.
 - LK 去警告工具整合自 [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch) / LK warning patch integrated from [@justistab3-bot](https://github.com/justistab3-bot/mtk-lk-warning-patch).
 - OPPO 固件解密参考 [@ColdWindScholar](https://github.com/ColdWindScholar/TIK) 的 TIK 实现（基于 bkerler MIT 协议，已按 GPL-3.0 兼容性评估并登记第三方声明）/ OPPO firmware decryption based on [@ColdWindScholar](https://github.com/ColdWindScholar/TIK)'s TIK (bkerler MIT base, GPL-3.0 compatibility assessed & third-party notice included).
+- 移植包资源与实机测试支持 [@KoCleo](https://github.com/KoCleo)（[KoCleo资源站](https://kc.fuquan.moe/)） / Porting package collection & on-device testing by [@KoCleo](https://github.com/KoCleo) ([KoCleo resource site](https://kc.fuquan.moe/)).
 
 <a name="features"></a>
 ## 功能特点 / Features
@@ -372,6 +373,8 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3-beta6p1**（1.3-beta6 的紧急修补 / emergency patch for 1.3-beta6）：修复 GUI 勾选「音频HAL primary」时抛 `AttributeError`（`_portutils__replace_audiohal` 名称改写问题，utils.py 闭包调用误加 `self.`）导致移植中断；音频三组默认策略实证修正——PA03 设备（底包 mt6735m/Android 6.0 → 移植源 mt6737m/Android 7.1.2）实测发现 `audiodriver` 默认勾选会把底包引擎库（`libaudiocompensationfilter`/`libaudiocomponentengine`）盖入移植源，与高版本框架不配套导致**媒体流无声（系统音正常）**，现三组（`audiodriver`/`audiohal`/`audioconf`）默认全部不勾、完全不动音频，需要时按需勾选；UI 新增「点击获取移植包（KoCleo提供）」入口，引入 KoCleo 的资源站链接（[kc.fuquan.moe](https://kc.fuquan.moe/)，提供移植包大全与设备测试资源）
+  - **1.3-beta6p1** (emergency patch for 1.3-beta6): fixed the GUI crash when checking "音频HAL primary" — `AttributeError: _portutils__replace_audiohal` (name-mangling bug, a stray `self.` on a closure call in utils.py) that aborted porting; audio trio default policy corrected by on-device evidence — on a PA03 (base mt6735m/Android 6.0 → donor mt6737m/Android 7.1.2), the `audiodriver` default-on shipped the base's engine libs (`libaudiocompensationfilter`/`libaudiocomponentengine`) into the donor, mismatching the newer framework and causing **silent media stream (system sounds fine)**; all three audio groups (`audiodriver`/`audiohal`/`audioconf`) now default OFF — audio is untouched unless explicitly checked; UI adds a "点击获取移植包（KoCleo提供）" entry linking KoCleo's resource site ([kc.fuquan.moe](https://kc.fuquan.moe/) — porting package collection & device testing).
 - **1.3-beta6**：新增 32/64 位架构校验（移植流程内自动对比底包与移植源 ABI，检测到不匹配时输出明确警告，提前规避"32 位移植包移植 64 位底包导致卡一"类问题）；kernel 替换组保护（kernel.gz 不再因打包流程被误清理或导致打包失败，G79 方案修复）；图形栈三组默认关闭（`replace_malidriver`/`replace_gralloc`/`replace_hwcomposer` 默认 `False`，与老工具一致，避免跨机型图形合成异常/黑屏/卡二）；内置 brotli 库补齐 Python 3.15（cp315）组件——Windows `win_amd64` 本地编译 + Linux `manylinux2014` 云编译，Python 3.15 用户开箱即用、无需 pip 安装；软链接全量补齐与多项解包/打包边界修复（#268~#272）
   - **1.3-beta6**: added 32/64-bit architecture check (the porting flow now compares base ROM vs source ABI automatically and prints a clear warning on mismatch, preventing "32-bit source onto 64-bit base → stuck at logo" issues); kernel replacement group protection (kernel.gz no longer wrongly cleaned up or failing the pack step — G79 fix); graphics stack trio defaults off (`replace_malidriver`/`replace_gralloc`/`replace_hwcomposer` default `False`, matching the old tool, avoiding cross-model graphics compositing corruption/black screen/stuck-at-logo); vendored brotli now covers Python 3.15 (cp315) — Windows `win_amd64` built locally + Linux `manylinux2014` built in the cloud, so Python 3.15 users work out of the box with no pip install; full symlink backfill and more unpack/pack edge fixes (#268~#272).
 - **1.3-beta5p5**：国内网络/时间服务器修复机制重构——由依赖 init.d/sysinit 执行器的开机自启脚本，改为向 boot 侧 init.rc 注入原生 `service cnfix`（`on property:sys.boot_completed=1` 触发，Android 4.x 起通用），开机由 init 以 root 直接执行 `/system/bin/cnfix.sh` 写 settings 全局表；脚本不再自删、改为逐键先检测后写入（幂等），恢复出厂/清空 settings 表后下次开机自动重写、持续生效；无需 root/ADB、不依赖 init.d/sysinit（词典笔等精简 ROM 无 init.d 执行器也能生效，实机验证：清表后刷入自动写回 ntp_server 与 captive portal 国内节点）

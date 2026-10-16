@@ -334,7 +334,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta6'
+tool_author = 'affggh'; tool_version = '1.3-beta6p1'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -449,17 +449,18 @@ audio_cross_version = cross_major_version
 # 注意：跨大版本时不再整组静默跳过，而是【提示高风险但仍执行】，
 # 由用户自行决定是否用底包 HAL 覆盖移植源（个别设备跨版本替换反而可用）。
 CROSS_SKIP_REPLACE_GROUPS = frozenset({
-    'audiodriver', 'audioengine', 'tfa',
+    'audiodriver', 'audiohal', 'audioconf',
     'camera', 'ril', 'wifi', 'bluetooth',
 })
 
-# 音频三组：硬件 primary HAL / 音频参数路由库 / TFA 功放，与移植源 ROM 的音频框架
+# 音频三组：硬件 primary HAL / 音频配置与策略 / 底层引擎与功放库，与移植源 ROM 的音频框架
 # （libaudioflinger / audio_policy / audio_effects 配置）强成套。实测即使同芯片、同 Android
 # 大版本，跨机型用底包音频 HAL 覆盖移植源，也会让 audioserver 加载即空指针崩溃（SIGSEGV
-# fault addr 0x4）、卡第二屏（mt6582 Android7.1.2 同版本移植实证）。因此这三组默认关闭、
-# 保留移植源整套以优先保证开机；仅当用户手动勾选时执行，并打印醒目风险警告。
+# fault addr 0x4）、卡第二屏（mt6582 Android7.1.2 同版本移植实证）。因此 audiohal/audioconf 默认
+# 关闭、保留移植源整套以优先保证开机；仅当用户手动勾选时执行，并打印醒目风险警告。
+# audiodriver（底层引擎/功放）默认开启——该类库跟随硬件且不参与音频框架 ABI 配对，跨版本安全。
 AUDIO_REPLACE_GROUPS = frozenset({
-    'audiodriver', 'audioengine', 'tfa',
+    'audiodriver', 'audiohal', 'audioconf',
 })
 
 # 图形栈：GPU(mali等)/gralloc 与移植源 ROM 的 surfaceflinger/图形框架强成套，且是开机合成必需。
@@ -1621,6 +1622,53 @@ class portutils:
                 print(f"  - 替换文件 {val}", file=self.std)
             else:
                 print(f"  - 跳过（底包中不存在 {val}）", file=self.std)
+
+        def __replace_audiohal(patterns):
+            """音频 primary HAL 替换（含跨芯片改名映射）。
+
+            底包 audio.primary.<底包平台>.so 复制为 audio.primary.<移植源平台>.so：
+            AudioFlinger 按 ro.board.platform 加载 HAL 文件名，跨芯片不改名则底包 HAL
+            不会被加载（PA03 外放无声实证：底包 6.0 HAL 改名 mt6735m→mt6737m 后正常出声）。
+            同名（文件名平台 == 移植源平台）或读不到平台属性时，原文件名替换。
+            """
+            port_prop = port_prefix.joinpath("build.prop")
+            target_platform = None
+            if port_prop.exists():
+                try:
+                    with proputil(str(port_prop)) as pp:
+                        target_platform = pp.getprop('ro.board.platform')
+                except Exception:
+                    target_platform = None
+            if target_platform:
+                print(f"  - 音频HAL改名目标平台：ro.board.platform = {target_platform}（移植源）", file=self.std)
+            for val in patterns:
+                if "*" not in val:
+                    __replace(val)
+                    continue
+                matched = 0
+                for file in glob.glob(op.join(str(base_prefix), val)):
+                    matched += 1
+                    rel = op.relpath(file, str(base_prefix))
+                    name = op.basename(rel)
+                    src_file = base_prefix.joinpath(rel)
+                    if name.startswith('audio.primary.') and name.endswith('.so') and target_platform:
+                        src_platform = name[len('audio.primary.'):-3]
+                        if src_platform and src_platform != target_platform:
+                            new_name = 'audio.primary.%s.so' % target_platform
+                            new_rel = op.join(op.dirname(rel), new_name)
+                            dst = port_prefix.joinpath(new_rel)
+                            dst.parent.mkdir(parents=True, exist_ok=True)
+                            _clear_attrs(dst)
+                            dst.write_bytes(src_file.read_bytes())
+                            print(f"  - 改名替换 {rel} -> {new_rel}（{src_platform} → {target_platform}）", file=self.std)
+                            continue
+                    dst = port_prefix.joinpath(rel)
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    _clear_attrs(dst)
+                    dst.write_bytes(src_file.read_bytes())
+                    print(f"  - 替换通配文件 {file}", file=self.std)
+                if matched == 0:
+                    print(f"  - 未匹配任何文件（底包中无 {val}）", file=self.std)
         
         # 检查并解包底包system.img（分块计算MD5，避免大文件全读入内存）
         unpack_flag = False
@@ -1754,7 +1802,8 @@ class portutils:
         # 在底包 system 中精准 glob 命中后再替换；是否替换完全由该组 flag（界面勾选 / 默认开关）决定。
         # 默认矩阵（均衡）：传感器/灯/GPS/电源/震动/散热、firmware/mddb/按键/开机画面默认替换；
         # 相机/基带/WiFi/蓝牙同平台默认替换、跨大版本【提示高风险仍执行】；
-        # 图形三组（malidriver/gralloc/hwcomposer）与音频 HAL/引擎/功放默认【不替换】（与手动方案一致）。
+        # 图形三组（malidriver/gralloc/hwcomposer）默认【不替换】；音频默认矩阵：
+        # 底层引擎/功放（audiodriver）默认【替换】（跟随硬件），primary HAL/配置（audiohal/audioconf）默认【不替换】。
         if self._flag('auto_replace'):
             print(f"【自动移植】未列芯片·同平台模式：按内置硬件识别表精准匹配底包文件并替换...", file=self.std)
 
@@ -1797,6 +1846,12 @@ class portutils:
                     print(f"  ! 音频硬件 HAL / 效果策略配置 / 功放库与移植源 ROM 的音频框架（audioflinger 等）强成套，", file=self.std)
                     print(f"  ! 跨机型覆盖底包音频——即使同芯片、同 Android 版本——也可能导致 audioserver 崩溃、卡第二屏或外放异常。", file=self.std)
                     print(f"  ! 该选项默认关闭以优先保证开机；若刷入后卡第二屏 / 无声音 / 炸外放，请取消「{replace_type}」后重新移植。", file=self.std)
+                if replace_type == 'audiohal':
+                    print(f"【移植项】替换audiohal相关文件...", file=self.std)
+                    print(f"  - 音频 primary HAL 走改名映射：底包 audio.primary.<底包平台> -> audio.primary.<移植源平台>", file=self.std)
+                    print(f"  - （PA03 实证：底包 HAL 不改名则 AudioFlinger 按 ro.board.platform 找不到，外放无声）", file=self.std)
+                    __replace_audiohal(self.items['replace'][replace_type])
+                    continue
                 print(f"【移植项】替换{replace_type}相关文件...", file=self.std)
                 for i in self.items['replace'][replace_type]:
                     if base_prefix.joinpath(i).exists() or "*" in i:
