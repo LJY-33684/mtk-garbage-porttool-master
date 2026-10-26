@@ -207,9 +207,7 @@ support_chipset_portstep = {
             'bin/wpa_supplicant',
             'bin/hostapd',
             'bin/wpa_cli',
-            'etc/wifi',
-            'lib/libwpa_client.so',
-            'lib/libwifi-service.so'
+            'etc/wifi'
         ],        }
     },
     'G79 (mt6735/mt6735m/mt6737) kernel-3.18.19': {
@@ -420,18 +418,11 @@ support_chipset_portstep = {
             'bin/wpa*',
             'bin/netd',
             'lib/libhardware_legacy.so',
-            'lib64/libhardware_legacy.so',
-            'lib/libwpa_client.so',
-            'lib64/libwpa_client.so',
-            'lib/libwifi-service.so',
-            'lib64/libwifi-service.so',
             'etc/wifi/wpa_supplicant.conf',
             'etc/wifi/p2p_supplicant.conf',
             'vendor/firmware/wifi*',
             'vendor/firmware/WIFI*',
-            'vendor/bin/netdiag',
-            'vendor/lib/libem_wifi_jni.so',
-            'vendor/lib64/libem_wifi_jni.so'
+            'vendor/bin/netdiag'
         ],
             'camera': [
                 'lib/hw/camera.*',
@@ -710,9 +701,7 @@ support_chipset_portstep = {
             'bin/wpa_supplicant',
             'bin/hostapd',
             'bin/wpa_cli',
-            'etc/wifi',
-            'lib/libwpa_client.so',
-            'lib/libwifi-service.so'
+            'etc/wifi'
         ],        }
     },
     'mt8163/mt8127/mt8167 (平板, Android 5.1-7.1.2)': {
@@ -1113,18 +1102,11 @@ support_chipset_portstep = {
             'bin/wpa*',
             'bin/netd',
             'lib/libhardware_legacy.so',
-            'lib64/libhardware_legacy.so',
-            'lib/libwpa_client.so',
-            'lib64/libwpa_client.so',
-            'lib/libwifi-service.so',
-            'lib64/libwifi-service.so',
             'etc/wifi/wpa_supplicant.conf',
             'etc/wifi/p2p_supplicant.conf',
             'vendor/firmware/wifi*',
             'vendor/firmware/WIFI*',
-            'vendor/bin/netdiag',
-            'vendor/lib/libem_wifi_jni.so',
-            'vendor/lib64/libem_wifi_jni.so'
+            'vendor/bin/netdiag'
         ],
             'camera': [
                 'lib/hw/camera.*',
@@ -1426,15 +1408,8 @@ support_chipset_portstep = {
             'bin/wpa*',
             'bin/netd',
             'lib/libhardware_legacy.so',
-            'lib64/libhardware_legacy.so',
-            'lib/libwpa_client.so',
-            'lib64/libwpa_client.so',
-            'lib/libwifi-service.so',
-            'lib64/libwifi-service.so',
             'etc/wifi',
-            'vendor/bin/netdiag',
-            'vendor/lib/libem_wifi_jni.so',
-            'vendor/lib64/libem_wifi_jni.so'
+            'vendor/bin/netdiag'
         ],
             'camera': [
                 'lib/hw/camera.*',
