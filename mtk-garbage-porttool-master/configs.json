@@ -173,13 +173,7 @@
         "bin/wpa_supplicant",
         "bin/hostapd",
         "bin/wpa_cli",
-        "etc/wifi",
-        "lib/libwpa_client.so",
-        "lib/libwifi-service.so",
-        "lib/libpalwlan_mtk.so",
-        "lib/libwifitest.so",
-        "lib/libem_wifi_jni.so",
-        "lib/libpalsecurity.so"
+        "etc/wifi"
       ],
       "audiohal": [
         "lib/hw/audio.primary.*",
@@ -394,18 +388,11 @@
         "bin/wlan*",
         "bin/wpa*",
         "lib/libhardware_legacy.so",
-        "lib64/libhardware_legacy.so",
-        "lib/libwpa_client.so",
-        "lib64/libwpa_client.so",
-        "lib/libwifi-service.so",
-        "lib64/libwifi-service.so",
         "etc/wifi/wpa_supplicant.conf",
         "etc/wifi/p2p_supplicant.conf",
         "vendor/firmware/wifi*",
         "vendor/firmware/WIFI*",
-        "vendor/bin/netdiag",
-        "vendor/lib/libem_wifi_jni.so",
-        "vendor/lib64/libem_wifi_jni.so"
+        "vendor/bin/netdiag"
       ],
       "camera": [
         "lib/hw/camera.*",
@@ -697,9 +684,7 @@
         "bin/wpa_supplicant",
         "bin/hostapd",
         "bin/wpa_cli",
-        "etc/wifi",
-        "lib/libwpa_client.so",
-        "lib/libwifi-service.so"
+        "etc/wifi"
       ],
       "audiohal": [
         "lib/hw/audio.primary.*",
@@ -1108,18 +1093,11 @@
         "bin/wlan*",
         "bin/wpa*",
         "lib/libhardware_legacy.so",
-        "lib64/libhardware_legacy.so",
-        "lib/libwpa_client.so",
-        "lib64/libwpa_client.so",
-        "lib/libwifi-service.so",
-        "lib64/libwifi-service.so",
         "etc/wifi/wpa_supplicant.conf",
         "etc/wifi/p2p_supplicant.conf",
         "vendor/firmware/wifi*",
         "vendor/firmware/WIFI*",
-        "vendor/bin/netdiag",
-        "vendor/lib/libem_wifi_jni.so",
-        "vendor/lib64/libem_wifi_jni.so"
+        "vendor/bin/netdiag"
       ],
       "camera": [
         "lib/hw/camera.*",
@@ -1437,15 +1415,8 @@
         "bin/wlan*",
         "bin/wpa*",
         "lib/libhardware_legacy.so",
-        "lib64/libhardware_legacy.so",
-        "lib/libwpa_client.so",
-        "lib64/libwpa_client.so",
-        "lib/libwifi-service.so",
-        "lib64/libwifi-service.so",
         "etc/wifi",
-        "vendor/bin/netdiag",
-        "vendor/lib/libem_wifi_jni.so",
-        "vendor/lib64/libem_wifi_jni.so"
+        "vendor/bin/netdiag"
       ],
       "camera": [
         "lib/hw/camera.*",
