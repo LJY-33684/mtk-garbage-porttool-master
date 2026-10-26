@@ -54,7 +54,7 @@ python porttool_cli.py port \
   [--out-type img|zip] \
   [--item <KEY>]... [--no-item <KEY>]... \
   [--patch-magisk] [--magisk-apk <路径>] [--target-arch arm64] \
-  [--clean-base] [--log-file <路径>]
+  [--clean-base] [--ignore-sysimg-size-limit] [--log-file <路径>]
 ```
 
 > **路径提示 / Path Note**：所有镜像/目录路径参数请传**绝对路径**（CLI 启动后工作目录为工具目录 mtk-garbage-porttool-master/，相对路径会按工具目录解析，而非调用方当前目录）。
@@ -110,6 +110,14 @@ python porttool_cli.py port \
 | `fix_storage` | 存储修复·boot 侧（AMG 教程，仅 mt6572/mt6582/mt6592 方案提供）：收敛 fstab 外置存储声明（删除 `/devices/` 存储行、补标准 sdcard1/usbotg 行），并在 init.rc 删除 `ro.vold.primary_physical`、补充 protect 挂载 / `mount_all` / 存储 symlink，修复"单卡槽设备刷入后冒出多个损坏 SD 卡卷"的问题。多数设备此条目即可解决 |
 | `fix_storage_system` | 存储修复·system 侧（兜底，仅 mt6572/mt6582/mt6592 方案提供，默认关闭）：**仅当 fix_storage（boot 侧）修复后存储仍异常时勾选**。将底包 `system/bin/sdcard` + `system/bin/vold` 替换进移植源（对应 AMG 教程"6582 移植 6572 固件后仍异常时从同版本 6582 包提取这两个文件"）。带版本守卫：底包与移植源 Android 大版本不一致时自动跳过（vold/sdcard 跨版本不兼容），仅保留 boot 侧修复 |
 | `generate_script` | 生成自动刷机脚本（**仅 zip 输出生效**；img 输出无卡刷脚本概念，CLI/GUI 会自动忽略该条目，非 bug） |
+
+**独立开关（非移植条目，默认关）**：
+
+| 参数 | 说明 |
+|---|---|
+| `--ignore-sysimg-size-limit` | 忽略底包镜像大小限制：生成 system 镜像时不按底包文件大小封顶，直接按内容+64MiB预留生成。**适用场景**：底包 system 为 sparse（压缩）格式（文件大小≠分区容量，默认按文件大小封顶会导致镜像生成失败）、或内容+64MiB确实超出底包大小但用户明确要强制生成。注意：忽略限制后若内容超出目标分区实际容量，刷入可能越界写坏相邻分区导致变砖，需用户自行确认分区容量（GUI 侧对应移植条目最顶部的「忽略底包镜像大小限制」复选框，默认不勾） |
+
+> **L7 生效范围**：该开关仅在**生成 system 镜像**的路径生效（普通移植 + img/zip 输出，走 make_ext4fs 的两处生成点）。recovery-only / kernel-only 模式、non-SDAT 的 zip 输出、OPPO 解密 / LK 去警告面板均**不生成 system 镜像**，此开关无效果（GUI 侧这些模式不显示该复选框，CLI 传参时被忽略，属正常）。
 
 ### 5.4 输出约定 / Outputs
 

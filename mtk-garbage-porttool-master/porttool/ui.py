@@ -367,6 +367,7 @@ class MyUI(ttk.Labelframe):
         self.target_arch = StringVar(value='arm64')    # magisk架构
         self.magisk_apk = StringVar(value="magisk.apk")# magisk apk路径
         self.clean_base_after = BooleanVar(value=False)  # 完成后清除base缓存目录
+        self._ignore_size_var = BooleanVar(value=False)  # 忽略底包镜像大小限制（默认不勾；勾选后不按底包大小封顶，直接按内容+64MiB生成）
 
         # ========== 新增：防止重复点击的核心变量 ==========
         self.is_running = False  # 标记是否正在执行移植流程
@@ -523,6 +524,8 @@ class MyUI(ttk.Labelframe):
             newdict = copy.deepcopy(support_chipset_portstep[self.chipset_select.get()])
             for key, tkbool in self.item:
                 newdict[key] = tkbool.get()
+            # 忽略底包镜像大小限制（UI 独立开关，默认不勾）
+            newdict['ignore_sysimg_size_limit'] = self._ignore_size_var.get()
             
             # Magisk相关配置
             newdict['patch_magisk'] = self.patch_magisk.get()
@@ -900,6 +903,9 @@ class MyUI(ttk.Labelframe):
                 return
 
             # 创建移植条目复选框
+            # M2 修复：每次切换方案/重建条目时重置忽略开关为默认不勾，
+            # 避免勾选状态跨方案继承（raw 底包下勾选会取消安全上限导致无提示变砖）
+            self._ignore_size_var.set(False)
             for index, item_key in enumerate(item_dict):
                 self.item.append([item_key, BooleanVar(value=item_dict[item_key])])
                 self.itembox.append(
@@ -911,6 +917,14 @@ class MyUI(ttk.Labelframe):
                     )
                 )
             
+            # 移植条目最顶部：忽略底包镜像大小限制（默认不勾；勾选后不按底包大小封顶，直接按内容+64MiB生成）
+            # 独立持有，不写入 configs flags（CLI 用 --ignore-sysimg-size-limit）
+            ttk.Checkbutton(
+                self.actcvframe,
+                text='忽略底包镜像大小限制',
+                variable=self._ignore_size_var,
+            ).pack(side='top', fill='x', padx=5)
+
             # 布局移植条目复选框
             for checkbox in self.itembox:
                 checkbox.pack(side='top', fill='x', padx=5)

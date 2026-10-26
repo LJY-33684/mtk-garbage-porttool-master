@@ -83,11 +83,12 @@ def build_items(chipset, item_ons, item_offs, extra):
         items[k] = True
     for k in item_offs:
         items[k] = False
-    # 附加项（Magisk / 清理缓存）
+    # 附加项（Magisk / 清理缓存 / 忽略底包镜像大小限制）
     items['patch_magisk'] = extra.get('patch_magisk', False)
     items['magisk_apk'] = extra.get('magisk_apk', '')
     items['target_arch'] = extra.get('target_arch', 'arm64')  # #175：与 argparse default 一致
     items['clean_base_after'] = extra.get('clean_base_after', False)
+    items['ignore_sysimg_size_limit'] = extra.get('ignore_sysimg_size_limit', False)
     return items
 
 
@@ -166,7 +167,8 @@ def cmd_port(a, log):
     # ---- 条目 ----
     items = build_items(chipset, a.item or [], a.no_item or [],
                         {'patch_magisk': a.patch_magisk, 'magisk_apk': a.magisk_apk,
-                         'target_arch': a.target_arch, 'clean_base_after': a.clean_base})
+                         'target_arch': a.target_arch, 'clean_base_after': a.clean_base,
+                         'ignore_sysimg_size_limit': getattr(a, 'ignore_sysimg_size_limit', False)})
 
     # #70：img 输出无卡刷脚本概念，generate_script 会被自动忽略——显式提示，避免静默
     if genimg and items.get('generate_script'):
@@ -325,6 +327,7 @@ def main(argv=None):
     sp.add_argument('--magisk-apk', default='', help='Magisk APK 路径')
     sp.add_argument('--target-arch', default='arm64', help='目标架构（默认 arm64，与 GUI 一致；arm64→arm64-v8a，arm→armeabi-v7a）')
     sp.add_argument('--clean-base', action='store_true', help='完成后清除 base 缓存目录')
+    sp.add_argument('--ignore-sysimg-size-limit', action='store_true', help='忽略底包镜像大小限制：不按底包大小封顶，直接按内容+64MiB预留生成（sparse 压缩底包/内容超限时用）')
     sp.add_argument('--log-file', default='', help='额外日志文件（stdout 照常输出）')
 
     # lk

@@ -13,7 +13,7 @@ import subprocess
 from sys import stdout
 from hashlib import md5, sha256
 from .bootimg import unpack_bootimg, repack_bootimg
-from .imgextractor import Extractor
+from .imgextractor import Extractor, is_sparse_image, EXT4_SPARSE_HEADER_LEN
 from .symlink_fix import fix_symlinks, fix_inode_bitmaps, verify_image_integrity
 from .configs import (
     make_ext4fs_bin,
@@ -334,7 +334,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3-beta6p1'
+tool_author = 'affggh'; tool_version = '1.3-beta6p2'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -2281,7 +2281,23 @@ class portutils:
             # 生成raw镜像
             fit_size = self.__pack_fit_size()
             sys_size = stat(self.sysimg).st_size
-            img_size = sys_size if sys_size >= fit_size else fit_size
+            is_sparse, real_size = self._is_sparse_img(self.sysimg)
+            if self.items.get('ignore_sysimg_size_limit', False):
+                # 用户显式勾选"忽略底包镜像大小限制"：不按底包大小封顶，按内容+64MiB预留直接生成
+                # （sparse 底包文件大小≠分区容量，不勾时按文件大小封顶会错误卡死生成）
+                # S1 修复：变砖风险提示无条件输出（raw 底包 sys_size=分区容量，勾选后同样取消安全上限）
+                print(f"  - 警告：已忽略底包镜像大小限制，按内容+64MiB预留直接生成（不按底包大小封顶）；若目标分区装不下，可能产生超分区镜像，刷入可能越界写坏相邻分区导致变砖，刷入前请自行确认分区容量", file=self.std)
+                if is_sparse:
+                    real_mb = real_size // (1024 * 1024) if real_size else '?'
+                    print(f"  - 警告：底包 system 为 sparse（压缩）格式（文件 {sys_size//(1024*1024)} MiB，真实展开约 {real_mb} MiB），已忽略大小限制直接生成", file=self.std)
+                img_size = fit_size
+            else:
+                if is_sparse:
+                    print(f"  ⚠ 提示：检测到底包 system 为 sparse（压缩）格式（文件 {sys_size} 字节 ≈ {sys_size//1024//1024} MiB，真实展开约 {real_size//1024//1024 if real_size else '?'} MiB），文件大小≠分区容量，按文件大小封顶可能导致镜像生成失败；如需按内容直接生成，请勾选「忽略底包镜像大小限制」", file=self.std)
+                if fit_size > sys_size:
+                    over = fit_size - sys_size
+                    print(f"  ⚠ 警告：内容预估(含64MiB预留)超底包 {over//(1024*1024)} MiB（预估 {fit_size} 字节 > 底包 {sys_size} 字节），已按底包大小封顶；若实际打包失败，说明 /system 内容装不下，请精简后重试", file=self.std)
+                img_size = min(fit_size, sys_size)
             
             print(f"【生成镜像】创建system_raw.img（大小：{round(img_size/(1024**3),2)}GB）...", file=self.std)
             # 先生成 raw 镜像（symlink/bitmap/一致性修复需在 raw 上执行），
@@ -2296,7 +2312,14 @@ class portutils:
             
             if ret_code != 0:
                 print(f"【生成失败】system_raw.img创建失败（返回码：{ret_code}）", file=self.std)
-                return
+                # M3 修复：失败时清理可能已创建的半成品，避免误刷
+                if self.outdir.joinpath("system_raw.img").exists():
+                    unlink(str(self.outdir.joinpath("system_raw.img")))
+                # M1 修复：sparse 且未勾选时，异常文案指向勾选开关而非"精简"
+                _hint = "若因内容超出镜像容量，请精简 /system 后重试"
+                if is_sparse and not self.items.get('ignore_sysimg_size_limit', False):
+                    _hint = "底包为 sparse（压缩）格式且未勾选「忽略底包镜像大小限制」（CLI：--ignore-sysimg-size-limit），按文件大小封顶可能不足；请勾选后重试"
+                raise RuntimeError(f"system_raw.img 创建失败（make_ext4fs 返回码 {ret_code}），产物未生成；{_hint}")
 
             # 修复符号链接（支持 sparse/raw 两种格式）
             print(f"【符号链接修复】正在修复 system_raw.img 中的符号链接...", file=self.std)
@@ -2332,8 +2355,11 @@ class portutils:
             print(f"【格式转换】将system_raw.img转为稀疏镜像...", file=self.std)
             ret_code, _ = self.execv([img2simg_bin, str(self.outdir.joinpath("system_raw.img")), str(self.outdir.joinpath("system.img"))], verbose=False)
             if ret_code != 0:
+                # M3 修复：img2simg 失败不再静默 return（原会导致 CLI 退出码 0 且产物缺失），改为抛错并清理半成品
                 print(f"【转换失败】稀疏镜像生成失败（返回码：{ret_code}）", file=self.std)
-                return
+                if self.outdir.joinpath("system.img").exists():
+                    unlink(str(self.outdir.joinpath("system.img")))
+                raise RuntimeError(f"稀疏镜像 system.img 生成失败（img2simg 返回码 {ret_code}），产物未完整生成")
             
             # 转换为SDAT格式
             print(f"【格式转换】将system.img转为SDAT格式...", file=self.std)
@@ -2524,7 +2550,23 @@ class portutils:
         # 生成system.img（日志核心优化）
         fit_size = self.__pack_fit_size()
         sys_size = stat(self.sysimg).st_size
-        img_size_bytes = sys_size if sys_size >= fit_size else fit_size
+        is_sparse, real_size = self._is_sparse_img(self.sysimg)
+        if self.items.get('ignore_sysimg_size_limit', False):
+            # 用户显式勾选"忽略底包镜像大小限制"：不按底包大小封顶，按内容+64MiB预留直接生成
+            # （sparse 底包文件大小≠分区容量，不勾时按文件大小封顶会错误卡死生成）
+            # S1 修复：变砖风险提示无条件输出（raw 底包 sys_size=分区容量，勾选后同样取消安全上限）
+            print(f"  - 警告：已忽略底包镜像大小限制，按内容+64MiB预留直接生成（不按底包大小封顶）；若目标分区装不下，可能产生超分区镜像，刷入可能越界写坏相邻分区导致变砖，刷入前请自行确认分区容量", file=self.std)
+            if is_sparse:
+                real_mb = real_size // (1024 * 1024) if real_size else '?'
+                print(f"  - 警告：底包 system 为 sparse（压缩）格式（文件 {sys_size//(1024*1024)} MiB，真实展开约 {real_mb} MiB），已忽略大小限制直接生成", file=self.std)
+            img_size_bytes = fit_size
+        else:
+            if is_sparse:
+                print(f"  ⚠ 提示：检测到底包 system 为 sparse（压缩）格式（文件 {sys_size} 字节 ≈ {sys_size//1024//1024} MiB，真实展开约 {real_size//1024//1024 if real_size else '?'} MiB），文件大小≠分区容量，按文件大小封顶可能导致镜像生成失败；如需按内容直接生成，请勾选「忽略底包镜像大小限制」", file=self.std)
+            if fit_size > sys_size:
+                over = fit_size - sys_size
+                print(f"  ⚠ 警告：内容预估(含64MiB预留)超底包 {over//(1024*1024)} MiB（预估 {fit_size} 字节 > 底包 {sys_size} 字节），已按底包大小封顶；若实际打包失败，说明 /system 内容装不下，请精简后重试", file=self.std)
+            img_size_bytes = min(fit_size, sys_size)
         img_size_gb = round(img_size_bytes / (1024**3), 2)
         
         # 结构化日志输出
@@ -2605,7 +2647,14 @@ class portutils:
             print(f"【生成失败】system.img创建失败！", file=self.std)
             print(f"  ├─ 返回码：{ret_code}", file=self.std)
             print(f"  └─ 错误信息：{cmd_output_str[:500]}", file=self.std)
-            return
+            # M3 修复：失败时清理可能已创建的半成品，避免误刷
+            if self.outdir.joinpath("system.img").exists():
+                unlink(str(self.outdir.joinpath("system.img")))
+            # M1 修复：sparse 且未勾选时，异常文案指向勾选开关而非"精简"
+            _hint = "若因内容超出镜像容量，请精简 /system 后重试"
+            if is_sparse and not self.items.get('ignore_sysimg_size_limit', False):
+                _hint = "底包为 sparse（压缩）格式且未勾选「忽略底包镜像大小限制」（CLI：--ignore-sysimg-size-limit），按文件大小封顶可能不足；请勾选后重试"
+            raise RuntimeError(f"system.img 创建失败（make_ext4fs 返回码 {ret_code}），产物未生成；{_hint}")
         
         # 复制boot.img
         print(f"\n【复制文件】复制移植后的boot.img到out目录...", file=self.std)
@@ -2617,13 +2666,44 @@ class portutils:
         print(f"  └─ system.img：{self.outdir.as_posix()}/system.img", file=self.std)
         
 
+    def _is_sparse_img(self, path):
+        """检测镜像是否为 sparse（压缩）格式，返回 (is_sparse, real_size_bytes)
+
+        sparse 文件头（sparse v1）：offset0=magic(0xED26FF3A)、offset12=block_size、offset16=total_blocks，
+        真实展开大小 = total_blocks × block_size（底包 system 为 sparse 时，stat 到的文件大小≠分区容量）。
+
+        M5 修复：复用 imgextractor.is_sparse_image 做严格判定（校验 magic/版本/头大小/块大小 2 的幂/块数>0），
+        避免把 raw ext4 内容中偶然出现的 0xED26FF3A 误判为 sparse，再读满 28 字节头取 block_size/total_blocks。
+        """
+        try:
+            if not is_sparse_image(path):
+                return False, None
+            with open(path, 'rb') as f:
+                head = f.read(EXT4_SPARSE_HEADER_LEN)
+            blk_sz = int.from_bytes(head[12:16], 'little')
+            total_blks = int.from_bytes(head[16:20], 'little')
+            if blk_sz <= 0:
+                return True, 0
+            return True, total_blks * blk_sz
+        except OSError:
+            return False, None
+
     def __pack_fit_size(self):
-        """计算镜像适配大小"""
+        """计算镜像适配大小：文件总大小 + 预留（比例 + 保底，覆盖 ext4 元数据 + 安全余量）
+
+        去掉原 ×1.2 百分比系数（会造成镜像膨胀、刷机变慢，满格底包时触发超分区高危 bug）；
+        预留 = max(64 MiB, 内容总大小//32)：make_ext4fs 按镜像大小/16KiB 自动分配 inode 表
+        （≈镜像的 1/64，3.25GiB 镜像→~53MB），加位图/组描述符/目录块后 3.2GiB 以上固定 64MiB
+        即不足（§181 实测差 0.9MB）；比例预留覆盖 inode 表随镜像增长，64MiB 保底照顾小镜像。
+        上限封顶底包大小由调用处 min(fit_size, sys_size) 保证；但勾选「忽略底包镜像大小限制」时调用处不做封顶。
+        """
+        PACK_EXTRA_RESERVE = 64 * 1024 * 1024  # 保底预留 64 MiB（小镜像）
         total = 0
         for root, dirs, files in walk("tmp/rom/system"):
             for file in files:
                 total += stat(op.join(root, file)).st_size
-        return int(total * 1.2)  # 预留20%空间
+        ratio = max(PACK_EXTRA_RESERVE, int(total) // 32)
+        return int(total) + ratio
 
     def __readlink(self, dest: str):
         """读取符号链接"""
