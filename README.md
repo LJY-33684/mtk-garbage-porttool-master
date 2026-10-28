@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3-beta6p2**
+> 当前版本 / Current version：**1.3.6.007**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -373,6 +373,12 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3.6.007**（版本号体系变更 + 攒批治理 / versioning change + batched governance）
+  - **版本号变更 / Versioning**：版本号由 `1.3-beta6p2` 切换为新格式 **`1.3.6.007`**（`x.y.z.ppp`——x.y=主版本、z=beta号、ppp=p号三位数，如 003=原 beta6p3）。**ppp 升号规则改为按本次修补模块数升**（修 N 个模块升 N），不再按发布次数 +1；本次 4 模块：configs 条目体系 / GUI 显示层 / 接口手册 / tkinter 懒加载
+  - **移植条目拆分 / Item split**：与上游存在差异的条目拆为「上游定点」+「扩展」两条（mt6572 拆 gralloc/hwcomposer/malidriver/ril/firmware/mddb/libshowlogo 7 条、G79 拆 camera/malidriver/firmware/mddb/libshowlogo 5 条），扩展默认关，两条都勾 = 拆分前完整行为；**仅移植内核方案补回** `replace_firmware`/`replace_mddb`（对齐上游 kernel-only 行为）
+  - **条目顺序重排 / Item order**：存储修复·boot/system、WiFi、音频HAL primary、音频配置/参数 置顶（GUI 与 CLI `--items` 输出同步）
+  - **GUI 标签简化 / Label cleanup**：去掉「上游定点」字样、「后引入扩展」改为「扩展」
+  - **tkinter 懒加载修复**：GUI 启动不再因 tkinter 导入顺序异常抛错
 - **1.3-beta6p2**（1.3-beta6p1 的紧急修补 / emergency patch for 1.3-beta6p1）：wifi 替换列表恢复上游行为——configs 移除 `libwifi-service`/`libwpa_client`/`libpalwlan_mtk` 等预编译 so（含 lib64 变体），修复 C80 学习机（MT6735）移植 Lineage 14.1 卡开机动画根因（Android 5.x 旧库混入 7.1.2 system → `dlopen failed: cannot locate symbol "ucnv_open_53"` → WifiP2pService 无法加载 → system_server 崩溃循环）；新增「忽略底包镜像大小限制」开关（CLI `--ignore-sysimg-size-limit` / GUI 复选框，sparse 底包文件大小≠分区容量时按内容+预留生成，默认不勾选并有变砖风险提示）；镜像预留比例化（固定 64MiB → `max(64MiB, 内容/32)`，覆盖 inode 表随镜像增长，镜像 >3.2GiB 时固定 64MiB 系统性不足、实测差 0.9MB 失败）；打包失败上报修复（make_ext4fs/img2simg 失败不再静默 `return`，CLI exit 2 / GUI 显示失败并清理半成品镜像）；GUI 开关跨方案重置、sparse 严格检测、风险提示补强；发行版打包修复（补回 `run.bat` 一键启动脚本）
   - **1.3-beta6p2** (emergency patch for 1.3-beta6p1): wifi replacement list restored to upstream behavior — removed prebuilt `libwifi-service`/`libwpa_client`/`libpalwlan_mtk` .so (incl. lib64 variants); fixes the C80 learning pad (MT6735) Lineage 14.1 boot-loop root cause (Android 5.x libs in a 7.1.2 system → `dlopen failed: cannot locate symbol "ucnv_open_53"` → WifiP2pService fails → system_server crash loop); new "ignore base image size limit" switch (CLI `--ignore-sysimg-size-limit` / GUI checkbox — for sparse bases whose file size != partition capacity, generates by content+reserve, unchecked by default with a brick-risk warning); mirror reserve now scales as `max(64MiB, content/32)` (fixed 64MiB proved insufficient above ~3.2GiB, a real 0.9MB shortfall failure); pack failures now raise errors instead of silent `return` (CLI exit 2 / GUI failure notice) with half-built images cleaned up; GUI switch reset across profiles, strict sparse detection (reuses imgextractor.is_sparse_image), stronger warnings; release packaging fix (the `run.bat` one-click launcher is back).
 - **1.3-beta6p1**（1.3-beta6 的紧急修补 / emergency patch for 1.3-beta6）：修复 GUI 勾选「音频HAL primary」时抛 `AttributeError`（`_portutils__replace_audiohal` 名称改写问题，utils.py 闭包调用误加 `self.`）导致移植中断；音频三组默认策略实证修正——PA03 设备（底包 mt6735m/Android 6.0 → 移植源 mt6737m/Android 7.1.2）实测发现 `audiodriver` 默认勾选会把底包引擎库（`libaudiocompensationfilter`/`libaudiocomponentengine`）盖入移植源，与高版本框架不配套导致**媒体流无声（系统音正常）**，现三组（`audiodriver`/`audiohal`/`audioconf`）默认全部不勾、完全不动音频，需要时按需勾选；UI 新增「点击获取移植包（KoCleo提供）」入口，引入 KoCleo 的资源站链接（[kc.fuquan.moe](https://kc.fuquan.moe/)，提供移植包大全与设备测试资源）

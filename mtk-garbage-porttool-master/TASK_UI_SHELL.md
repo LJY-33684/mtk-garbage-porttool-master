@@ -36,7 +36,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3-beta6p1`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3.6.007`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -94,15 +94,24 @@ python porttool_cli.py port \
 
 | 键 | 含义 |
 |---|---|
-| `replace_kernel` | 替换内核 |
+| `replace_kernel` | 替换内核（boot 内 kernel / kernel.gz 按存在替换） |
 | `selinux_permissive` | 开启 SELinux 宽容模式 |
 | `enable_adb` | 开启 ADB 调试 |
-| `replace_firmware` / `replace_mddb` | 替换 firmware / mddb |
-| `replace_malidriver` | 替换 GPU Mali 驱动 |
+| `replace_firmware` / `replace_mddb` | 替换 firmware / mddb（上游定点：`etc/firmware` / `etc/mddb`） |
+| `replace_firmware_ext` / `replace_mddb_ext` | 后引入扩展：额外替换 vendor 分区内的 firmware / mddb（默认关） |
+| `replace_malidriver` | 替换 GPU Mali 驱动（上游定点：`lib/libMali.so`） |
+| `replace_malidriver_ext` | 后引入扩展：egl/vulkan/gpu_aux/jni_eglfence 及 lib64/vendor 变体（默认关） |
 | `replace_audiodriver` | 替换音频底层引擎/功放库（libaudiocomp*/libaudioroute*/libaudioparam*/libtfa* 等） |
 | `replace_audiohal` | 替换音频 primary HAL（`audio.primary.*.so`） |
 | `replace_audioconf` | 替换音频配置/参数（`audio_policy.default.so`、`audio_effects.conf`、`audio_policy.conf`、`audio_param`、`audio_device.xml`） |
-| `replace_gralloc` / `replace_hwcomposer` | 替换 gralloc / hwcomposer |
+| `replace_gralloc` / `replace_hwcomposer` | 替换 gralloc / hwcomposer（上游定点：`lib/hw/gralloc.mt6572/6582/6592.so` 等 32 位定点） |
+| `replace_gralloc_ext` / `replace_hwcomposer_ext` | 后引入扩展：lib64/vendor 变体（gralloc 另含 libgralloc_extra，默认关） |
+| `replace_camera` | 替换相机 HAL/库（上游定点 13 个 32 位 lib，G79 方案） |
+| `replace_camera_ext` | 后引入扩展：lib64/vendor 相机全家（默认关） |
+| `replace_ril` | 替换基带 RIL（上游定点：bin/ccci_fsd、bin/rild 等 11 项） |
+| `replace_ril_ext` | 后引入扩展：vendor/bin、vendor/lib 的 ril 全家（默认关） |
+| `replace_libshowlogo` | 替换开机画面 logo（上游定点：`lib/libshowlogo.so`） |
+| `replace_libshowlogo_ext` | 后引入扩展：lib64/vendor 变体（默认关） |
 | `fit_density` / `change_model` | 同步 DPI / 型号信息 |
 | `change_timezone` / `change_locale` | 同步时区 / 语言区域 |
 | `set_cn_servers` | 切换国内网络/时间服务器（captive portal→小米、NTP→阿里云）。双通道：①写入 build.prop（兜底，部分框架仍读 ro.*）；②boot 侧向 init.rc 注入 `service cnfix`（`on property:sys.boot_completed=1` 触发，Android 4.x 起通用语法），开机由 init 以 root 直接执行 `/system/bin/cnfix.sh` 写 settings 全局表；**脚本保留不删除、幂等**：逐个键检测，已设置的键跳过，恢复出厂/清空 settings 表后下次开机自动重写，持续生效（Android 7.1+ 网络验证/NTP 只读 settings，不读 build.prop）。**无需 root/ADB、不依赖 init.d/sysinit**（精简 ROM 无 init.d 执行器也能生效）。**1.3-beta6 起脚本独立化**：优先使用工具根目录的独立模板 `cnfix.sh`（可自行编辑，在文末"自定义开机指令区"插入自己的命令，开机自动以 root 执行），模板缺失时回退内置默认脚本 |
@@ -110,6 +119,8 @@ python porttool_cli.py port \
 | `fix_storage` | 存储修复·boot 侧（AMG 教程，仅 mt6572/mt6582/mt6592 方案提供）：收敛 fstab 外置存储声明（删除 `/devices/` 存储行、补标准 sdcard1/usbotg 行），并在 init.rc 删除 `ro.vold.primary_physical`、补充 protect 挂载 / `mount_all` / 存储 symlink，修复"单卡槽设备刷入后冒出多个损坏 SD 卡卷"的问题。多数设备此条目即可解决 |
 | `fix_storage_system` | 存储修复·system 侧（兜底，仅 mt6572/mt6582/mt6592 方案提供，默认关闭）：**仅当 fix_storage（boot 侧）修复后存储仍异常时勾选**。将底包 `system/bin/sdcard` + `system/bin/vold` 替换进移植源（对应 AMG 教程"6582 移植 6572 固件后仍异常时从同版本 6582 包提取这两个文件"）。带版本守卫：底包与移植源 Android 大版本不一致时自动跳过（vold/sdcard 跨版本不兼容），仅保留 boot 侧修复 |
 | `generate_script` | 生成自动刷机脚本（**仅 zip 输出生效**；img 输出无卡刷脚本概念，CLI/GUI 会自动忽略该条目，非 bug） |
+
+> **§188 条目拆分说明（1.3.6.007 起）**：凡与上游（`ColdWindScholar/mtk-garbage-porttool` 的 `porttool/configs.py`）存在差异的移植条目，均拆为两条——**上游定点**（32 位原版行为，默认值继承拆分前）与**后引入扩展**（lib64/vendor/通配等本地新增维度，默认关）。GUI 勾"上游定点"= 对齐上游行为；勾"后引入扩展"= 启用本地扩展；两条都勾 = 拆分前完整行为。仅 `mt6572/mt6582/mt6592 kernel-3.4.67`（gralloc/hwcomposer/malidriver/ril/firmware/mddb/libshowlogo）与 `G79 (mt6735/mt6735m/mt6737)`（camera/malidriver/firmware/mddb/libshowlogo）执行拆分（上游有精确定义）；其余方案为本地自建、无上游对照，保持单条。**仅移植内核方案**已补回 `replace_firmware`/`replace_mddb`（上游行为：`etc/firmware` + `etc/mddb`，默认开启）。
 
 **独立开关（非移植条目，默认关）**：
 
@@ -267,5 +278,5 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3-beta6p1`
+- 本桥接接口随工具版本发布：当前 `1.3.6.007`（新格式 = 主版本 `1.3` + beta号 `6` + p号 `007`，按模块制自 `1.3.6.003` 起 +4 模块）
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）
