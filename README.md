@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3.6.007**
+> 当前版本 / Current version：**1.3.6.009**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -373,6 +373,10 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3.6.009**（1.3.6.007 的紧急修补 / emergency patch for 1.3.6.007）
+  - **mddb 替换崩溃修复 / mddb replacement crash fix**：底包 `etc/mddb` 为符号链接标记文件、移植源为真目录时，原文件分支以写模式打开目录抛 `PermissionError [Errno 13]` 导致移植中断；文件分支与通配文件分支加「类型对冲」，目标已存在为目录时先删除再写入，保证替换结果与源形态一致
+  - **外置 combo 守护注入 / External combo daemon injection**：外置 MT6630 类 combo（需 wmt_loader + wmt_launcher 双守护）移植到 SoC 内置 CONSYS 方案（仅 wmt_loader）时，ramdisk 缺 wmt_launcher service 致守护永不启动、STP 通道未建、固件未加载、WiFi/BT 全挂；`__port_boot` 自动从底包正常 .rc 提取 wmt_launcher 完整 service 块、插入移植源 wmt_loader 后（已存在则跳过，排除 factory/meta），复用底包命令行
+  - **版本号 / Versioning**：按模块数规则，007 +2 模块（文件替换 / ramdisk 注入）→ 1.3.6.009
 - **1.3.6.007**（版本号体系变更 + 攒批治理 / versioning change + batched governance）
   - **版本号变更 / Versioning**：版本号由 `1.3-beta6p2` 切换为新格式 **`1.3.6.007`**（`x.y.z.ppp`——x.y=主版本、z=beta号、ppp=p号三位数，如 003=原 beta6p3）。**ppp 升号规则改为按本次修补模块数升**（修 N 个模块升 N），不再按发布次数 +1；本次 4 模块：configs 条目体系 / GUI 显示层 / 接口手册 / tkinter 懒加载
   - **移植条目拆分 / Item split**：与上游存在差异的条目拆为「上游定点」+「扩展」两条（mt6572 拆 gralloc/hwcomposer/malidriver/ril/firmware/mddb/libshowlogo 7 条、G79 拆 camera/malidriver/firmware/mddb/libshowlogo 5 条），扩展默认关，两条都勾 = 拆分前完整行为；**仅移植内核方案补回** `replace_firmware`/`replace_mddb`（对齐上游 kernel-only 行为）

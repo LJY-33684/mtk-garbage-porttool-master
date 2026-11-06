@@ -334,7 +334,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3.6.007'
+tool_author = 'affggh'; tool_version = '1.3.6.009'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -1526,6 +1526,90 @@ class portutils:
             except OSError as e:
                 print(f"  - 注入 cnfix 服务失败（{e}）", file=self.std)
 
+        # 连接架构适配：外置 combo（如 MT6630）需 wmt_launcher 经 /dev/stpwmt 建立 SDIO STP 通道、
+        # 从 /vendor/firmware 加载固件 patch 才能上电；SoC 内置 CONSYS 仅需 wmt_loader。
+        # 当底包=外置（ramdisk 含 wmt_launcher service）、移植源=内置（无该 service），且默认 replace_init=false
+        # 不移植连接性启动脚本时，wmt_launcher 二进制虽被 vendor/bin/wmt* 通配复制进 vendor/bin，却无 service 拉起，
+        # 外置芯片无法上电 → WiFi/BT/GPS/FM 全挂（实测 TCL T700X MT6750+MT6630 ← Sony XA tuba MT6755 CONSYS）。
+        # 此处补注 service：仅在底包有、移植源无时注入，内置↔内置 / 外置↔外置等正常移植无副作用。
+        if self._flag('replace_wifi') or self._flag('replace_bluetooth') or self._flag('replace_firmware'):
+            try:
+                b_initrd = basedir.joinpath("initrd")
+                p_initrd = portdir.joinpath("initrd")
+
+                # 正常开机加载的 .rc（排除 factory/meta 模式文件，其 launcher 块缺 class 且非开机路径）
+                def _rc_files(root):
+                    return [p for p in root.rglob("*.rc")
+                            if not op.basename(p).startswith(("factory_init", "meta_init"))]
+
+                # 定位指定 service 块，返回 (结束行索引, 块文本行)；未找到返回 None
+                def _find_service(text, svcname):
+                    lines = text.splitlines()
+                    i = 0
+                    while i < len(lines):
+                        if lines[i].strip().startswith("service "):
+                            parts = lines[i].split()
+                            name = parts[1] if len(parts) > 1 else ""
+                            j = i + 1
+                            while j < len(lines) and (lines[j][:1] in (" ", "\t") or lines[j].strip() == ""):
+                                j += 1
+                            if name == svcname:
+                                return j, lines[i:j]
+                            i = j
+                        else:
+                            i += 1
+                    return None
+
+                # 1) 从底包提取 wmt_launcher service 块（命令行/参数原样对齐底包）
+                launcher_blk = None
+                for brc in _rc_files(b_initrd):
+                    hit = _find_service(brc.read_text(encoding="utf-8", errors="ignore"), "wmt_launcher")
+                    if hit:
+                        launcher_blk = list(hit[1])
+                        break
+                if launcher_blk:
+                    # 2) 移植源已存在 wmt_launcher service 则不注入
+                    already = False
+                    for prc in _rc_files(p_initrd):
+                        if _find_service(prc.read_text(encoding="utf-8", errors="ignore"), "wmt_launcher"):
+                            already = True
+                            break
+                    if already:
+                        print("  - 移植源 ramdisk 已含 wmt_launcher 服务，无需注入", file=self.std)
+                    else:
+                        while launcher_blk and launcher_blk[-1].strip() == "":
+                            launcher_blk.pop()
+                        # 3) 定位移植源 wmt_loader service（命名可能为 wmt_loader/wmtLoader），在其后注入保证 loader 先、launcher 后
+                        target_rc = None
+                        insert_at = None
+                        p_lines = None
+                        for prc in _rc_files(p_initrd):
+                            text = prc.read_text(encoding="utf-8", errors="ignore")
+                            hit = None
+                            for cand in ("wmt_loader", "wmtLoader"):
+                                hit = _find_service(text, cand)
+                                if hit:
+                                    break
+                            if hit:
+                                target_rc, insert_at, p_lines = prc, hit[0], text.splitlines()
+                                break
+                        if target_rc is not None:
+                            new_lines = p_lines[:insert_at] + [""] + launcher_blk + [""] + p_lines[insert_at:]
+                            target_rc.write_text("\n".join(new_lines) + "\n", encoding="utf-8", newline='\n')
+                            print(f"  - 已向 {op.basename(target_rc)} 注入 wmt_launcher 服务（外置 combo 建 SDIO STP 通道/加载固件，对齐底包启动流程）", file=self.std)
+                        else:
+                            # 兜底：未找到 wmt_loader 则追加到根 init.rc（launcher 自带 power-on 重试，可等待驱动就绪）
+                            root_rc = p_initrd.joinpath("init.rc")
+                            if root_rc.is_file():
+                                with root_rc.open('a', encoding='utf-8', newline='\n') as f:
+                                    f.write("\n# MTK 移植工具注入：外置 combo wmt_launcher（未定位到 wmt_loader，兜底追加到根 init.rc）\n")
+                                    f.write("\n".join(launcher_blk) + "\n")
+                                print("  - 已向 init.rc 兜底追加 wmt_launcher 服务（未定位到 wmt_loader）", file=self.std)
+                            else:
+                                print("  - 跳过 wmt_launcher 注入（移植源 ramdisk 无 init.rc 兜底）", file=self.std)
+            except Exception as e:
+                print(f"  - 注入 wmt_launcher 服务失败（{e}），不阻断打包", file=self.std)
+
         # 重新打包镜像
         print(f"【打包{imgname}】正在重新打包移植后的{imgname}...", file=self.std)
         bootutil(str(port)).repack()
@@ -1594,6 +1678,10 @@ class portutils:
                             print(f"  - 替换通配目录 {file}", file=self.std)
                     else:
                         dst2.parent.mkdir(parents=True, exist_ok=True)
+                        # 类型对冲（同文件分支）：通配命中文件但 dst2 已存在为目录时，
+                        # 先移除目录再写文件，避免 Windows wb 打开目录 PermissionError
+                        if dst2.is_dir():
+                            _rmtree(dst2)
                         _clear_attrs(dst2)
                         dst2.write_bytes(src_file.read_bytes())
                         print(f"  - 替换通配文件 {file}", file=self.std)
@@ -1617,6 +1705,11 @@ class portutils:
                     print(f"  - 替换目录 {val}", file=self.std)
             elif src.is_file():
                 dst.parent.mkdir(parents=True, exist_ok=True)
+                # 类型对冲：src 为文件而 dst 已存在且为目录（如底包 mddb 为文件、移植源 mddb 为目录）
+                # 时，Windows 上以 wb 打开目录直接 PermissionError（1.3.6.007 实测崩溃）；
+                # 先移除目录再落文件，保证替换结果形态与 src 一致。
+                if dst.is_dir():
+                    _rmtree(dst)
                 _clear_attrs(dst)
                 dst.write_bytes(src.read_bytes())
                 print(f"  - 替换文件 {val}", file=self.std)
