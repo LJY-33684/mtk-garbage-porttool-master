@@ -61,11 +61,18 @@ def _show_already_running(pid, singleton):
     btns = ttk.Frame(root)
 
     def _jump():
+        # 只有跳转成功才关闭提示窗并退出本实例；失败时留在窗口里给出提示，
+        # 避免「点了跳转、本实例直接退出、已有窗口也没出来」的静默失效（§197-2）。
         try:
-            singleton.focus_window(pid)
-        finally:
-            # 无论跳转成功与否，都关闭提示窗并退出本实例，避免窗口残留
+            moved = bool(singleton.focus_window(pid))
+        except Exception:
+            moved = False
+        if moved:
             root.destroy()
+        else:
+            tip.config(text="未能定位到正在运行的窗口（可能已最小化或已退出）。\n"
+                            "可先手动切换过去，或点击「清除状态锁」后继续。")
+            tip.pack(pady=(0, 4))
 
     def _clear():
         # 若检测到仍有实例在运行：二次弹窗让用户确认是否强制清除
@@ -104,6 +111,36 @@ def _show_already_running(pid, singleton):
     root.geometry(f"+{x}+{y}")
     root.mainloop()
     return result["clear"]
+
+
+def _warn_config_degraded(root):
+    """配置未正常加载时显式告警。
+
+    GUI 模式下 stderr 不可见，只 print 等于静默降级——用户会拿着内嵌默认配置
+    跑移植却没有任何提示，最后表现为「怎么没换对文件」。
+    """
+    try:
+        from . import configs
+        state = getattr(configs, "CONFIG_LOAD_STATE", "file")
+        if state == "file":
+            return
+        import tkinter.messagebox as mb
+        if state == "embedded_fallback":
+            mb.showwarning(
+                "配置文件解析失败",
+                "configs.json 解析失败，本次已降级使用程序内嵌的默认配置。\n\n"
+                "内嵌默认已与 configs.json 保持同步，但仍建议修复该文件后重启：\n"
+                "常见原因是手动编辑时多了逗号、少了引号或括号不匹配。\n\n"
+                "错误信息：%s" % (getattr(configs, "CONFIG_LOAD_MESSAGE", "") or "未知"),
+                parent=root)
+        else:
+            mb.showinfo(
+                "已生成默认配置文件",
+                "未找到 configs.json，已按内嵌默认配置生成一份。\n"
+                "如需自定义移植方案，可编辑该文件后重新启动。",
+                parent=root)
+    except Exception:
+        pass
 
 
 def main():
@@ -150,4 +187,5 @@ def main():
     myapp.pack(side='top', fill='both', padx=5, pady=5, expand='yes')
 
     root.update()
+    _warn_config_degraded(root)
     root.mainloop()

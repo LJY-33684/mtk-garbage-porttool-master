@@ -12,25 +12,35 @@ support_chipset_portstep = {
     'mt6572/mt6582/mt6592 kernel-3.4.67': {
         'partitions': {
             'system': '/dev/block/mmcblk0p4',
-            'boot': '/dev/block/bootimg'
+            'boot': '/dev/block/bootimg',
         },
         'flags': {
+            'fix_storage': True,
+            'fix_storage_system': False,
+            'replace_wifi': False,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
             'generate_script': True,
             'replace_kernel': True,
             'replace_fstab': False,
             'selinux_permissive': True,
             'enable_adb': True,
             'replace_firmware': True,
+            'replace_firmware_ext': False,
             'replace_mddb': True,
-            'replace_malidriver': True,
+            'replace_mddb_ext': False,
+            'replace_malidriver': False,
+            'replace_malidriver_ext': False,
             'replace_audiodriver': False,
-            'replace_audiohal': False,
-            'replace_audioconf': False,
             'replace_libshowlogo': False,
+            'replace_libshowlogo_ext': False,
             'replace_mtk-kpd': True,
-            'replace_gralloc': True,
-            'replace_hwcomposer': True,
+            'replace_gralloc': False,
+            'replace_gralloc_ext': False,
+            'replace_hwcomposer': False,
+            'replace_hwcomposer_ext': False,
             'replace_ril': False,
+            'replace_ril_ext': False,
             'replace_sensors': False,
             'replace_gps': False,
             'replace_power': False,
@@ -43,37 +53,110 @@ support_chipset_portstep = {
             'change_model': True,
             'change_timezone': True,
             'change_locale': True,
-            'replace_wifi': False,
-            'fix_storage': True,
-            'fix_storage_system': False,
-            'use_custom_update-binary': True
+            'set_cn_servers': True,
+            'use_custom_update-binary': True,
         },
         'replace': {
             'kernel': [
-                'kernel'
+                'kernel',
+                'kernel.gz',
             ],
             'fstab': [
                 'initrd/fstab',
                 'initrd/fstab.mt6572',
                 'initrd/fstab.mt6582',
-                'initrd/fstab.mt6592'
+                'initrd/fstab.mt6592',
             ],
             'firmware': [
                 'etc/firmware',
-                'vendor/firmware'
             ],
             'mddb': [
                 'etc/mddb',
-                'vendor/etc/mddb'
             ],
             'malidriver': [
                 'lib/libMali.so',
-                'vendor/lib/libMali.so',
-                'vendor/lib/egl',
-                'vendor/lib/hw/vulkan.*',
-                'vendor/lib/libIMGegl.so',
-                'vendor/lib/libpvrANDROID_WSEGL.so',
-                'vendor/lib/libgpu_aux.so'
+            ],
+            'libshowlogo': [
+                'lib/libshowlogo.so',
+            ],
+            'mtk-kpd': [
+                'usr/keylayout/mtk-kpd.kl',
+            ],
+            'ril': [
+                'bin/ccci_fsd',
+                'bin/ccci_mdinit',
+                'bin/gsm0710muxd',
+                'bin/gsm0710muxdmd2',
+                'bin/rild',
+                'bin/rildmd2',
+                'lib/librilmtk.so',
+                'lib/librilmtkmd2.so',
+                'lib/librilutils.so',
+                'lib/mtk-ril.so',
+                'lib/mtk-rilmd2.so',
+            ],
+            'gralloc': [
+                'lib/hw/gralloc.mt6572.so',
+                'lib/hw/gralloc.mt6582.so',
+                'lib/hw/gralloc.mt6592.so',
+            ],
+            'hwcomposer': [
+                'lib/hw/hwcomposer.mt6572.so',
+                'lib/hw/hwcomposer.mt6582.so',
+                'lib/hw/hwcomposer.mt6592.so',
+            ],
+            'sensors': [
+                'lib/hw/sensors.*',
+                'lib64/hw/sensors.*',
+                'vendor/lib/hw/sensors.*',
+                'vendor/lib64/hw/sensors.*',
+                'vendor/lib/hw/lights.*',
+                'vendor/lib64/hw/lights.*',
+                'vendor/lib/libksensor.so',
+                'vendor/lib64/libksensor.so',
+                'vendor/lib/librgbwlightsensor.so',
+                'vendor/lib64/librgbwlightsensor.so',
+            ],
+            'gps': [
+                'lib/hw/gps.*',
+                'lib64/hw/gps.*',
+                'vendor/lib/hw/gps.*',
+                'vendor/lib64/hw/gps.*',
+                'vendor/etc/agps_profiles_conf2.xml',
+                'vendor/lib/libviagpsrpc.so',
+                'vendor/lib64/libviagpsrpc.so',
+            ],
+            'power': [
+                'lib/hw/power.*',
+                'lib64/hw/power.*',
+                'vendor/lib/hw/power.*',
+                'vendor/lib64/hw/power.*',
+            ],
+            'bluetooth': [
+                'lib/hw/bluetooth.*',
+                'lib64/hw/bluetooth.*',
+                'vendor/lib/libbluetooth_mtk.so',
+                'vendor/lib64/libbluetooth_mtk.so',
+                'vendor/lib/libbluetooth_mtk_pure.so',
+                'vendor/lib64/libbluetooth_mtk_pure.so',
+                'vendor/lib/libbt-vendor.so',
+                'vendor/lib64/libbt-vendor.so',
+                'vendor/lib/libbluetooth_relayer.so',
+                'vendor/lib64/libbluetooth_relayer.so',
+                'etc/bluetooth',
+            ],
+            'vibrator': [
+                'lib/hw/vibrator.*',
+                'vendor/lib/hw/vibrator.*',
+            ],
+            'thermal': [
+                'vendor/etc/.tp',
+            ],
+            'wifi': [
+                'bin/wpa_supplicant',
+                'bin/hostapd',
+                'bin/wpa_cli',
+                'etc/wifi',
             ],
             'audiohal': [
                 'lib/hw/audio.primary.*',
@@ -84,10 +167,10 @@ support_chipset_portstep = {
                 'vendor/etc/audio_effects.conf',
                 'vendor/etc/audio_policy.conf',
                 'vendor/etc/audio_param',
+                'vendor/etc/audio_device.xml',
                 'lib/hw/audio_policy.default.so',
                 'lib64/hw/audio_policy.default.so',
                 'etc/audio_policy.conf',
-                'vendor/etc/audio_device.xml',
             ],
             'audiodriver': [
                 'lib/libaudiocomp*',
@@ -110,35 +193,154 @@ support_chipset_portstep = {
                 'lib/libaudiotfa*',
                 'lib64/libaudiotfa*',
             ],
+            'gralloc_ext': [
+                'lib/hw/gralloc.*',
+                'lib64/hw/gralloc.*',
+                'vendor/lib/hw/gralloc.*',
+                'vendor/lib64/hw/gralloc.*',
+                'lib/libgralloc_extra.so',
+                'lib64/libgralloc_extra.so',
+                'vendor/lib/libgralloc_extra.so',
+                'vendor/lib64/libgralloc_extra.so',
+            ],
+            'hwcomposer_ext': [
+                'lib/hw/hwcomposer.*',
+                'lib64/hw/hwcomposer.*',
+                'vendor/lib/hw/hwcomposer.*',
+                'vendor/lib64/hw/hwcomposer.*',
+            ],
+            'malidriver_ext': [
+                'lib/egl',
+                'lib64/egl',
+                'vendor/lib/egl',
+                'vendor/lib64/egl',
+                'lib64/libMali.so',
+                'vendor/lib/libMali.so',
+                'vendor/lib64/libMali.so',
+                'lib/libgpu_aux.so',
+                'lib64/libgpu_aux.so',
+                'lib/libjni_eglfence.so',
+                'lib64/libjni_eglfence.so',
+                'lib/hw/vulkan.*',
+                'lib64/hw/vulkan.*',
+                'vendor/lib/hw/vulkan.*',
+                'vendor/lib64/hw/vulkan.*',
+            ],
+            'ril_ext': [
+                'vendor/bin/ccci_fsd',
+                'vendor/bin/ccci_mdinit',
+                'vendor/bin/gsm0710muxd',
+                'vendor/bin/rild',
+                'vendor/bin/mtkfusionrild',
+                'vendor/lib/librilmtk.so',
+                'vendor/lib/libmtk-ril.so',
+                'vendor/lib/librilfusion.so',
+                'vendor/lib/librilutilsmtk.so',
+                'vendor/lib/libccci_util.so',
+            ],
+            'firmware_ext': [
+                'vendor/firmware',
+            ],
+            'mddb_ext': [
+                'vendor/etc/mddb',
+            ],
+            'libshowlogo_ext': [
+                'vendor/lib/libshowlogo.so',
+            ],
+        },
+    },
+    'G79 (mt6735/mt6735m/mt6737) kernel-3.18.19': {
+        'partitions': {},
+        'flags': {
+            'replace_wifi': False,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
+            'generate_script': False,
+            'replace_kernel': True,
+            'replace_fstab': False,
+            'selinux_permissive': True,
+            'enable_adb': True,
+            'replace_firmware': True,
+            'replace_firmware_ext': False,
+            'replace_mddb': True,
+            'replace_mddb_ext': False,
+            'replace_malidriver': False,
+            'replace_malidriver_ext': False,
+            'replace_audiodriver': False,
+            'replace_libshowlogo': False,
+            'replace_libshowlogo_ext': False,
+            'replace_mtk-kpd': False,
+            'replace_gralloc': False,
+            'replace_hwcomposer': False,
+            'replace_ril': False,
+            'replace_sensors': False,
+            'replace_gps': False,
+            'replace_power': False,
+            'replace_bluetooth': False,
+            'replace_vibrator': False,
+            'replace_thermal': False,
+            'replace_camera': False,
+            'replace_camera_ext': False,
+            'replace_init': False,
+            'change_platform': False,
+            'single_simcard': False,
+            'dual_simcard': False,
+            'fit_density': True,
+            'change_model': True,
+            'change_timezone': True,
+            'change_locale': True,
+            'set_cn_servers': True,
+            'use_custom_update-binary': True,
+        },
+        'replace': {
+            'kernel': [
+                'kernel',
+                'kernel.gz',
+            ],
+            'fstab': [
+                'initrd/fstab',
+                'initrd/fstab.mt6735',
+                'initrd/fstab.mt6737',
+            ],
+            'init': [
+                'initrd/init.mt6735.rc',
+                'initrd/init.mt6737.rc',
+                'initrd/init.mt6735.usb.rc',
+                'initrd/init.project.rc',
+            ],
+            'firmware': [
+                'etc/firmware',
+            ],
+            'mddb': [
+                'etc/mddb',
+            ],
+            'malidriver': [
+                'lib/libMali.so',
+            ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
-                'vendor/lib/libshowlogo.so'
             ],
             'mtk-kpd': [
-                'usr/keylayout/mtk-kpd.kl'
+                'usr/keylayout/mtk-kpd.kl',
             ],
             'ril': [
                 'bin/ccci_fsd',
                 'bin/ccci_mdinit',
                 'bin/gsm0710muxd',
-                'bin/gsm0710muxdmd2',
                 'bin/rild',
-                'bin/rildmd2',
                 'vendor/bin/ccci_fsd',
                 'vendor/bin/ccci_mdinit',
                 'vendor/bin/gsm0710muxd',
                 'vendor/bin/rild',
                 'vendor/bin/mtkfusionrild',
                 'lib/librilmtk.so',
-                'lib/librilmtkmd2.so',
                 'lib/librilutils.so',
                 'lib/mtk-ril.so',
-                'lib/mtk-rilmd2.so',
                 'vendor/lib/librilmtk.so',
                 'vendor/lib/libmtk-ril.so',
                 'vendor/lib/librilfusion.so',
                 'vendor/lib/librilutilsmtk.so',
-                'vendor/lib/libccci_util.so'
+                'vendor/lib/libccci_util.so',
             ],
             'gralloc': [
                 'lib/hw/gralloc.*',
@@ -148,13 +350,13 @@ support_chipset_portstep = {
                 'lib/libgralloc_extra.so',
                 'lib64/libgralloc_extra.so',
                 'vendor/lib/libgralloc_extra.so',
-                'vendor/lib64/libgralloc_extra.so'
+                'vendor/lib64/libgralloc_extra.so',
             ],
             'hwcomposer': [
                 'lib/hw/hwcomposer.*',
                 'lib64/hw/hwcomposer.*',
                 'vendor/lib/hw/hwcomposer.*',
-                'vendor/lib64/hw/hwcomposer.*'
+                'vendor/lib64/hw/hwcomposer.*',
             ],
             'sensors': [
                 'lib/hw/sensors.*',
@@ -166,7 +368,7 @@ support_chipset_portstep = {
                 'vendor/lib/libksensor.so',
                 'vendor/lib64/libksensor.so',
                 'vendor/lib/librgbwlightsensor.so',
-                'vendor/lib64/librgbwlightsensor.so'
+                'vendor/lib64/librgbwlightsensor.so',
             ],
             'gps': [
                 'lib/hw/gps.*',
@@ -175,13 +377,13 @@ support_chipset_portstep = {
                 'vendor/lib64/hw/gps.*',
                 'vendor/etc/agps_profiles_conf2.xml',
                 'vendor/lib/libviagpsrpc.so',
-                'vendor/lib64/libviagpsrpc.so'
+                'vendor/lib64/libviagpsrpc.so',
             ],
             'power': [
                 'lib/hw/power.*',
                 'lib64/hw/power.*',
                 'vendor/lib/hw/power.*',
-                'vendor/lib64/hw/power.*'
+                'vendor/lib64/hw/power.*',
             ],
             'bluetooth': [
                 'lib/hw/bluetooth.*',
@@ -194,91 +396,42 @@ support_chipset_portstep = {
                 'vendor/lib64/libbt-vendor.so',
                 'vendor/lib/libbluetooth_relayer.so',
                 'vendor/lib64/libbluetooth_relayer.so',
-                'etc/bluetooth'
+                'etc/bluetooth',
             ],
             'vibrator': [
                 'lib/hw/vibrator.*',
-                'vendor/lib/hw/vibrator.*'
+                'vendor/lib/hw/vibrator.*',
             ],
             'thermal': [
-                'vendor/etc/.tp'
+                'vendor/etc/.tp',
             ],
             'wifi': [
-            'bin/wpa_supplicant',
-            'bin/hostapd',
-            'bin/wpa_cli',
-            'etc/wifi'
-        ],        }
-    },
-    'G79 (mt6735/mt6735m/mt6737) kernel-3.18.19': {
-        'partitions': {
-        },
-        'flags': {
-            'generate_script': False,
-            'replace_kernel': True,
-            'replace_fstab': False,
-            'selinux_permissive': True,
-            'enable_adb': True,
-            'replace_firmware': True,
-            'replace_mddb': True,
-            'replace_malidriver': False,
-            'replace_audiodriver': False,
-            'replace_audiohal': False,
-            'replace_audioconf': False,
-            'replace_libshowlogo': False,
-            'replace_mtk-kpd': False,
-            'replace_gralloc': True,
-            'replace_hwcomposer': True,
-            'replace_ril': False,
-            'replace_sensors': False,
-            'replace_gps': False,
-            'replace_power': False,
-            'replace_bluetooth': False,
-            'replace_vibrator': False,
-            'replace_thermal': False,
-            'replace_wifi': False,
-            'replace_camera': False,
-            'replace_init': False,
-            'change_platform': False,
-            'single_simcard': False,
-            'dual_simcard': False,
-            'fit_density': True,
-            'change_model': True,
-            'change_timezone': True,
-            'change_locale': True,
-            'use_custom_update-binary': True
-        },
-        'replace': {
-            'kernel': [
-                'kernel'
+                'bin/hostap',
+                'bin/hostapd',
+                'bin/hostapd_bin',
+                'bin/wlan*',
+                'bin/wpa*',
+                'lib/libhardware_legacy.so',
+                'etc/wifi/wpa_supplicant.conf',
+                'etc/wifi/p2p_supplicant.conf',
+                'vendor/firmware/wifi*',
+                'vendor/firmware/WIFI*',
+                'vendor/bin/netdiag',
             ],
-            'fstab': [
-                'initrd/fstab',
-                'initrd/fstab.mt6735',
-                'initrd/fstab.mt6737'
-            ],
-            'init': [
-            'initrd/init.mt6735.rc',
-            'initrd/init.mt6737.rc',
-            'initrd/init.mt6735.usb.rc',
-            'initrd/init.project.rc'
-        ],
-            'firmware': [
-                'etc/firmware',
-                'vendor/firmware'
-            ],
-            'mddb': [
-                'etc/mddb',
-                'vendor/etc/mddb'
-            ],
-            'malidriver': [
-                'lib/libMali.so',
-                'vendor/lib/libMali.so',
-                'vendor/lib/egl',
-                'vendor/lib/hw/vulkan.*',
-                'vendor/lib/libIMGegl.so',
-                'vendor/lib/libpvrANDROID_WSEGL.so',
-                'vendor/lib/libgpu_aux.so'
+            'camera': [
+                'lib/lib3a.so',
+                'lib/libcamalgo.so',
+                'lib/libcamdrv.so',
+                'lib/libcameracustom.so',
+                'lib/libfeatureio.so',
+                'lib/libimageio.so',
+                'lib/libimageio_plat_drv.so',
+                'lib/libJpgDecPipe.so',
+                'lib/libJpgEncPipe.so',
+                'lib/libmhalImageCodec.so',
+                'lib/libmtkcamera_client.so',
+                'lib/libmtkjpeg.so',
+                'lib/libcam.paramsmgr.so',
             ],
             'audiohal': [
                 'lib/hw/audio.primary.*',
@@ -308,150 +461,30 @@ support_chipset_portstep = {
                 'lib/libaudioparam*',
                 'lib64/libaudioparam*',
                 'vendor/lib/libaudioparam*',
+                'vendor/lib64/libaudioparam*',
                 'etc/tfa*',
                 'lib/libtfa*',
                 'lib64/libtfa*',
                 'vendor/lib/libtfa*',
                 'vendor/lib64/libtfa*',
                 'lib/libaudiotfa*',
-                'vendor/lib64/libaudioparam*',
                 'lib64/libaudiotfa*',
             ],
-            'libshowlogo': [
-                'lib/libshowlogo.so',
-                'vendor/lib/libshowlogo.so'
-            ],
-            'mtk-kpd': [
-                'usr/keylayout/mtk-kpd.kl'
-            ],
-            'ril': [
-                'bin/ccci_fsd',
-                'bin/ccci_mdinit',
-                'bin/gsm0710muxd',
-                'bin/rild',
-                'vendor/bin/ccci_fsd',
-                'vendor/bin/ccci_mdinit',
-                'vendor/bin/gsm0710muxd',
-                'vendor/bin/rild',
-                'vendor/bin/mtkfusionrild',
-                'lib/librilmtk.so',
-                'lib/librilutils.so',
-                'lib/mtk-ril.so',
-                'vendor/lib/librilmtk.so',
-                'vendor/lib/libmtk-ril.so',
-                'vendor/lib/librilfusion.so',
-                'vendor/lib/librilutilsmtk.so',
-                'vendor/lib/libccci_util.so'
-            ],
-            'gralloc': [
-                'lib/hw/gralloc.*',
-                'lib64/hw/gralloc.*',
-                'vendor/lib/hw/gralloc.*',
-                'vendor/lib64/hw/gralloc.*',
-                'lib/libgralloc_extra.so',
-                'lib64/libgralloc_extra.so',
-                'vendor/lib/libgralloc_extra.so',
-                'vendor/lib64/libgralloc_extra.so'
-            ],
-            'hwcomposer': [
-                'lib/hw/hwcomposer.*',
-                'lib64/hw/hwcomposer.*',
-                'vendor/lib/hw/hwcomposer.*',
-                'vendor/lib64/hw/hwcomposer.*'
-            ],
-            'sensors': [
-                'lib/hw/sensors.*',
-                'lib64/hw/sensors.*',
-                'vendor/lib/hw/sensors.*',
-                'vendor/lib64/hw/sensors.*',
-                'vendor/lib/hw/lights.*',
-                'vendor/lib64/hw/lights.*',
-                'vendor/lib/libksensor.so',
-                'vendor/lib64/libksensor.so',
-                'vendor/lib/librgbwlightsensor.so',
-                'vendor/lib64/librgbwlightsensor.so'
-            ],
-            'gps': [
-                'lib/hw/gps.*',
-                'lib64/hw/gps.*',
-                'vendor/lib/hw/gps.*',
-                'vendor/lib64/hw/gps.*',
-                'vendor/etc/agps_profiles_conf2.xml',
-                'vendor/lib/libviagpsrpc.so',
-                'vendor/lib64/libviagpsrpc.so'
-            ],
-            'power': [
-                'lib/hw/power.*',
-                'lib64/hw/power.*',
-                'vendor/lib/hw/power.*',
-                'vendor/lib64/hw/power.*'
-            ],
-            'bluetooth': [
-                'lib/hw/bluetooth.*',
-                'lib64/hw/bluetooth.*',
-                'vendor/lib/libbluetooth_mtk.so',
-                'vendor/lib64/libbluetooth_mtk.so',
-                'vendor/lib/libbluetooth_mtk_pure.so',
-                'vendor/lib64/libbluetooth_mtk_pure.so',
-                'vendor/lib/libbt-vendor.so',
-                'vendor/lib64/libbt-vendor.so',
-                'vendor/lib/libbluetooth_relayer.so',
-                'vendor/lib64/libbluetooth_relayer.so',
-                'etc/bluetooth'
-            ],
-            'vibrator': [
-                'lib/hw/vibrator.*',
-                'vendor/lib/hw/vibrator.*'
-            ],
-            'thermal': [
-                'vendor/etc/.tp'
-            ],
-            'wifi': [
-            'bin/netcfg',
-            'bin/dhcpcd',
-            'bin/ifconfig',
-            'bin/hostap',
-            'bin/hostapd',
-            'bin/hostapd_bin',
-            'bin/pcscd',
-            'bin/wlan*',
-            'bin/wpa*',
-            'bin/netd',
-            'lib/libhardware_legacy.so',
-            'etc/wifi/wpa_supplicant.conf',
-            'etc/wifi/p2p_supplicant.conf',
-            'vendor/firmware/wifi*',
-            'vendor/firmware/WIFI*',
-            'vendor/bin/netdiag'
-        ],
-            'camera': [
+            'camera_ext': [
                 'lib/hw/camera.*',
                 'lib64/hw/camera.*',
-                'lib/lib3a.so',
                 'lib64/lib3a.so',
-                'lib/libcamalgo.so',
                 'lib64/libcamalgo.so',
-                'lib/libcamdrv.so',
                 'lib64/libcamdrv.so',
-                'lib/libcameracustom.so',
                 'lib64/libcameracustom.so',
-                'lib/libfeatureio.so',
                 'lib64/libfeatureio.so',
-                'lib/libimageio.so',
                 'lib64/libimageio.so',
-                'lib/libimageio_plat_drv.so',
                 'lib64/libimageio_plat_drv.so',
-                'lib/libJpgDecPipe.so',
                 'lib64/libJpgDecPipe.so',
-                'lib/libJpgEncPipe.so',
                 'lib64/libJpgEncPipe.so',
-                'lib/libmhalImageCodec.so',
                 'lib64/libmhalImageCodec.so',
-                'lib/libmtkcamera_client.so',
                 'lib64/libmtkcamera_client.so',
-                'lib/libmtkjpeg.so',
                 'lib64/libmtkjpeg.so',
-                'lib/libcam.paramsmgr.so',
                 'lib64/libcam.paramsmgr.so',
                 'vendor/lib/hw/camera.*',
                 'vendor/lib64/hw/camera.*',
@@ -510,14 +543,42 @@ support_chipset_portstep = {
                 'vendor/lib/libfeatureiodrv.so',
                 'vendor/lib64/libfeatureiodrv.so',
                 'vendor/lib/libSwJpgCodec.so',
-                'vendor/lib64/libSwJpgCodec.so'
-            ]
-        }
+                'vendor/lib64/libSwJpgCodec.so',
+            ],
+            'malidriver_ext': [
+                'lib/egl',
+                'lib64/egl',
+                'vendor/lib/egl',
+                'vendor/lib64/egl',
+                'lib64/libMali.so',
+                'vendor/lib/libMali.so',
+                'vendor/lib64/libMali.so',
+                'lib/libgpu_aux.so',
+                'lib64/libgpu_aux.so',
+                'lib/libjni_eglfence.so',
+                'lib64/libjni_eglfence.so',
+                'lib/hw/vulkan.*',
+                'lib64/hw/vulkan.*',
+                'vendor/lib/hw/vulkan.*',
+                'vendor/lib64/hw/vulkan.*',
+            ],
+            'firmware_ext': [
+                'vendor/firmware',
+            ],
+            'mddb_ext': [
+                'vendor/etc/mddb',
+            ],
+            'libshowlogo_ext': [
+                'vendor/lib/libshowlogo.so',
+            ],
+        },
     },
     'mt6580/mt8321 (通用, Android 5.1-7.1.2)': {
-        'partitions': {
-        },
+        'partitions': {},
         'flags': {
+            'replace_wifi': False,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
             'generate_script': False,
             'replace_kernel': True,
             'replace_fstab': False,
@@ -525,14 +586,12 @@ support_chipset_portstep = {
             'enable_adb': True,
             'replace_firmware': True,
             'replace_mddb': True,
-            'replace_malidriver': True,
+            'replace_malidriver': False,
             'replace_audiodriver': False,
-            'replace_audiohal': False,
-            'replace_audioconf': False,
             'replace_libshowlogo': False,
             'replace_mtk-kpd': False,
-            'replace_gralloc': True,
-            'replace_hwcomposer': True,
+            'replace_gralloc': False,
+            'replace_hwcomposer': False,
             'replace_ril': False,
             'replace_sensors': False,
             'replace_gps': False,
@@ -540,81 +599,57 @@ support_chipset_portstep = {
             'replace_bluetooth': False,
             'replace_vibrator': False,
             'replace_thermal': False,
+            'replace_camera': False,
             'single_simcard': False,
             'dual_simcard': False,
             'fit_density': True,
             'change_model': True,
             'change_timezone': True,
             'change_locale': True,
-            'replace_wifi': False,
-            'use_custom_update-binary': True
+            'set_cn_servers': True,
+            'use_custom_update-binary': True,
         },
         'replace': {
             'kernel': [
-                'kernel'
+                'kernel',
+                'kernel.gz',
             ],
             'fstab': [
                 'initrd/fstab',
-                'initrd/fstab.mt6580'
+                'initrd/fstab.mt6580',
             ],
             'firmware': [
                 'etc/firmware',
-                'vendor/firmware'
+                'vendor/firmware',
             ],
             'mddb': [
                 'etc/mddb',
-                'vendor/etc/mddb'
+                'vendor/etc/mddb',
             ],
             'malidriver': [
-                'lib/libMali.so',
-                'vendor/lib/libMali.so',
+                'lib/egl',
+                'lib64/egl',
                 'vendor/lib/egl',
+                'vendor/lib64/egl',
+                'lib/libMali.so',
+                'lib64/libMali.so',
+                'vendor/lib/libMali.so',
+                'vendor/lib64/libMali.so',
+                'lib/libgpu_aux.so',
+                'lib64/libgpu_aux.so',
+                'lib/libjni_eglfence.so',
+                'lib64/libjni_eglfence.so',
+                'lib/hw/vulkan.*',
+                'lib64/hw/vulkan.*',
                 'vendor/lib/hw/vulkan.*',
-                'vendor/lib/libIMGegl.so',
-                'vendor/lib/libpvrANDROID_WSEGL.so',
-                'vendor/lib/libgpu_aux.so'
-            ],
-            'audiohal': [
-                'lib/hw/audio.primary.*',
-                'vendor/lib/hw/audio.primary.*',
-            ],
-            'audioconf': [
-                'etc/audio_effects.conf',
-                'vendor/etc/audio_effects.conf',
-                'vendor/etc/audio_policy.conf',
-                'vendor/etc/audio_param',
-                'lib/hw/audio_policy.default.so',
-                'lib64/hw/audio_policy.default.so',
-                'etc/audio_policy.conf',
-                'vendor/etc/audio_device.xml',
-            ],
-            'audiodriver': [
-                'lib/libaudiocomp*',
-                'lib64/libaudiocomp*',
-                'vendor/lib/libaudiocomp*',
-                'vendor/lib64/libaudiocomp*',
-                'lib/libaudioroute*',
-                'lib64/libaudioroute*',
-                'vendor/lib/libaudioroute*',
-                'vendor/lib64/libaudioroute*',
-                'lib/libaudioparam*',
-                'lib64/libaudioparam*',
-                'vendor/lib/libaudioparam*',
-                'vendor/lib64/libaudioparam*',
-                'etc/tfa*',
-                'lib/libtfa*',
-                'lib64/libtfa*',
-                'vendor/lib/libtfa*',
-                'vendor/lib64/libtfa*',
-                'lib/libaudiotfa*',
-                'lib64/libaudiotfa*',
+                'vendor/lib64/hw/vulkan.*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
-                'vendor/lib/libshowlogo.so'
+                'vendor/lib/libshowlogo.so',
             ],
             'mtk-kpd': [
-                'usr/keylayout/mtk-kpd.kl'
+                'usr/keylayout/mtk-kpd.kl',
             ],
             'ril': [
                 'bin/ccci_fsd',
@@ -625,7 +660,7 @@ support_chipset_portstep = {
                 'lib/librilmtk.so',
                 'lib/librilutils.so',
                 'lib/mtk-ril.so',
-                'vendor/lib/libccci_util.so'
+                'vendor/lib/libccci_util.so',
             ],
             'gralloc': [
                 'lib/hw/gralloc.*',
@@ -635,13 +670,13 @@ support_chipset_portstep = {
                 'lib/libgralloc_extra.so',
                 'lib64/libgralloc_extra.so',
                 'vendor/lib/libgralloc_extra.so',
-                'vendor/lib64/libgralloc_extra.so'
+                'vendor/lib64/libgralloc_extra.so',
             ],
             'hwcomposer': [
                 'lib/hw/hwcomposer.*',
                 'lib64/hw/hwcomposer.*',
                 'vendor/lib/hw/hwcomposer.*',
-                'vendor/lib64/hw/hwcomposer.*'
+                'vendor/lib64/hw/hwcomposer.*',
             ],
             'sensors': [
                 'lib/hw/sensors.*',
@@ -653,7 +688,7 @@ support_chipset_portstep = {
                 'vendor/lib/libksensor.so',
                 'vendor/lib64/libksensor.so',
                 'vendor/lib/librgbwlightsensor.so',
-                'vendor/lib64/librgbwlightsensor.so'
+                'vendor/lib64/librgbwlightsensor.so',
             ],
             'gps': [
                 'lib/hw/gps.*',
@@ -662,27 +697,27 @@ support_chipset_portstep = {
                 'vendor/lib64/hw/gps.*',
                 'vendor/etc/agps_profiles_conf2.xml',
                 'vendor/lib/libviagpsrpc.so',
-                'vendor/lib64/libviagpsrpc.so'
+                'vendor/lib64/libviagpsrpc.so',
             ],
             'power': [
                 'lib/hw/power.*',
                 'lib64/hw/power.*',
                 'vendor/lib/hw/power.*',
-                'vendor/lib64/hw/power.*'
+                'vendor/lib64/hw/power.*',
             ],
             'bluetooth': [
                 'lib/hw/bluetooth.*',
                 'vendor/lib/libbluetooth_mtk.so',
                 'vendor/lib/libbt-vendor.so',
                 'vendor/lib/libbluetooth_relayer.so',
-                'etc/bluetooth'
+                'etc/bluetooth',
             ],
             'vibrator': [
                 'lib/hw/vibrator.*',
-                'vendor/lib/hw/vibrator.*'
+                'vendor/lib/hw/vibrator.*',
             ],
             'thermal': [
-                'vendor/etc/.tp'
+                'vendor/etc/.tp',
             ],
             'camera': [
                 'lib/hw/camera.*',
@@ -695,92 +730,27 @@ support_chipset_portstep = {
                 'lib/libJpgDecPipe.so',
                 'lib/libJpgEncPipe.so',
                 'lib/libmtkjpeg.so',
-                'vendor/lib/hw/camera.*'
+                'vendor/lib/hw/camera.*',
             ],
             'wifi': [
-            'bin/wpa_supplicant',
-            'bin/hostapd',
-            'bin/wpa_cli',
-            'etc/wifi'
-        ],        }
-    },
-    'mt8163/mt8127/mt8167 (平板, Android 5.1-7.1.2)': {
-        'partitions': {
-        },
-        'flags': {
-            'generate_script': False,
-            'replace_kernel': True,
-            'replace_fstab': False,
-            'selinux_permissive': True,
-            'enable_adb': True,
-            'replace_firmware': True,
-            'replace_mddb': True,
-            'replace_malidriver': True,
-            'replace_audiodriver': False,
-            'replace_audiohal': False,
-            'replace_audioconf': False,
-            'replace_libshowlogo': False,
-            'replace_mtk-kpd': False,
-            'replace_gralloc': True,
-            'replace_hwcomposer': True,
-            'replace_ril': False,
-            'replace_sensors': False,
-            'replace_gps': False,
-            'replace_power': False,
-            'replace_bluetooth': False,
-            'replace_vibrator': False,
-            'replace_thermal': False,
-            'replace_wifi': True,
-            'replace_camera': True,
-            'change_platform': False,
-            'single_simcard': False,
-            'dual_simcard': False,
-            'fit_density': True,
-            'change_model': True,
-            'change_timezone': True,
-            'change_locale': True,
-            'use_custom_update-binary': True
-        },
-        'replace': {
-            'kernel': [
-                'kernel'
-            ],
-        'fstab': [
-                'initrd/fstab',
-                'initrd/fstab.mt8163',
-                'initrd/fstab.mt8127',
-                'initrd/fstab.mt8167'
-            ],
-            'firmware': [
-                'etc/firmware',
-                'vendor/firmware'
-            ],
-            'mddb': [
-                'etc/mddb',
-                'vendor/etc/mddb'
-            ],
-            'malidriver': [
-                'lib/libMali.so',
-                'vendor/lib/libMali.so',
-                'vendor/lib/egl',
-                'lib/egl',
-                'vendor/lib/hw/vulkan.*'
+                'bin/wpa_supplicant',
+                'bin/hostapd',
+                'bin/wpa_cli',
+                'etc/wifi',
             ],
             'audiohal': [
                 'lib/hw/audio.primary.*',
-                'lib64/hw/audio.primary.*',
                 'vendor/lib/hw/audio.primary.*',
-                'vendor/lib64/hw/audio.primary.*',
             ],
             'audioconf': [
-                'lib/hw/audio_policy.default.so',
-                'lib64/hw/audio_policy.default.so',
                 'etc/audio_effects.conf',
                 'vendor/etc/audio_effects.conf',
                 'vendor/etc/audio_policy.conf',
                 'vendor/etc/audio_param',
-                'etc/audio_policy.conf',
                 'vendor/etc/audio_device.xml',
+                'lib/hw/audio_policy.default.so',
+                'lib64/hw/audio_policy.default.so',
+                'etc/audio_policy.conf',
             ],
             'audiodriver': [
                 'lib/libaudiocomp*',
@@ -794,21 +764,95 @@ support_chipset_portstep = {
                 'lib/libaudioparam*',
                 'lib64/libaudioparam*',
                 'vendor/lib/libaudioparam*',
+                'vendor/lib64/libaudioparam*',
                 'etc/tfa*',
                 'lib/libtfa*',
                 'lib64/libtfa*',
                 'vendor/lib/libtfa*',
                 'vendor/lib64/libtfa*',
                 'lib/libaudiotfa*',
-                'vendor/lib64/libaudioparam*',
                 'lib64/libaudiotfa*',
+            ],
+        },
+    },
+    'mt8163/mt8127/mt8167 (平板, Android 5.1-7.1.2)': {
+        'partitions': {},
+        'flags': {
+            'replace_wifi': True,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
+            'generate_script': False,
+            'replace_kernel': True,
+            'replace_fstab': False,
+            'selinux_permissive': True,
+            'enable_adb': True,
+            'replace_firmware': True,
+            'replace_mddb': True,
+            'replace_malidriver': False,
+            'replace_audiodriver': False,
+            'replace_libshowlogo': False,
+            'replace_mtk-kpd': False,
+            'replace_gralloc': False,
+            'replace_hwcomposer': False,
+            'replace_sensors': False,
+            'replace_power': False,
+            'replace_bluetooth': False,
+            'replace_vibrator': False,
+            'replace_thermal': False,
+            'replace_camera': True,
+            'change_platform': False,
+            'single_simcard': False,
+            'dual_simcard': False,
+            'fit_density': True,
+            'change_model': True,
+            'change_timezone': True,
+            'change_locale': True,
+            'set_cn_servers': True,
+            'use_custom_update-binary': True,
+        },
+        'replace': {
+            'kernel': [
+                'kernel',
+                'kernel.gz',
+            ],
+            'fstab': [
+                'initrd/fstab',
+                'initrd/fstab.mt8163',
+                'initrd/fstab.mt8127',
+                'initrd/fstab.mt8167',
+            ],
+            'firmware': [
+                'etc/firmware',
+                'vendor/firmware',
+            ],
+            'mddb': [
+                'etc/mddb',
+                'vendor/etc/mddb',
+            ],
+            'malidriver': [
+                'lib/egl',
+                'lib64/egl',
+                'vendor/lib/egl',
+                'vendor/lib64/egl',
+                'lib/libMali.so',
+                'lib64/libMali.so',
+                'vendor/lib/libMali.so',
+                'vendor/lib64/libMali.so',
+                'lib/libgpu_aux.so',
+                'lib64/libgpu_aux.so',
+                'lib/libjni_eglfence.so',
+                'lib64/libjni_eglfence.so',
+                'lib/hw/vulkan.*',
+                'lib64/hw/vulkan.*',
+                'vendor/lib/hw/vulkan.*',
+                'vendor/lib64/hw/vulkan.*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
-                'vendor/lib/libshowlogo.so'
+                'vendor/lib/libshowlogo.so',
             ],
             'mtk-kpd': [
-                'usr/keylayout/mtk-kpd.kl'
+                'usr/keylayout/mtk-kpd.kl',
             ],
             'gralloc': [
                 'lib/hw/gralloc.*',
@@ -818,43 +862,43 @@ support_chipset_portstep = {
                 'lib/libgralloc_extra.so',
                 'lib64/libgralloc_extra.so',
                 'vendor/lib/libgralloc_extra.so',
-                'vendor/lib64/libgralloc_extra.so'
+                'vendor/lib64/libgralloc_extra.so',
             ],
             'hwcomposer': [
                 'lib/hw/hwcomposer.*',
                 'lib64/hw/hwcomposer.*',
                 'vendor/lib/hw/hwcomposer.*',
-                'vendor/lib64/hw/hwcomposer.*'
+                'vendor/lib64/hw/hwcomposer.*',
             ],
             'sensors': [
                 'lib/hw/sensors.*',
                 'vendor/lib/hw/sensors.*',
-                'vendor/lib/hw/lights.*'
+                'vendor/lib/hw/lights.*',
             ],
             'power': [
                 'lib/hw/power.*',
-                'vendor/lib/hw/power.*'
+                'vendor/lib/hw/power.*',
             ],
             'bluetooth': [
                 'lib/hw/bluetooth.*',
                 'vendor/lib/libbluetooth_mtk.so',
                 'vendor/lib/libbt-vendor.so',
-                'etc/bluetooth'
+                'etc/bluetooth',
             ],
             'vibrator': [
                 'lib/hw/vibrator.*',
-                'vendor/lib/hw/vibrator.*'
+                'vendor/lib/hw/vibrator.*',
             ],
             'thermal': [
-                'vendor/etc/.tp'
+                'vendor/etc/.tp',
             ],
             'wifi': [
-            'etc/wifi/wpa_supplicant.conf',
-            'etc/wifi/p2p_supplicant.conf',
-            'vendor/etc/wifi',
-            'vendor/firmware/wifi*',
-            'vendor/firmware/WIFI*'
-        ],
+                'etc/wifi/wpa_supplicant.conf',
+                'etc/wifi/p2p_supplicant.conf',
+                'vendor/etc/wifi',
+                'vendor/firmware/wifi*',
+                'vendor/firmware/WIFI*',
+            ],
             'camera': [
                 'lib/hw/camera.*',
                 'lib64/hw/camera.*',
@@ -873,84 +917,7 @@ support_chipset_portstep = {
                 'lib/libmtkjpeg.so',
                 'lib64/libmtkjpeg.so',
                 'vendor/lib/hw/camera.*',
-                'vendor/lib64/hw/camera.*'
-            ]
-        }
-    },
-    'mt6797 (Helio X20/X25) kernel-3.18 (Android 5.1-7.1.2)': {
-        'partitions': {
-        },
-        'flags': {
-            'generate_script': False,
-            'replace_kernel': True,
-            'replace_fstab': True,
-            'replace_init': True,
-            'selinux_permissive': True,
-            'enable_adb': True,
-            'replace_firmware': True,
-            'replace_mddb': True,
-            'replace_malidriver': True,
-            'replace_audiodriver': False,
-            'replace_audiohal': False,
-            'replace_audioconf': False,
-            'replace_libshowlogo': False,
-            'replace_mtk-kpd': False,
-            'replace_gralloc': True,
-            'replace_hwcomposer': True,
-            'replace_ril': False,
-            'replace_sensors': False,
-            'replace_gps': False,
-            'replace_power': False,
-            'replace_bluetooth': False,
-            'replace_vibrator': False,
-            'replace_thermal': False,
-            'replace_wifi': True,
-            'replace_camera': True,
-            'change_platform': True,
-            'single_simcard': False,
-            'dual_simcard': False,
-            'fit_density': True,
-            'change_model': True,
-            'change_timezone': True,
-            'change_locale': True,
-            'use_custom_update-binary': True
-        },
-        'replace': {
-            'kernel': [
-                'kernel',
-                'kernel.gz'
-            ],
-            'fstab': [
-                'initrd/fstab',
-                'initrd/fstab.mt6797'
-            ],
-            'init': [
-            'initrd/init.mt6797.rc',
-            'initrd/init.mt6797.usb.rc',
-            'initrd/init.project.rc',
-            'initrd/init.target.performance.rc'
-        ],
-            'firmware': [
-                'etc/firmware',
-                'vendor/firmware'
-            ],
-            'mddb': [
-                'etc/mddb',
-                'vendor/etc/mddb'
-            ],
-            'malidriver': [
-                'lib/libMali.so',
-                'vendor/lib/libMali.so',
-                'lib/libGLES_mali.so',
-                'lib64/libGLES_mali.so',
-                'vendor/lib/libGLES_mali.so',
-                'vendor/lib64/libGLES_mali.so',
-                'lib/egl',
-                'lib64/egl',
-                'vendor/lib/egl',
-                'vendor/lib64/egl',
-                'vendor/lib/hw/vulkan.*',
-                'vendor/lib64/hw/vulkan.*'
+                'vendor/lib64/hw/camera.*',
             ],
             'audiohal': [
                 'lib/hw/audio.primary.*',
@@ -963,10 +930,10 @@ support_chipset_portstep = {
                 'lib64/hw/audio_policy.default.so',
                 'etc/audio_effects.conf',
                 'vendor/etc/audio_effects.conf',
-                'etc/audio_policy.conf',
                 'vendor/etc/audio_policy.conf',
                 'vendor/etc/audio_param',
                 'vendor/etc/audio_device.xml',
+                'etc/audio_policy.conf',
             ],
             'audiodriver': [
                 'lib/libaudiocomp*',
@@ -980,23 +947,104 @@ support_chipset_portstep = {
                 'lib/libaudioparam*',
                 'lib64/libaudioparam*',
                 'vendor/lib/libaudioparam*',
+                'vendor/lib64/libaudioparam*',
                 'etc/tfa*',
                 'lib/libtfa*',
                 'lib64/libtfa*',
                 'vendor/lib/libtfa*',
                 'vendor/lib64/libtfa*',
                 'lib/libaudiotfa*',
-                'vendor/lib64/libaudioparam*',
                 'lib64/libaudiotfa*',
+            ],
+        },
+    },
+    'mt6797 (Helio X20/X25) kernel-3.18 (Android 5.1-7.1.2)': {
+        'partitions': {},
+        'flags': {
+            'replace_wifi': True,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
+            'generate_script': False,
+            'replace_kernel': True,
+            'replace_fstab': True,
+            'replace_init': True,
+            'selinux_permissive': True,
+            'enable_adb': True,
+            'replace_firmware': True,
+            'replace_mddb': True,
+            'replace_malidriver': False,
+            'replace_audiodriver': False,
+            'replace_libshowlogo': False,
+            'replace_mtk-kpd': False,
+            'replace_gralloc': False,
+            'replace_hwcomposer': False,
+            'replace_ril': False,
+            'replace_sensors': False,
+            'replace_gps': False,
+            'replace_power': False,
+            'replace_bluetooth': False,
+            'replace_vibrator': False,
+            'replace_thermal': False,
+            'replace_camera': True,
+            'change_platform': True,
+            'single_simcard': False,
+            'dual_simcard': False,
+            'fit_density': True,
+            'change_model': True,
+            'change_timezone': True,
+            'change_locale': True,
+            'set_cn_servers': True,
+            'use_custom_update-binary': True,
+        },
+        'replace': {
+            'kernel': [
+                'kernel',
+                'kernel.gz',
+            ],
+            'fstab': [
+                'initrd/fstab',
+                'initrd/fstab.mt6797',
+            ],
+            'init': [
+                'initrd/init.mt6797.rc',
+                'initrd/init.mt6797.usb.rc',
+                'initrd/init.project.rc',
+                'initrd/init.target.performance.rc',
+            ],
+            'firmware': [
+                'etc/firmware',
+                'vendor/firmware',
+            ],
+            'mddb': [
+                'etc/mddb',
+                'vendor/etc/mddb',
+            ],
+            'malidriver': [
+                'lib/egl',
+                'lib64/egl',
+                'vendor/lib/egl',
+                'vendor/lib64/egl',
+                'lib/libMali.so',
+                'lib64/libMali.so',
+                'vendor/lib/libMali.so',
+                'vendor/lib64/libMali.so',
+                'lib/libgpu_aux.so',
+                'lib64/libgpu_aux.so',
+                'lib/libjni_eglfence.so',
+                'lib64/libjni_eglfence.so',
+                'lib/hw/vulkan.*',
+                'lib64/hw/vulkan.*',
+                'vendor/lib/hw/vulkan.*',
+                'vendor/lib64/hw/vulkan.*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
                 'lib64/libshowlogo.so',
                 'vendor/lib/libshowlogo.so',
-                'vendor/lib64/libshowlogo.so'
+                'vendor/lib64/libshowlogo.so',
             ],
             'mtk-kpd': [
-                'usr/keylayout/mtk-kpd.kl'
+                'usr/keylayout/mtk-kpd.kl',
             ],
             'ril': [
                 'bin/ccci_fsd',
@@ -1023,7 +1071,7 @@ support_chipset_portstep = {
                 'vendor/lib64/libmtk-ril.so',
                 'vendor/lib64/librilfusion.so',
                 'vendor/lib64/librilutilsmtk.so',
-                'vendor/lib64/libccci_util.so'
+                'vendor/lib64/libccci_util.so',
             ],
             'gralloc': [
                 'lib/hw/gralloc.*',
@@ -1033,13 +1081,13 @@ support_chipset_portstep = {
                 'lib/libgralloc_extra.so',
                 'lib64/libgralloc_extra.so',
                 'vendor/lib/libgralloc_extra.so',
-                'vendor/lib64/libgralloc_extra.so'
+                'vendor/lib64/libgralloc_extra.so',
             ],
             'hwcomposer': [
                 'lib/hw/hwcomposer.*',
                 'lib64/hw/hwcomposer.*',
                 'vendor/lib/hw/hwcomposer.*',
-                'vendor/lib64/hw/hwcomposer.*'
+                'vendor/lib64/hw/hwcomposer.*',
             ],
             'sensors': [
                 'lib/hw/sensors.*',
@@ -1051,7 +1099,7 @@ support_chipset_portstep = {
                 'vendor/lib/libksensor.so',
                 'vendor/lib64/libksensor.so',
                 'vendor/lib/librgbwlightsensor.so',
-                'vendor/lib64/librgbwlightsensor.so'
+                'vendor/lib64/librgbwlightsensor.so',
             ],
             'gps': [
                 'lib/hw/gps.*',
@@ -1060,13 +1108,13 @@ support_chipset_portstep = {
                 'vendor/lib64/hw/gps.*',
                 'vendor/etc/agps_profiles_conf2.xml',
                 'vendor/lib/libviagpsrpc.so',
-                'vendor/lib64/libviagpsrpc.so'
+                'vendor/lib64/libviagpsrpc.so',
             ],
             'power': [
                 'lib/hw/power.*',
                 'lib64/hw/power.*',
                 'vendor/lib/hw/power.*',
-                'vendor/lib64/hw/power.*'
+                'vendor/lib64/hw/power.*',
             ],
             'bluetooth': [
                 'lib/hw/bluetooth.*',
@@ -1079,35 +1127,30 @@ support_chipset_portstep = {
                 'vendor/lib64/libbt-vendor.so',
                 'vendor/lib/libbluetooth_relayer.so',
                 'vendor/lib64/libbluetooth_relayer.so',
-                'etc/bluetooth'
+                'etc/bluetooth',
             ],
             'vibrator': [
                 'lib/hw/vibrator.*',
                 'lib64/hw/vibrator.*',
                 'vendor/lib/hw/vibrator.*',
-                'vendor/lib64/hw/vibrator.*'
+                'vendor/lib64/hw/vibrator.*',
             ],
             'thermal': [
-                'vendor/etc/.tp'
+                'vendor/etc/.tp',
             ],
             'wifi': [
-            'bin/netcfg',
-            'bin/dhcpcd',
-            'bin/ifconfig',
-            'bin/hostap',
-            'bin/hostapd',
-            'bin/hostapd_bin',
-            'bin/pcscd',
-            'bin/wlan*',
-            'bin/wpa*',
-            'bin/netd',
-            'lib/libhardware_legacy.so',
-            'etc/wifi/wpa_supplicant.conf',
-            'etc/wifi/p2p_supplicant.conf',
-            'vendor/firmware/wifi*',
-            'vendor/firmware/WIFI*',
-            'vendor/bin/netdiag'
-        ],
+                'bin/hostap',
+                'bin/hostapd',
+                'bin/hostapd_bin',
+                'bin/wlan*',
+                'bin/wpa*',
+                'lib/libhardware_legacy.so',
+                'etc/wifi/wpa_supplicant.conf',
+                'etc/wifi/p2p_supplicant.conf',
+                'vendor/firmware/wifi*',
+                'vendor/firmware/WIFI*',
+                'vendor/bin/netdiag',
+            ],
             'camera': [
                 'lib/hw/camera.*',
                 'lib64/hw/camera.*',
@@ -1194,81 +1237,7 @@ support_chipset_portstep = {
                 'vendor/lib/libfeatureiodrv.so',
                 'vendor/lib64/libfeatureiodrv.so',
                 'vendor/lib/libSwJpgCodec.so',
-                'vendor/lib64/libSwJpgCodec.so'
-            ]
-        }
-    },
-    '未列芯片 (同平台自动识别)': {
-        'partitions': {
-        },
-        'flags': {
-            'generate_script': False,
-            'replace_kernel': True,
-            'replace_fstab': False,
-            'selinux_permissive': True,
-            'enable_adb': True,
-            'auto_replace': True,
-            'replace_firmware': False,
-            'replace_mddb': False,
-            'replace_malidriver': False,
-            'replace_audiodriver': False,
-            'replace_audiohal': False,
-            'replace_audioconf': False,
-            'replace_libshowlogo': False,
-            'replace_mtk-kpd': False,
-            'replace_gralloc': False,
-            'replace_hwcomposer': False,
-            'replace_ril': False,
-            'replace_sensors': False,
-            'replace_gps': False,
-            'replace_power': False,
-            'replace_bluetooth': False,
-            'replace_vibrator': False,
-            'replace_thermal': False,
-            'replace_wifi': False,
-            'replace_camera': False,
-            'replace_init': False,
-            'change_platform': True,
-            'single_simcard': False,
-            'dual_simcard': False,
-            'fit_density': True,
-            'change_model': True,
-            'change_timezone': True,
-            'change_locale': True,
-            'use_custom_update-binary': True
-        },
-        'replace': {
-            'kernel': [
-                'kernel',
-                'kernel.gz'
-            ],
-            'fstab': [
-                'initrd/fstab',
-                'initrd/fstab.mt6735',
-                'initrd/fstab.mt6737'
-            ],
-            'init': [
-            'initrd/init.mt6735.rc',
-            'initrd/init.mt6737.rc',
-            'initrd/init.mt6735.usb.rc',
-            'initrd/init.project.rc'
-        ],
-            'firmware': [
-                'etc/firmware',
-                'vendor/firmware'
-            ],
-            'mddb': [
-                'etc/mddb',
-                'vendor/etc/mddb'
-            ],
-            'malidriver': [
-                'lib/libMali.so',
-                'vendor/lib/libMali.so',
-                'vendor/lib/egl',
-                'vendor/lib/hw/vulkan.*',
-                'vendor/lib/libIMGegl.so',
-                'vendor/lib/libpvrANDROID_WSEGL.so',
-                'vendor/lib/libgpu_aux.so'
+                'vendor/lib64/libSwJpgCodec.so',
             ],
             'audiohal': [
                 'lib/hw/audio.primary.*',
@@ -1298,21 +1267,108 @@ support_chipset_portstep = {
                 'lib/libaudioparam*',
                 'lib64/libaudioparam*',
                 'vendor/lib/libaudioparam*',
+                'vendor/lib64/libaudioparam*',
                 'etc/tfa*',
                 'lib/libtfa*',
                 'lib64/libtfa*',
                 'vendor/lib/libtfa*',
                 'vendor/lib64/libtfa*',
                 'lib/libaudiotfa*',
-                'vendor/lib64/libaudioparam*',
                 'lib64/libaudiotfa*',
+            ],
+        },
+    },
+    '未列芯片 (同平台自动识别)': {
+        'partitions': {},
+        'flags': {
+            'replace_wifi': True,
+            'replace_audiohal': False,
+            'replace_audioconf': False,
+            'generate_script': False,
+            'replace_kernel': True,
+            'replace_fstab': False,
+            'selinux_permissive': True,
+            'enable_adb': True,
+            'auto_replace': True,
+            'replace_firmware': True,
+            'replace_mddb': True,
+            'replace_malidriver': False,
+            'replace_audiodriver': False,
+            'replace_libshowlogo': True,
+            'replace_mtk-kpd': True,
+            'replace_gralloc': False,
+            'replace_ril': True,
+            'replace_sensors': True,
+            'replace_gps': True,
+            'replace_power': True,
+            'replace_bluetooth': True,
+            'replace_vibrator': True,
+            'replace_thermal': True,
+            'replace_camera': True,
+            'replace_init': False,
+            'change_platform': True,
+            'single_simcard': False,
+            'dual_simcard': False,
+            'fit_density': True,
+            'change_model': True,
+            'change_timezone': True,
+            'change_locale': True,
+            'set_cn_servers': True,
+            'use_custom_update-binary': True,
+        },
+        'replace': {
+            'kernel': [
+                'kernel',
+                'kernel.gz',
+            ],
+            'fstab': [
+                'initrd/fstab',
+                'initrd/fstab.mt6735',
+                'initrd/fstab.mt6737',
+            ],
+            'init': [
+                'initrd/init.mt6735.rc',
+                'initrd/init.mt6737.rc',
+                'initrd/init.mt6735.usb.rc',
+                'initrd/init.project.rc',
+            ],
+            'firmware': [
+                'etc/firmware',
+                'vendor/firmware',
+                'vendor/bin/wmt*',
+                'vendor/bin/6620*',
+                'vendor/bin/6628*',
+                'vendor/bin/6630*',
+                'vendor/bin/6635*',
+            ],
+            'mddb': [
+                'etc/mddb',
+                'vendor/etc/mddb',
+            ],
+            'malidriver': [
+                'lib/egl',
+                'lib64/egl',
+                'vendor/lib/egl',
+                'vendor/lib64/egl',
+                'lib/libMali.so',
+                'lib64/libMali.so',
+                'vendor/lib/libMali.so',
+                'vendor/lib64/libMali.so',
+                'lib/libgpu_aux.so',
+                'lib64/libgpu_aux.so',
+                'lib/libjni_eglfence.so',
+                'lib64/libjni_eglfence.so',
+                'lib/hw/vulkan.*',
+                'lib64/hw/vulkan.*',
+                'vendor/lib/hw/vulkan.*',
+                'vendor/lib64/hw/vulkan.*',
             ],
             'libshowlogo': [
                 'lib/libshowlogo.so',
-                'vendor/lib/libshowlogo.so'
+                'vendor/lib/libshowlogo.so',
             ],
             'mtk-kpd': [
-                'usr/keylayout/mtk-kpd.kl'
+                'usr/keylayout/mtk-kpd.kl',
             ],
             'ril': [
                 'bin/ccci_fsd',
@@ -1331,7 +1387,7 @@ support_chipset_portstep = {
                 'vendor/lib/libmtk-ril.so',
                 'vendor/lib/librilfusion.so',
                 'vendor/lib/librilutilsmtk.so',
-                'vendor/lib/libccci_util.so'
+                'vendor/lib/libccci_util.so',
             ],
             'gralloc': [
                 'lib/hw/gralloc.*',
@@ -1341,13 +1397,11 @@ support_chipset_portstep = {
                 'lib/libgralloc_extra.so',
                 'lib64/libgralloc_extra.so',
                 'vendor/lib/libgralloc_extra.so',
-                'vendor/lib64/libgralloc_extra.so'
-            ],
-            'hwcomposer': [
+                'vendor/lib64/libgralloc_extra.so',
                 'lib/hw/hwcomposer.*',
                 'lib64/hw/hwcomposer.*',
                 'vendor/lib/hw/hwcomposer.*',
-                'vendor/lib64/hw/hwcomposer.*'
+                'vendor/lib64/hw/hwcomposer.*',
             ],
             'sensors': [
                 'lib/hw/sensors.*',
@@ -1359,7 +1413,13 @@ support_chipset_portstep = {
                 'vendor/lib/libksensor.so',
                 'vendor/lib64/libksensor.so',
                 'vendor/lib/librgbwlightsensor.so',
-                'vendor/lib64/librgbwlightsensor.so'
+                'vendor/lib64/librgbwlightsensor.so',
+                'lib/hw/lights.*',
+                'lib64/hw/lights.*',
+                'vendor/bin/msensord',
+                'vendor/bin/msensor',
+                'vendor/bin/spir2cl',
+                'vendor/bin/rs2spir',
             ],
             'gps': [
                 'lib/hw/gps.*',
@@ -1368,13 +1428,16 @@ support_chipset_portstep = {
                 'vendor/lib64/hw/gps.*',
                 'vendor/etc/agps_profiles_conf2.xml',
                 'vendor/lib/libviagpsrpc.so',
-                'vendor/lib64/libviagpsrpc.so'
+                'vendor/lib64/libviagpsrpc.so',
+                'vendor/bin/mnld',
+                'vendor/bin/*agpsd*',
+                'vendor/bin/wifi2agps',
             ],
             'power': [
                 'lib/hw/power.*',
                 'lib64/hw/power.*',
                 'vendor/lib/hw/power.*',
-                'vendor/lib64/hw/power.*'
+                'vendor/lib64/hw/power.*',
             ],
             'bluetooth': [
                 'lib/hw/bluetooth.*',
@@ -1387,30 +1450,26 @@ support_chipset_portstep = {
                 'vendor/lib64/libbt-vendor.so',
                 'vendor/lib/libbluetooth_relayer.so',
                 'vendor/lib64/libbluetooth_relayer.so',
-                'etc/bluetooth'
+                'etc/bluetooth',
             ],
             'vibrator': [
                 'lib/hw/vibrator.*',
-                'vendor/lib/hw/vibrator.*'
+                'vendor/lib/hw/vibrator.*',
             ],
             'thermal': [
-                'vendor/etc/.tp'
+                'vendor/etc/.tp',
+                'vendor/bin/thermald',
             ],
             'wifi': [
-            'bin/netcfg',
-            'bin/dhcpcd',
-            'bin/ifconfig',
-            'bin/hostap',
-            'bin/hostapd',
-            'bin/hostapd_bin',
-            'bin/pcscd',
-            'bin/wlan*',
-            'bin/wpa*',
-            'bin/netd',
-            'lib/libhardware_legacy.so',
-            'etc/wifi',
-            'vendor/bin/netdiag'
-        ],
+                'bin/hostap',
+                'bin/hostapd',
+                'bin/hostapd_bin',
+                'bin/wlan*',
+                'bin/wpa*',
+                'lib/libhardware_legacy.so',
+                'etc/wifi',
+                'vendor/bin/netdiag',
+            ],
             'camera': [
                 'lib/hw/camera.*',
                 'lib64/hw/camera.*',
@@ -1497,22 +1556,63 @@ support_chipset_portstep = {
                 'vendor/lib/libfeatureiodrv.so',
                 'vendor/lib64/libfeatureiodrv.so',
                 'vendor/lib/libSwJpgCodec.so',
-                'vendor/lib64/libSwJpgCodec.so'
-            ]
-        }
+                'vendor/lib64/libSwJpgCodec.so',
+            ],
+            'audiohal': [
+                'lib/hw/audio.primary.*',
+                'lib64/hw/audio.primary.*',
+                'vendor/lib/hw/audio.primary.*',
+                'vendor/lib64/hw/audio.primary.*',
+            ],
+            'audioconf': [
+                'lib/hw/audio_policy.default.so',
+                'lib64/hw/audio_policy.default.so',
+                'etc/audio_effects.conf',
+                'vendor/etc/audio_effects.conf',
+                'etc/audio_policy.conf',
+                'vendor/etc/audio_policy.conf',
+                'vendor/etc/audio_param',
+                'vendor/etc/audio_device.xml',
+            ],
+            'audiodriver': [
+                'lib/libaudiocomp*',
+                'lib64/libaudiocomp*',
+                'vendor/lib/libaudiocomp*',
+                'vendor/lib64/libaudiocomp*',
+                'lib/libaudioroute*',
+                'lib64/libaudioroute*',
+                'vendor/lib/libaudioroute*',
+                'vendor/lib64/libaudioroute*',
+                'lib/libaudioparam*',
+                'lib64/libaudioparam*',
+                'vendor/lib/libaudioparam*',
+                'vendor/lib64/libaudioparam*',
+                'etc/tfa*',
+                'lib/libtfa*',
+                'lib64/libtfa*',
+                'vendor/lib/libtfa*',
+                'vendor/lib64/libtfa*',
+                'lib/libaudiotfa*',
+                'lib64/libaudiotfa*',
+            ],
+        },
     },
     'LK去警告 (兼容大多数安卓版本, 去Orange/Red警告+5s延时)': {
-        'partitions': {
-        },
+        'partitions': {},
         'flags': {
-            'lk_patch_mode': True
+            'lk_patch_mode': True,
         },
-        'replace': {
-        }
+        'replace': {},
+    },
+    'OPPO固件解密 (OFP/OZIP/OPS, 兼容大多数安卓版本)': {
+        'partitions': {},
+        'flags': {
+            'oppo_decrypt_mode': True,
+        },
+        'replace': {},
     },
     '仅移植Recovery (只输出recovery)': {
-        'partitions': {
-        },
+        'partitions': {},
         'flags': {
             'generate_script': False,
             'recovery_only_mode': True,
@@ -1520,12 +1620,12 @@ support_chipset_portstep = {
             'selinux_permissive': True,
             'enable_adb': True,
             'replace_fstab': False,
-            'replace_init': False
+            'replace_init': False,
         },
         'replace': {
             'kernel': [
                 'kernel',
-                'kernel.gz'
+                'kernel.gz',
             ],
             'fstab': [
                 'initrd/fstab',
@@ -1537,54 +1637,72 @@ support_chipset_portstep = {
                 'initrd/fstab.mt6750',
                 'initrd/fstab.mt6755',
                 'initrd/fstab.mt6797',
-                'initrd/etc/recovery.fstab'
+                'initrd/etc/recovery.fstab',
             ],
             'init': [
-            'initrd/init.rc',
-            'initrd/init.recovery.rc',
-            'initrd/init.mt6572.rc',
-            'initrd/init.mt6582.rc',
-            'initrd/init.mt6580.rc',
-            'initrd/init.mt6735.rc',
-            'initrd/init.mt6737.rc',
-            'initrd/init.mt6750.rc',
-            'initrd/init.mt6755.rc',
-            'initrd/init.mt6797.rc'
-        ]
-        }
+                'initrd/init.rc',
+                'initrd/init.recovery.rc',
+                'initrd/init.mt6572.rc',
+                'initrd/init.mt6582.rc',
+                'initrd/init.mt6580.rc',
+                'initrd/init.mt6735.rc',
+                'initrd/init.mt6737.rc',
+                'initrd/init.mt6750.rc',
+                'initrd/init.mt6755.rc',
+                'initrd/init.mt6797.rc',
+            ],
+        },
     },
     '仅移植内核 (只输出boot)': {
-        'partitions': {
-        },
+        'partitions': {},
         'flags': {
             'generate_script': False,
             'kernel_only_mode': True,
             'replace_kernel': True,
+            'replace_firmware': True,
+            'replace_mddb': True,
             'selinux_permissive': True,
-            'enable_adb': True
+            'enable_adb': True,
         },
         'replace': {
             'kernel': [
                 'kernel',
-                'kernel.gz'
-            ]
-        }
-    }
+                'kernel.gz',
+            ],
+            'firmware': [
+                'etc/firmware',
+            ],
+            'mddb': [
+                'etc/mddb',
+            ],
+        },
+    },
 }
 
 _configs_path = op.join(_ROOT, "configs.json")
+
+# 配置来源状态：GUI 模式下 stderr 不可见，只 print 等于静默降级。
+# 这里把状态留给 UI，由启动流程弹窗告知用户（见交接文档 §197-1）。
+CONFIG_LOAD_STATE = "file"          # file / embedded_fallback / generated_default
+CONFIG_LOAD_MESSAGE = ""
+
 if op.isfile(_configs_path):
     try:
         with open(_configs_path, 'r', encoding='utf-8-sig') as c:
             support_chipset_portstep = json.load(c)
     except (json.JSONDecodeError, ValueError) as e:
+        CONFIG_LOAD_STATE = "embedded_fallback"
+        CONFIG_LOAD_MESSAGE = "%s: %s" % (type(e).__name__, e)
         print(f"[警告] configs.json 解析失败（{e}），降级使用内嵌默认配置", file=sys.stderr)
 else:
+    # 首次运行（配置文件缺失）：按内嵌默认生成一份，便于用户后续编辑
+    CONFIG_LOAD_STATE = "generated_default"
     try:
         with open(_configs_path, 'w', encoding='utf-8') as c:
             json.dump(support_chipset_portstep, c, indent=4, ensure_ascii=False)
-    except OSError:
-        pass  # #65：只读目录等部署边界——降级使用内嵌字典，不中断导入
+    except OSError as e:
+        CONFIG_LOAD_MESSAGE = str(e)
+        print(f"[警告] 无法生成 configs.json（{e}），使用内嵌默认配置", file=sys.stderr)
 
 support_chipset = list(support_chipset_portstep.keys())
 support_packtype = ['zip', 'img']

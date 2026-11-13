@@ -127,7 +127,9 @@ def _find_window(pid):
 
     同一进程可能同时有主窗口和更新提示等小弹窗，取面积最大者更接近用户期望跳转的目标。
     """
-    import ctypes
+    # 必须显式导入 ctypes.wintypes：只 import ctypes 时 ctypes.wintypes 不存在，
+    # 下方 ctypes.wintypes.RECT 会抛 AttributeError，导致窗口跳转静默失效（§197-2）。
+    import ctypes, ctypes.wintypes
     user32 = ctypes.windll.user32
     WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_int)
     user32.EnumWindows.argtypes = [WNDENUMPROC, ctypes.c_int]
@@ -161,7 +163,9 @@ def _find_window(pid):
 
 def _force_foreground(hwnd):
     """把窗口带到前台。Windows 有前台锁限制，逐级尝试多种方式，全部失败返回 False。"""
-    import ctypes
+    # 必须显式导入 ctypes.wintypes：只 import ctypes 时 ctypes.wintypes 不存在，
+    # 下方 ctypes.wintypes.RECT 会抛 AttributeError，导致窗口跳转静默失效（§197-2）。
+    import ctypes, ctypes.wintypes
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
     user32.GetForegroundWindow.restype = ctypes.c_void_p

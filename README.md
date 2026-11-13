@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3.6.009**
+> 当前版本 / Current version：**1.3.6.012**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -373,6 +373,12 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3.6.012**（配置与启动可用性修补 / config & startup robustness patch）
+  - **内嵌配置漂移修复 / Embedded config drift fix**：`configs.py` 的内嵌默认表长期未随 `configs.json` 更新（内嵌 9 套方案 vs json 10 套、按叶子键比对 101 处差异，缺 `OPPO 固件解密`、`_ext` 分区拆分键、camera/malidriver 新条目，`replace_gralloc`/`replace_hwcomposer` 内嵌 `True` 而 json `False`），在缺少 json 或 json 损坏时用户拿到的其实是旧配置；现已以 `configs.json` 为准重建内嵌表，`ast.literal_eval` 回环比对 `== json` 通过
+  - **配置降级不再静默 / No more silent config fallback**：新增 `CONFIG_LOAD_STATE` / `CONFIG_LOAD_MESSAGE`，启动后按状态弹窗——json 解析失败弹警告并附错误原文与修复指引，首次运行自动生成配置弹提示；不再只往 stderr 打印（GUI 模式下 stderr 等效于不存在）
+  - **单实例跳转修复 / Single-instance focus fix**：`singleton.py` 只 `import ctypes` 却使用 `ctypes.wintypes.RECT`，「跳转至正在运行的程序」抛 `AttributeError` 静默失效；补 `ctypes.wintypes` 导入；跳转失败也不再无条件关闭本实例，改为在提示窗说明「未能定位到窗口，可手动切换或点清除状态锁」
+  - **启动脚本前置检测 / Launcher preflight**：`run.bat` 增加 Python 存在性与 3.10+ 版本检测（实测 `python --version` 而非 `where`，避开 WindowsApps 零字节存根），失败时给中文提示并 `pause`，不再启动失败即闪退；UTF-8 + `chcp 65001` 保证提示在 CMD 与网页端都不乱码
+  - **版本号 / Versioning**：按模块数规则，009 +3 模块（配置加载 / 单实例跳转 / 启动脚本）→ 1.3.6.012
 - **1.3.6.009**（1.3.6.007 的紧急修补 / emergency patch for 1.3.6.007）
   - **mddb 替换崩溃修复 / mddb replacement crash fix**：底包 `etc/mddb` 为符号链接标记文件、移植源为真目录时，原文件分支以写模式打开目录抛 `PermissionError [Errno 13]` 导致移植中断；文件分支与通配文件分支加「类型对冲」，目标已存在为目录时先删除再写入，保证替换结果与源形态一致
   - **外置 combo 守护注入 / External combo daemon injection**：外置 MT6630 类 combo（需 wmt_loader + wmt_launcher 双守护）移植到 SoC 内置 CONSYS 方案（仅 wmt_loader）时，ramdisk 缺 wmt_launcher service 致守护永不启动、STP 通道未建、固件未加载、WiFi/BT 全挂；`__port_boot` 自动从底包正常 .rc 提取 wmt_launcher 完整 service 块、插入移植源 wmt_loader 后（已存在则跳过，排除 factory/meta），复用底包命令行
