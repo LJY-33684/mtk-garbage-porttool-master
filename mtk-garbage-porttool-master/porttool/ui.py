@@ -745,6 +745,7 @@ class MyUI(ttk.Labelframe):
 
         def __scroll_event(event):
             """移植条目滚动事件处理（Windows滚轮）"""
+            self._last_wheel_time = getattr(event, 'time', None)  # 供全局兜底去重
             # 每格滚动 2 行（约44px）；触控板/高精度滚轮 delta 为 120 的倍数，自动放大
             lines = max(1, abs(event.delta) // 120) * 2
             scroll_num = -lines if event.delta > 0 else lines
@@ -1053,6 +1054,31 @@ class MyUI(ttk.Labelframe):
             yscrollincrement=22  # 1个单位≈1行复选框高度，滚动按行计
         )
         actcanvas.bind("<MouseWheel>", __scroll_event)  # 绑定鼠标滚轮
+
+        def __in_item_area(event):
+            """指针是否落在移植条目区（含动态生成的复选框/标签）"""
+            try:
+                node = self.winfo_containing(event.x_root, event.y_root)
+            except Exception:
+                node = None
+            while node is not None:
+                if node == actcanvas or node == getattr(self, 'actcvframe', None):
+                    return True
+                node = getattr(node, 'master', None)
+            return False
+
+        def __wheel_global(event):
+            """触控板二指滑动兜底：pan 手势常发给焦点窗口而非指针下的控件，
+            widget 级绑定收不到；这里按指针位置命中条目区后统一滚动，并用事件时间戳避免与 widget 绑定重复滚。"""
+            t = getattr(event, 'time', None)
+            if t is not None and t == getattr(self, '_last_wheel_time', None):
+                return None
+            if __in_item_area(event):
+                self._last_wheel_time = t
+                __scroll_event(event)
+            return None
+
+        self.bind_all("<MouseWheel>", __wheel_global, add='+')
         actscroll.pack(side='right', fill='y')
         actcanvas.pack(side='right', fill='x', expand='yes', anchor='e')
         actframe.pack(side='top', fill='x', expand='yes')
@@ -1199,8 +1225,8 @@ class MyUI(ttk.Labelframe):
         ttk.Button(_orow, text="选择", width=7, command=self._oppo_browse).pack(side='left', padx=(4, 5))
         _orow.pack(side='top', fill='x', padx=5, pady=(8, 4))
         ttk.Label(self.oppo_panel,
-                  text="支持 OFP（MTK）/ OZIP / OPS；输出类型由下方控件选择：img=展开并转换分区镜像 / zip=直接输出解密卡刷包",
-                  foreground='gray').pack(side='top', anchor='w', padx=10, pady=(0, 4))
+                  text="支持 OFP（联发科 / 高通 QC）/ OZIP / OPS；输出类型由下方控件选择：\nimg=展开并转换分区镜像 / zip=直接输出解密卡刷包",
+                  foreground='gray', justify='left', wraplength=400).pack(side='top', anchor='w', padx=10, pady=(0, 4))
         _obtns = ttk.Frame(self.oppo_panel)
         self.oppo_start_btn = ttk.Button(_obtns, text="开始解密", command=self._oppo_start)
         self.oppo_start_btn.pack(side='left', padx=3, pady=3)

@@ -199,14 +199,14 @@ python porttool_cli.py decrypt --input <固件路径> [--out-type img|zip] [--ou
 
 | 参数 | 必填 | 说明 |
 |---|---|---|
-| `--input` | 是 | OPPO/Realme/OnePlus 固件（`.ofp` / `.ozip` / `.ops`） |
-| `--out-type` | 否 | `img`（默认）/ `zip`；`img`=展开并转换分区镜像，`zip`=直接输出解密后的卡刷包（不展开，仅 OZIP 生效） |
+| `--input` | 是 | OPPO/Realme/OnePlus 固件（`.ofp`（联发科 / 高通 QC）/ `.ozip` / `.ops`） |
+| `--out-type` | 否 | `img`（默认）/ `zip`；`img`=展开并转换分区镜像，`zip`=直接输出解密后的卡刷包（不展开，仅 OZIP / 高通 QC zip 型生效） |
 | `--outdir` | 否 | 输出目录；省略时自动使用 `out/<时间戳>/` |
 
-- 自动识别格式：MTK OFP（AES-CFB128）/ OZIP（AES-ECB）/ OPS（OnePlus 自定义流密码）；**明文 OZIP**（部分 realmeUI 1.0 旧包为未加密 zip 伪装 `.ozip`）自动识别，无需解密直接按普通卡刷包使用
+- 自动识别格式：MTK OFP（AES-CFB128，头部 `MMM`）/ 高通 QC OFP（尾部 `0x7CEF` 页索引 + 加密 XML 分派，含加密型与 PK zip 型）/ OZIP（AES-ECB）/ OPS（OnePlus 自定义流密码）；**明文 OZIP**（部分 realmeUI 1.0 旧包为未加密 zip 伪装 `.ozip`）自动识别，无需解密直接按普通卡刷包使用；扩展名缺失/被改名时按结构兜底（`PK` → QC zip、尾部 `0x7CEF` → QC 加密型、`OPPOENCRYPT!` → OZIP）
 - AES 后端：优先工具目录 / PATH 的 openssl（快，随包内置 `bin/win/x86_64/` 四件套），无则内置 pyaes 纯 Python 兜底（日志首行注明实际后端；Linux 缺失时提示 `apt/dnf install openssl`，Windows 提示双击「获取openssl加速组件.bat」）
 - 输出：
-  - `--out-type zip`：OZIP 解密后的 zip（标准卡刷包结构：META-INF + new.dat.br + firmware-update 等）直接搬至输出目录，不展开；**OFP/OPS 无卡刷 zip 形态，选 zip 时提示并按镜像输出**
+  - `--out-type zip`：OZIP 解密后的 zip（标准卡刷包结构：META-INF + new.dat.br + firmware-update 等）直接搬至输出目录，不展开；高通 QC zip 型解压后重打包为 zip；**MTK OFP / QC 加密型 / OPS 无卡刷 zip 形态，选 zip 时提示并按镜像输出**
   - `--out-type img`（默认）：展开固件镜像；**全部 `*.new.dat.br` 分区（system/vendor 及 Android 10+ 的 product/odm/system_ext 等，动态收集）** 经 brotli（多后端：工具自带 brotli 命令 → 内置 vendor 库 → 系统命令 → Python brotli/brotlicffi，GB 级流式解压）解压后，用工具 sdat2img 逐个转成分区 `.img`，转换中间文件自动清理；brotli 组件缺失时明确报错并保留源 `.br`（不静默降级）
 - 中间缓存 `tmp/oppo_decrypt/` 结束后自动清理，用户原始固件保持不动
 - 失败：无法识别格式 / 固件 zip 结构损坏 / 密钥表未覆盖该机型 / 解密异常，均退出码 `2` 并打印明确错误，不伪成功；**解密成功但部分分区格式转换失败时不报「解密失败」，明确提示原文件保留**
@@ -279,5 +279,5 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3.7.001`（格式 = 主版本 `1.3` + beta号 `7` + p号 `001`；沿革：`1.3.6.003` +4 模块→`1.3.6.007`，+2→`1.3.6.009`（mddb 文件替换类型对冲 + wmt_launcher ramdisk 注入），+3→`1.3.6.012`（配置加载与内嵌表同步 / 单实例跳转 / 启动脚本前置检测）；本次补全 Linux/ARM64 解密环境（随包 OpenSSL/brotli、OPPO 解密核心对齐、临时目录统一 `tmp/oppo_decrypt/`、UI 图标/LOGO/清空日志）属功能增强，升 z 位并重置 p 号 → `1.3.7.001`）
+- 本桥接接口随工具版本发布：当前 `1.3.7.001`（格式 = 主版本 `1.3` + beta号 `7` + p号 `001`；沿革：`1.3.6.003` +4 模块→`1.3.6.007`，+2→`1.3.6.009`（mddb 文件替换类型对冲 + wmt_launcher ramdisk 注入），+3→`1.3.6.012`（配置加载与内嵌表同步 / 单实例跳转 / 启动脚本前置检测）；上一发布版 `1.3.6.012` → 本版 `1.3.7.001`，属功能增强：升 z 位、p 重置 001，包含两项——补全 Linux/ARM64 解密环境（随包 OpenSSL/brotli、OPPO 解密核心对齐、临时目录统一 `tmp/oppo_decrypt/`、窗口左上角 LOGO 图标显示、日志框一键清空）与合并独立 OPPO 工具的高通 QC OFP 分支（尾部 `0x7CEF` 页索引 + 加密 XML 分派、6 组密钥、Sahara/Chained 长度特判、PK zip 型固定密码解压、结构兜底））
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）

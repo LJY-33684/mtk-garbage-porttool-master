@@ -300,6 +300,392 @@ def _ofp_mtk(filename, outdir, emit):
 
 
 # ============================================================
+# 二、OFP（高通 / QC）解密 —— ofp_qc_decrypt.py
+# ============================================================
+# 上游 bkerler/oppo_decrypt 的 6 组内置 QC 密钥；覆盖机型有限，
+# 2021 年的 RMX1851EX C.18 实测命中第 4 组，不能按年份判断支持范围。
+_QC_OFP_KEYS = [
+    ('R9s / A57t V1.4.17/1.4.27',
+     '27827963787265EF89D126B69A495A21',
+     '82C50203285A2CE7D8C3E198383CE94C',
+     '422DD5399181E223813CD8ECDF2E4D72'),
+    ('A3s V1.6.17',
+     'E11AA7BB558A436A8375FD15DDD4651F',
+     '77DDF6A0696841F6B74782C097835169',
+     'A739742384A44E8BA45207AD5C3700EA'),
+    ('V1.5.13',
+     '67657963787565E837D226B69A495D21',
+     'F6C50203515A2CE7D8C3E1F938B7E94C',
+     '42F2D5399137E2B2813CD8ECDF2F4D72'),
+    ('R15 Pro / FindX / R17 Pro / A5 2020 / K3 / Reno 5G / Realme 3 Pro / Reno 10X V1.6.6/1.6.9/1.6.17/1.6.24/1.6.26/1.7.6',
+     '3C2D518D9BF2E4279DC758CD535147C3',
+     '87C74A29709AC1BF2382276C4E8DF232',
+     '598D92E967265E9BCABE2469FE4A915E'),
+    ('RM1921EX / Realme X / Realme 5 / 5 Pro V1.7.2',
+     '8FB8FB261930260BE945B841AEFA9FD4',
+     'E529E82B28F5A2F8831D860AE39E425D',
+     '8A09DA60ED36F125D64709973372C1CF'),
+    ('OW19W8AP_11_A.23_200715 V2.0.3',
+     'E8AE288C0192C54BF10C5707E9C4705B',
+     'D64FC385DCD52A3C9B5FBA8650F92EDA',
+     '79051FD8D8B6297E2E4559E997F63B7F'),
+]
+
+# QC OFP 的 PK zip 型使用固定密码；密码错误会抛 RuntimeError。
+_QC_ZIP_PASSWORD = b'flash@realme$50E7F7D847732396F1582CD62DD385ED7ABB0897'
+_QC_COPY_TAGS = ('DigestsToSign', 'ChainedTableOfDigests', 'Firmware')
+_QC_LENGTH_TAGS = ('Config', 'Provision', 'ChainedTableOfDigests',
+                   'DigestsToSign', 'Firmware')
+
+
+def _qc_rol8(v, n):
+    """8-bit 循环左移（对应上游 ROL(..., 4, 8)）。"""
+    n %= 8
+    return ((v << n) | (v >> (8 - n))) & 0xFF
+
+
+def _qc_deobfuscate(data, mask):
+    return bytes(_qc_rol8(data[i] ^ mask[i], 4) for i in range(len(data)))
+
+
+def _qc_derive_key(mc_hex, user_hex, iv_hex):
+    """按上游 generatekey2 派生 QC OFP 的 AES key / IV。"""
+    mc = bytes.fromhex(mc_hex)
+    userkey = bytes.fromhex(user_hex)
+    ivec = bytes.fromhex(iv_hex)
+    if len(mc) != 16 or len(userkey) != 16 or len(ivec) != 16:
+        raise ValueError('QC OFP 密钥表字段长度不是 16 字节')
+    key = hashlib.md5(_qc_deobfuscate(userkey, mc)).hexdigest()[:16].encode()
+    iv = hashlib.md5(_qc_deobfuscate(ivec, mc)).hexdigest()[:16].encode()
+    return key, iv
+
+
+def _qc_find_pagesize(rf, filesize):
+    """读取尾部页标记 0x7CEF，返回 0x200 / 0x1000；未命中返回 0。"""
+    for page in (0x200, 0x1000):
+        if filesize < page + 0x14:
+            continue
+        rf.seek(filesize - page + 0x10)
+        raw = rf.read(4)
+        if len(raw) == 4 and unpack('<I', raw)[0] == 0x7CEF:
+            return page
+    return 0
+
+
+def _probe_ofp_layout(path):
+    """只按文件结构探测可确认的 OFP 变体；无法确认时返回 None。"""
+    try:
+        filesize = os.path.getsize(path)
+        with open(path, 'rb') as f:
+            if f.read(2) == b'PK':
+                return 'ofp_qc_zip'
+            if _qc_find_pagesize(f, filesize):
+                return 'ofp_qc'
+    except OSError:
+        pass
+    return None
+
+
+def detect_ofp_variant(path):
+    """只读探测 .ofp 变体：ofp_qc_zip / ofp_qc / ofp_mtk。"""
+    return _probe_ofp_layout(path) or 'ofp_mtk'
+
+
+def _qc_read_xml(rf, filesize, pagesize, key, iv):
+    """按 QC OFP 尾部索引读取并解密 XML；命中返回明文，否则 None。"""
+    xmloffset = filesize - pagesize
+    if xmloffset < 0:
+        return None
+    rf.seek(xmloffset + 0x14)
+    raw = rf.read(8)
+    if len(raw) != 8:
+        return None
+    offset = unpack('<I', raw[:4])[0] * pagesize
+    length = unpack('<I', raw[4:])[0]
+    if length < 200:
+        # 上游对 A57 的特殊处理
+        length = xmloffset - offset - 0x57
+    if offset < 0 or length <= 0 or offset >= filesize:
+        return None
+    if offset + length > filesize:
+        length = filesize - offset
+    rf.seek(offset)
+    data = rf.read(length)
+    if not data:
+        return None
+    dec = aes_cfb128_decrypt(key, iv, data)
+    if b'<?xml' in dec:
+        return dec
+    return None
+
+
+def _ofp_qc_find_key(filename):
+    """遍历 6 组 QC 密钥；返回 (pagesize, key, iv, xml_data, key_label)。"""
+    filesize = os.path.getsize(filename)
+    with open(filename, 'rb') as rf:
+        pagesize = _qc_find_pagesize(rf, filesize)
+        if not pagesize:
+            return None
+        for index, (label, mc, userkey, ivec) in enumerate(_QC_OFP_KEYS, 1):
+            try:
+                key, iv = _qc_derive_key(mc, userkey, ivec)
+                data = _qc_read_xml(rf, filesize, pagesize, key, iv)
+            except Exception:
+                continue
+            if data:
+                return pagesize, key, iv, data, f'#{index} {label}'
+    return None
+
+
+def _qc_output_path(outdir, name, emit):
+    """把 XML 中的 Path/filename 安全映射到输出目录，禁止路径穿越。"""
+    if not name:
+        return None
+    name = name.replace('\\', '/')
+    parts = [p for p in name.split('/') if p not in ('', '.')]
+    if not parts or any('..' in p or ':' in p for p in parts):
+        emit(f'【警告】跳过非法输出路径：{name!r}')
+        return None
+    base = os.path.abspath(outdir)
+    dst = os.path.abspath(os.path.join(base, *parts))
+    if os.path.commonpath([base, dst]) != base:
+        emit(f'【警告】跳过输出目录之外的路径：{name!r}')
+        return None
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    if os.path.exists(dst):
+        emit(f'【提示】覆盖已存在文件：{"/".join(parts)}')
+    return dst
+
+
+def _qc_file_hash(path, limit):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        remaining = limit
+        while remaining > 0:
+            chunk = f.read(min(0x100000, remaining))
+            if not chunk:
+                break
+            h.update(chunk)
+            remaining -= len(chunk)
+    return h.hexdigest()
+
+
+def _qc_file_hash_padded(path, padded_size):
+    """按扇区长度补齐 0 后计算 sha256（XML 的 sha256 按整扇区记录）。"""
+    size = os.path.getsize(path)
+    if padded_size <= size or padded_size - size > 0x100000:
+        return None
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(0x100000), b''):
+            h.update(chunk)
+    h.update(b'\x00' * (padded_size - size))
+    return h.hexdigest()
+
+
+def _qc_check_hashes(path, checksums, emit, padded_size=None):
+    sha256sum, md5sum = checksums
+    if not sha256sum and not md5sum:
+        return
+    size = os.path.getsize(path)
+    with open(path, 'rb') as f:
+        md5 = hashlib.md5(f.read(0x40000)).hexdigest()
+    md5status = 'empty'
+    if md5sum:
+        md5status = 'verified' if md5sum == md5 else 'bad'
+    sha_status = 'empty'
+    if sha256sum:
+        head = _qc_file_hash(path, min(0x40000, size))
+        full = _qc_file_hash(path, size)
+        pad = _qc_file_hash_padded(path, padded_size) if padded_size else None
+        if sha256sum in (head, full, pad):
+            sha_status = 'verified'
+        else:
+            sha_status = 'bad'
+    if (sha256sum and sha_status == 'bad') or (md5sum and md5status == 'bad'):
+        if md5status == 'verified' and sha_status == 'bad':
+            emit(f'【校验】{os.path.basename(path)} md5 校验通过；'
+                 f'XML 的 sha256 未匹配（可能按未稀疏 / 整扇区记录）')
+        else:
+            emit(f'【校验】警告：{os.path.basename(path)} 校验失败 '
+                 f'(md5: {md5status} | sha256: {sha_status})')
+    else:
+        emit(f'【校验】{os.path.basename(path)} 校验通过 '
+             f'(md5: {md5status} | sha256: {sha_status})')
+
+
+def _qc_parse_item(item, pagesize):
+    wfilename = item.attrib.get('Path') or item.attrib.get('filename') or ''
+    if not wfilename:
+        return None
+    try:
+        start_attr = item.attrib.get('FileOffsetInSrc')
+        if start_attr is None:
+            start_attr = item.attrib.get('SizeInSectorInSrc')
+        if start_attr is None:
+            return None
+        start = int(start_attr) * pagesize
+        if 'SizeInByteInSrc' not in item.attrib:
+            return None
+        rlength = int(item.attrib['SizeInByteInSrc'])
+        if 'SizeInSectorInSrc' in item.attrib:
+            length = int(item.attrib['SizeInSectorInSrc']) * pagesize
+        else:
+            length = rlength
+        checksums = (item.attrib.get('sha256', ''), item.attrib.get('md5', ''))
+        return wfilename, start, length, rlength, checksums
+    except (TypeError, ValueError):
+        return None
+
+
+def _qc_copy_file(filename, dst, start, length, checksums, emit):
+    emit(f'【提取】{os.path.basename(dst)}')
+    with open(filename, 'rb') as rf, open(dst, 'wb') as wf:
+        rf.seek(max(0, start))
+        remaining = max(0, length)
+        while remaining > 0:
+            chunk = rf.read(min(0x100000, remaining))
+            if not chunk:
+                break
+            wf.write(chunk)
+            remaining -= len(chunk)
+    _qc_check_hashes(dst, checksums, emit, padded_size=length)
+
+
+def _qc_decrypt_file(key, iv, filename, dst, start, length, rlength,
+                     checksums, decryptsize, emit):
+    emit(f'【解密】{os.path.basename(dst)}')
+    with open(filename, 'rb') as rf, open(dst, 'wb') as wf:
+        rf.seek(max(0, start))
+        size = rlength
+        if decryptsize and size > decryptsize:
+            size = decryptsize
+        data = rf.read(size)
+        if len(data) % 4:
+            data += b'\x00' * (4 - (len(data) % 4))
+        dec = aes_cfb128_decrypt(key, iv, data)
+        wf.write(dec[:size])
+        if rlength > size:
+            remaining = rlength - size
+            while remaining > 0:
+                chunk = rf.read(min(0x100000, remaining))
+                if not chunk:
+                    break
+                wf.write(chunk)
+                remaining -= len(chunk)
+    _qc_check_hashes(dst, checksums, emit, padded_size=length)
+
+
+def _qc_process_item(tag, key, iv, filename, outdir, parsed, pagesize, emit):
+    wfilename, start, length, rlength, checksums = parsed
+    dst = _qc_output_path(outdir, wfilename, emit)
+    if not dst:
+        return
+    # ChainedTableOfDigests / DigestsToSign / Firmware 的 SizeInSectorInSrc
+    # 在 XML 里是「起始扇区」，不是文件长度；必须先按 SizeInByteInSrc 截断，
+    # 再决定是直接 copy 还是解密。否则会把补齐到整扇区的数据也写出去。
+    if tag in _QC_LENGTH_TAGS:
+        length = rlength
+    if tag in _QC_COPY_TAGS:
+        _qc_copy_file(filename, dst, start, length, checksums, emit)
+        return
+    decryptsize = rlength if tag == 'Sahara' else 0x40000
+    _qc_decrypt_file(key, iv, filename, dst, start, length, rlength,
+                     checksums, decryptsize, emit)
+
+
+def _ofp_qc(filename, outdir, emit):
+    """高通 QC OFP（尾部 0x7CEF 索引 + XML 分派）解密。"""
+    found = _ofp_qc_find_key(filename)
+    if not found:
+        emit('【错误】未命中内置密钥表，已中止')
+        return False
+    pagesize, key, iv, xml_data, key_label = found
+    emit(f'  - 命中 QC OFP 密钥组 {key_label}')
+    xml_bytes = xml_data[:xml_data.rfind(b'>') + 1]
+    try:
+        xml_text = xml_bytes.decode('utf-8')
+    except UnicodeDecodeError as e:
+        emit(f'【错误】QC OFP XML 解码失败：{e}')
+        return False
+    xml_dst = _qc_output_path(outdir, 'ProFile.xml', emit)
+    if not xml_dst:
+        return False
+    with open(xml_dst, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(xml_text)
+    emit(f'  - 已保存 {os.path.basename(xml_dst)}')
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        emit(f'【错误】QC OFP XML 解析失败：{e}')
+        return False
+
+    for child in root:
+        for item in child:
+            parsed = _qc_parse_item(item, pagesize)
+            if parsed:
+                _qc_process_item(child.tag, key, iv, filename, outdir,
+                                 parsed, pagesize, emit)
+            else:
+                for sub in item:
+                    subparsed = _qc_parse_item(sub, pagesize)
+                    if subparsed:
+                        _qc_process_item(child.tag, key, iv, filename, outdir,
+                                         subparsed, pagesize, emit)
+    emit('  - QC OFP 全部分区导出完成')
+    return True
+
+
+def _ofp_qc_zip(filename, outdir, emit):
+    """高通 QC OFP 的 PK zip 型；固定密码解压，不删除输出目录。"""
+    try:
+        with zipfile.ZipFile(filename) as zf:
+            infos = zf.infolist()
+            if not any(zi.flag_bits & 0x1 for zi in infos):
+                emit('【错误】不是 OPPO 高通 OFP：zip 条目未加密'
+                     '（当前仅支持带加密位的 QC zip，未加密型暂无样本）')
+                return False
+            count = 0
+            for zi in infos:
+                if zi.is_dir():
+                    continue
+                dst = _qc_output_path(outdir, zi.filename, emit)
+                if not dst:
+                    continue
+                try:
+                    with zf.open(zi, pwd=_QC_ZIP_PASSWORD) as src, \
+                            open(dst, 'wb') as wf:
+                        shutil.copyfileobj(src, wf, 1 << 20)
+                except RuntimeError as e:
+                    emit(f'【错误】QC OFP zip 密码不匹配或条目损坏：{e}')
+                    return False
+                count += 1
+            if not count:
+                emit('【错误】QC OFP zip 内没有可解压文件')
+                return False
+    except zipfile.BadZipFile as e:
+        emit(f'【错误】不是有效的 QC OFP zip：{e}')
+        return False
+    except OSError as e:
+        emit(f'【错误】读取 QC OFP zip 失败：{e}')
+        return False
+    emit(f'  - QC OFP zip 解压完成：{count} 个文件')
+    return True
+
+
+def _qc_repack_dir(src_dir, dst_zip, emit):
+    """把解压目录重新打包为 zip（QC zip + out_type=zip 的约定行为）。"""
+    with zipfile.ZipFile(dst_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, names in os.walk(src_dir):
+            for name in sorted(names):
+                src = os.path.join(root, name)
+                arc = os.path.relpath(src, src_dir).replace(os.sep, '/')
+                zf.write(src, arc)
+    emit(f'  - 已重新打包 QC OFP zip：{os.path.basename(dst_zip)}')
+
+
+# ============================================================
 # 二、OZIP（Realme / OPPO）解密 —— ozipdecrypt.py
 # ============================================================
 _OZIP_KEYS = [
@@ -887,8 +1273,27 @@ def _ops(filename, outdir, workdir, emit):
 # ============================================================
 # 格式识别与统一入口
 # ============================================================
+def _probe_ofp_layout(path):
+    """只按文件结构探测可确认的 OFP 变体；无法确认时返回 None。"""
+    try:
+        filesize = os.path.getsize(path)
+        with open(path, 'rb') as f:
+            if f.read(2) == b'PK':
+                return 'ofp_qc_zip'
+            if _qc_find_pagesize(f, filesize):
+                return 'ofp_qc'
+    except OSError:
+        pass
+    return None
+
+
+def detect_ofp_variant(path):
+    """只读探测 .ofp 变体：ofp_qc_zip / ofp_qc / ofp_mtk。"""
+    return _probe_ofp_layout(path) or 'ofp_mtk'
+
+
 def detect_format(path):
-    """按扩展名 + 魔数识别固件格式：ofp_mtk / ozip / ops / None。"""
+    """按扩展名 + 文件结构识别固件格式：ofp_qc_zip / ofp_qc / ofp_mtk / ozip / ops / None。"""
     name = path.lower()
     try:
         with open(path, 'rb') as f:
@@ -898,11 +1303,14 @@ def detect_format(path):
     if name.endswith('.ops'):
         return 'ops'
     if name.endswith('.ofp'):
-        return 'ofp_mtk'
+        return detect_ofp_variant(path)
     if name.endswith('.ozip'):
         if magic == b'OPPOENCRYPT!' or magic[:2] == b'PK':
             return 'ozip'
-    # 扩展名缺失/不符时的魔数兜底
+    # 扩展名缺失/不符时的结构兜底：先确认 QC 结构，再做 OZIP 魔数判断。
+    probe = _probe_ofp_layout(path)
+    if probe:
+        return probe
     if magic == b'OPPOENCRYPT!':
         return 'ozip'
     return None
@@ -1015,7 +1423,33 @@ def decrypt(path, outdir, log=None, out_type='img'):
     ok = False
     try:
         Path(outdir).mkdir(parents=True, exist_ok=True)
-        if fmt == 'ofp_mtk':
+        if fmt == 'ofp_qc_zip':
+            if out_type == 'zip':
+                qc_tmp = os.path.join(str(workdir), 'qc_zip')
+                os.makedirs(qc_tmp, exist_ok=True)
+                if _ofp_qc_zip(path, qc_tmp, emit):
+                    base = os.path.basename(path)
+                    if base.lower().endswith('.ofp'):
+                        base = base[:-4] + '.zip'
+                    else:
+                        base = os.path.splitext(base)[0] + '.zip'
+                    dst = os.path.join(outdir, base)
+                    if os.path.exists(dst):
+                        emit(f'【提示】覆盖已存在卡刷包：{base}')
+                    _qc_repack_dir(qc_tmp, dst, emit)
+                    emit(f'【输出】QC OFP 解压后重打包：{dst}')
+                    ok = True
+            else:
+                ok = _ofp_qc_zip(path, outdir, emit)
+                if ok:
+                    conv_ok = _convert_to_img(outdir, emit)
+                    if not conv_ok:
+                        emit("【提示】QC OFP zip 解密成功，但部分分区格式转换失败，原文件已保留在输出目录")
+        elif fmt == 'ofp_qc':
+            if out_type == 'zip':
+                emit("【提示】QC OFP 加密型为分区镜像流、无卡刷 zip 形态，out_type 仅对 OZIP / QC zip 型生效，本次仍按镜像输出")
+            ok = _ofp_qc(path, outdir, emit)
+        elif fmt == 'ofp_mtk':
             if out_type == 'zip':
                 emit("【提示】OFP 固件为分区镜像流、无卡刷 zip 形态，out_type 仅对 OZIP 生效，本次仍按镜像输出")
             ok = _ofp_mtk(path, outdir, emit)
