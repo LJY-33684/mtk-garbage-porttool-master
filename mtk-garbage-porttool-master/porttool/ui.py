@@ -317,6 +317,15 @@ class LogLabel(scrolledtext.ScrolledText):
             pass
         self.after(100, self._log_pump)
 
+    def clear(self):
+        """清空日志：先丢弃队列中尚未写入的行，再清空 Text。"""
+        try:
+            while True:
+                self._log_q.get_nowait()
+        except queue.Empty:
+            pass
+        self.delete('1.0', 'end')
+
     def flush(self):
         """兼容stdout的flush方法"""
         pass
@@ -333,6 +342,15 @@ class MyUI(ttk.Labelframe):
         self.after(100, self._main_pump)
         # 用 labelwidget 实现标题+检查更新按钮（必须在 super 之后创建，parent=self）
         self._header_frame = ttk.Frame(self)
+        # 左上角 LOGO（点击跳转作者主页）
+        try:
+            _logo_img = PhotoImage(file=str(Path(__file__).resolve().parent / 'app_header.png'))
+            self._logo_label = ttk.Label(self._header_frame, image=_logo_img, cursor='hand2')
+            self._logo_label.image = _logo_img  # 防止被垃圾回收
+            self._logo_label.pack(side='left', padx=(2, 6))
+            self._logo_label.bind('<Button-1>', lambda e: webbrowser.open('https://github.com/LJY-33684'))
+        except Exception:
+            pass  # LOGO 缺失时静默跳过，不阻塞启动
         self._title_label = ttk.Label(self._header_frame, text="MTK 低端机移植工具", font=('Microsoft YaHei', 9, 'bold'))
         self._title_label.pack(side='left', padx=(0, 8))
         self._check_update_btn = ttk.Button(self._header_frame, text="检查更新", width=10, command=self._on_check_update)
@@ -360,6 +378,7 @@ class MyUI(ttk.Labelframe):
             lambda e: webbrowser.open('https://kc.fuquan.moe/5.%E7%A7%BB%E6%A4%8D%E5%8C%85%E5%A4%A7%E5%85%A8'),
         )
         self.configure(labelwidget=self._header_frame)
+        self._set_window_icon()
         # 核心配置变量
         self.chipset_select = StringVar(value='mt65')  # 芯片类型
         self.pack_type = StringVar(value='zip')        # 输出类型（默认zip）
@@ -1223,7 +1242,10 @@ class MyUI(ttk.Labelframe):
         # ========== 右侧日志区域 ==========
         logframe = ttk.Labelframe(self, text="日志输出")
         self.log = LogLabel(logframe)
-        self.log.pack(side='left', fill='both', anchor='center')
+        _log_toolbar = ttk.Frame(logframe)
+        _log_toolbar.pack(side='top', fill='x', padx=4, pady=(2, 0))
+        ttk.Button(_log_toolbar, text="清空日志", width=9, command=self.log.clear).pack(side='right')
+        self.log.pack(side='left', fill='both', expand=True, anchor='center')
         logframe.pack(side='left', padx=5, pady=5, fill='both', expand='yes')
 
         # 启动日志首行：显示 Python 环境
@@ -1241,6 +1263,23 @@ class MyUI(ttk.Labelframe):
         src = self.update_source.get()
         threading.Thread(target=lambda: self._fetch_update_worker(src, silent=True), daemon=True).start()
 
+
+    def _set_window_icon(self):
+        """设置窗口图标：Windows 用透明标题栏 ico，其他平台用 png。"""
+        try:
+            top = self.winfo_toplevel()
+            icon_dir = Path(__file__).resolve().parent
+            ico_path = icon_dir / 'app_blank.ico'
+            png_path = icon_dir / 'app.png'
+            if os.name == 'nt':
+                if ico_path.exists():
+                    top.iconbitmap(default=str(ico_path))
+            elif png_path.exists():
+                _icon_img = PhotoImage(file=str(png_path))
+                top.iconphoto(True, _icon_img)
+                self._window_icon = _icon_img  # 防止被垃圾回收
+        except Exception:
+            pass  # 图标缺失或平台不支持时不影响启动
 
     # ========== 检查更新功能（网络逻辑见 update.py）==========
 

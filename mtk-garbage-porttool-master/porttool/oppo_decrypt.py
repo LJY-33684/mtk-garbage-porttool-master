@@ -10,11 +10,16 @@
 #   - AES 后端：openssl 子进程优先（如已安装），内置 pyaes 纯 Python 兜底
 #   - 中间缓存统一 tmp/oppo_decrypt/，最终产物输出到指定 outdir
 #   - 失败明确报错（不再 exit(0) 伪成功）；原始固件保留不动
+# Extracted into standalone OPPO Firmware Decrypt Tool (1.0.0.001):
+#   - 从 mtk-garbage-porttool 1.3.6.012 抽出，去掉移植/LK 依赖
+#   - utils._rmtree 改为本包 core/fsutil.py（仍为同一实现）
+#   - 临时目录重新对齐 mtk 工具：统一 tmp/oppo_decrypt/，解密结束自动清理
 # ============================================================
 import binascii
 import hashlib
 import mmap
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -24,24 +29,37 @@ from pathlib import Path
 from struct import pack, unpack
 
 from . import pyaes
-from .utils import _rmtree
+from .fsutil import _rmtree
+
 
 
 # ============================================================
 # AES 后端：openssl（快）优先，pyaes（纯 Python）兜底
 # ============================================================
-def _find_openssl():
-    """探测可用 openssl：工具 bin/ 目录（逐个「存在+可运行」体检）→ 系统 PATH。
+def _linux_arch():
+    """返回 Linux 架构短名；ARM64 统一归到 aarch64（与 bin/linux/aarch64 对齐），未知架构原样返回。"""
+    machine = platform.machine().lower()
+    if machine in ('x86_64', 'amd64'):
+        return 'x86_64'
+    if machine in ('aarch64', 'arm64', 'armv8', 'arm64v8'):
+        return 'aarch64'
+    return machine or 'unknown'
 
-    #90 修复：候选组件（如 Windows 专用 openssl.exe 在 Linux 上）存在但不可运行
-    时，不能直接 return None，必须继续尝试下一个候选，全部失败后再回退系统 PATH，
-    否则 Linux/跨平台环境会静默降级 pyaes（大包解密慢约 229 倍）。
+
+def _find_openssl():
+    """探测可用 openssl：按平台/架构选择随包组件（体检可运行）→ 系统 PATH。
+
+    平台/架构过滤很关键：WSL 默认启用 Windows 互操作，Linux 下也能直接执行
+    bin/win/x86_64/openssl.exe；ARM64 机器也不能执行随包的 x86_64 二进制。
+    因此 Windows 只试 openssl.exe，Linux 只试 bin/linux/<当前架构>/openssl，
+    找不到再回落到系统 PATH。
     """
     root = Path(__file__).resolve().parent.parent
-    candidates = [
-        root / 'bin' / 'win' / 'x86_64' / 'openssl.exe',
-        root / 'bin' / 'linux' / 'x86_64' / 'openssl',
-    ]
+    if sys.platform.startswith('win'):
+        candidates = [root / 'bin' / 'win' / 'x86_64' / 'openssl.exe']
+    else:
+        arch = _linux_arch()
+        candidates = [root / 'bin' / 'linux' / arch / 'openssl']
     for c in candidates:
         if not c.exists():
             continue
@@ -65,10 +83,14 @@ def _find_openssl():
 
 _OPENSSL = _find_openssl()
 
+# openssl 每次调用都会 spawn 一个新进程；OZIP mode2 的块头只有 16 字节，
+# 3GB 包会产生上万次进程启动（2~5 分钟纯开销），小数据直接用 pyaes 更快。
+OPENSSL_MIN_BYTES = 1024
+
 
 def backend_name():
     """当前 AES 后端名称（供日志显示）。"""
-    return 'openssl（加速）' if _OPENSSL else 'pyaes（纯Python）'
+    return 'openssl（加速）' if _OPENSSL else 'pyaes（纯Python，大包很慢）'
 
 
 def _openssl_decrypt(mode, key, iv, data):
@@ -83,12 +105,16 @@ def _openssl_decrypt(mode, key, iv, data):
 
 
 def aes_ecb_decrypt(key, data):
-    """AES-128-ECB 解密（自动补齐块，返回前 len(data) 字节）。"""
+    """AES-128-ECB 解密（自动补齐块，返回前 len(data) 字节）。
+
+    小数据（< OPENSSL_MIN_BYTES）优先走 pyaes：openssl 后端每次调用都要
+    spawn 一个进程，16 字节块头逐块调用时开销远大于 pyaes 本身。
+    """
     n = len(data)
     pad = (-n) % 16
     if pad:
         data = data + b'\x00' * pad
-    if _OPENSSL:
+    if _OPENSSL and n >= OPENSSL_MIN_BYTES:
         out = _openssl_decrypt('-aes-128-ecb', key, None, data)
     else:
         # pyaes ECB .decrypt 为单块方法，多块须逐块解密
@@ -966,20 +992,26 @@ def decrypt(path, outdir, log=None, out_type='img'):
         return False
     fmt = detect_format(path)
     workdir = Path("tmp/oppo_decrypt")
-    if workdir.exists():
-        _rmtree(workdir)
-    workdir.mkdir(parents=True, exist_ok=True)
+    try:
+        if workdir.exists():
+            _rmtree(workdir)
+        workdir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        emit(f"【错误】无法创建输出/临时目录：{e}")
+        return False
     emit(f"【解密】固件：{path}")
     emit(f"【解密】识别格式：{fmt}")
     emit(f"【解密】AES 后端：{backend_name()}")
     emit(f"【解密】输出类型：{'zip 卡刷包（不展开）' if out_type == 'zip' else 'img 镜像'}")
     if _OPENSSL is None:
         if sys.platform.startswith('linux'):
-            emit("【提示】未检测到 OpenSSL 命令，已自动使用内置 pyaes（纯Python）解密（功能正常，速度较慢）；"
-                 "Linux 可安装系统 openssl 提速：Debian/Ubuntu: apt install openssl，CentOS: dnf install openssl")
+            emit("【提示】未检测到随包/系统 OpenSSL，已自动使用内置 pyaes（纯Python）解密；"
+                 "3GB 级大包会非常慢。请确认 bin/linux/%s/openssl 存在且可执行；"
+                 "也可安装系统 openssl 作为后备：Debian/Ubuntu: sudo apt install openssl，"
+                 "CentOS/RHEL: sudo dnf install openssl" % _linux_arch())
         else:
-            emit("【提示】未检测到 OpenSSL 加速组件，已自动使用内置 pyaes（纯Python）解密（功能正常，速度较慢）；"
-                 "如需加速可双击运行工具目录下的「获取openssl加速组件.bat」（可选）")
+            emit("【提示】未检测到 OpenSSL 加速组件，已自动使用内置 pyaes（纯Python）解密；"
+                 "大包会明显变慢。如需加速可双击运行 bin\\win\\x86_64\\openssl.exe 及配套 DLL 存在")
     ok = False
     try:
         Path(outdir).mkdir(parents=True, exist_ok=True)

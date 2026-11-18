@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3.6.012**
+> 当前版本 / Current version：**1.3.7.001**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -373,6 +373,12 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3.7.001**（Linux/ARM64 解密环境补全 + OPPO 核心合并 + UI 小功能 / Linux & ARM64 decrypt stack + OPPO core merge + UI niceties）
+  - **OPPO 解密核心合并 / OPPO decrypt core merge**：`oppo_decrypt.py` / `brotli.py` 与独立版 `oppo-firmware-decrypt` 1.0.0.009 对齐——平台/架构过滤更严格（WSL 下不再误用 Windows `openssl.exe`、ARM64 不再尝试 x86_64 二进制）、OZIP 小块改走 pyaes 批量路径、失败路径与临时目录清理加固；新增 `porttool/fsutil.py`（带 Windows 只读属性清理的 `_rmtree`）
+  - **Linux/ARM64 随包组件 / Bundled Linux & ARM64 components**：新增 `bin/linux/{aarch64,x86_64}/openssl` 与 `brotli`，`porttool/_vendor_brotli/` 补齐 cp312–cp315 的 aarch64 wheel（cp315 为自编 `linux_aarch64`）；Linux/ARM64 上 3GB 级 OZIP/OPS 解密由纯 Python pyaes 回退转为随包 OpenSSL 加速，无需系统安装 openssl
+  - **临时目录对齐 / Temp dir aligned**：临时缓存统一回到工具目录 `tmp/oppo_decrypt/`（解密结束自动清理），不再依赖输出目录可写
+  - **UI 小功能 / UI niceties**：窗口图标改用透明标题栏 `app_blank.ico`（非 Windows 用 `app.png`）；标题栏左侧新增 `app_header.png` LOGO，点击跳转作者 GitHub 主页；日志输出区顶部新增「清空日志」按钮（同步清空待写入队列，避免清空后残留日志回填）
+  - **版本号 / Versioning**：补全 Linux/ARM64 解密环境属于功能增强，z 位 6→7、p 位重置为 001 → `1.3.7.001`
 - **1.3.6.012**（配置与启动可用性修补 / config & startup robustness patch）
   - **内嵌配置漂移修复 / Embedded config drift fix**：`configs.py` 的内嵌默认表长期未随 `configs.json` 更新（内嵌 9 套方案 vs json 10 套、按叶子键比对 101 处差异，缺 `OPPO 固件解密`、`_ext` 分区拆分键、camera/malidriver 新条目，`replace_gralloc`/`replace_hwcomposer` 内嵌 `True` 而 json `False`），在缺少 json 或 json 损坏时用户拿到的其实是旧配置；现已以 `configs.json` 为准重建内嵌表，`ast.literal_eval` 回环比对 `== json` 通过
   - **配置降级不再静默 / No more silent config fallback**：新增 `CONFIG_LOAD_STATE` / `CONFIG_LOAD_MESSAGE`，启动后按状态弹窗——json 解析失败弹警告并附错误原文与修复指引，首次运行自动生成配置弹提示；不再只往 stderr 打印（GUI 模式下 stderr 等效于不存在）

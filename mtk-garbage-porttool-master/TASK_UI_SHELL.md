@@ -18,7 +18,8 @@
 
 - Python 3.9+（Windows / Linux 均可；主战场 Windows）
 - 纯标准库，**无需第三方依赖**（CLI 不加载 tkinter；核心逻辑仅用 stdlib + 自带工具模块）
-- 内置 brotli 压缩组件已随包附带 **Python 3.9 ~ 3.15（含 cp315）** 各 ABI 预编译库（`porttool/_vendor_brotli/`，win_amd64 + manylinux2014），Python 3.15 用户开箱即用、无需 pip 安装
+- 内置 brotli 压缩组件已随包附带 **Python 3.9 ~ 3.15（含 cp315）** 各 ABI 预编译库（`porttool/_vendor_brotli/`，win_amd64 + Linux x86_64/aarch64 manylinux2014，cp315 aarch64 为自编 `linux_aarch64`），Python 3.15 用户开箱即用、无需 pip 安装
+- Linux（x86_64/aarch64）随包附带静态 `openssl` 与 `brotli`（`bin/linux/<架构>/`），OZIP/OPS 解密与 `new.dat.br` 解压无需系统安装对应命令
 - 工作目录 = 工具目录（mtk-garbage-porttool-master/，CLI 启动时自动 `chdir` 到该目录，壳无需关心）
 - 首次运行会生成 `tmp/`、`base/`、`out/` 运行目录（与 GUI 相同）
 
@@ -36,7 +37,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3.6.012`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3.7.001`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -278,5 +279,5 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3.6.012`（新格式 = 主版本 `1.3` + beta号 `6` + p号 `012`；按模块制自 `1.3.6.003` 起 +4 模块至 `1.3.6.007`，+2 模块至 `1.3.6.009`（mddb 文件替换类型对冲 + wmt_launcher ramdisk 注入），本次再 +3 模块至 `1.3.6.012`：配置加载与内嵌表同步 / 单实例跳转 / 启动脚本前置检测）
+- 本桥接接口随工具版本发布：当前 `1.3.7.001`（格式 = 主版本 `1.3` + beta号 `7` + p号 `001`；沿革：`1.3.6.003` +4 模块→`1.3.6.007`，+2→`1.3.6.009`（mddb 文件替换类型对冲 + wmt_launcher ramdisk 注入），+3→`1.3.6.012`（配置加载与内嵌表同步 / 单实例跳转 / 启动脚本前置检测）；本次补全 Linux/ARM64 解密环境（随包 OpenSSL/brotli、OPPO 解密核心对齐、临时目录统一 `tmp/oppo_decrypt/`、UI 图标/LOGO/清空日志）属功能增强，升 z 位并重置 p 号 → `1.3.7.001`）
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）
