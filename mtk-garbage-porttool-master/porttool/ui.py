@@ -719,6 +719,20 @@ class MyUI(ttk.Labelframe):
         self.oppo_start_btn.config(state='disabled', text='解密中...')
         self.oppo_status.set('正在解密，请稍候...')
         out_type = 'zip' if self.pack_type.get() == 'zip' else 'img'
+        # zip 输出仅对 OZIP / 高通 QC zip 型生效；其余格式为分区镜像流，弹窗提示并回退 img
+        if out_type == 'zip':
+            try:
+                from . import oppo_decrypt
+                _fmt = oppo_decrypt.detect_format(fw)
+            except Exception:
+                _fmt = None
+            if _fmt not in ('ozip', 'ofp_qc_zip'):
+                messagebox.showinfo(
+                    "提示",
+                    "zip 输出仅对 OZIP 或高通 QC zip 型生效；\n"
+                    "MTK OFP / OPS / 加密型 QC OFP 为分区镜像流，本次仍按 img 输出。"
+                )
+                out_type = 'img'
         print(file=self.log)
         print("=" * 60, file=self.log)
         print(f"【OPPO解密】开始解密，输出目录：{outdir}，输出类型：{'zip 卡刷包（不展开）' if out_type == 'zip' else 'img 镜像（展开并转换分区镜像）'}", file=self.log)
@@ -745,7 +759,6 @@ class MyUI(ttk.Labelframe):
 
         def __scroll_event(event):
             """移植条目滚动事件处理（Windows滚轮）"""
-            self._last_wheel_time = getattr(event, 'time', None)  # 供全局兜底去重
             # 每格滚动 2 行（约44px）；触控板/高精度滚轮 delta 为 120 的倍数，自动放大
             lines = max(1, abs(event.delta) // 120) * 2
             scroll_num = -lines if event.delta > 0 else lines
@@ -757,6 +770,16 @@ class MyUI(ttk.Labelframe):
         def __scroll_down(event):
             actcanvas.yview_scroll(2, 'units')
 
+        def __grab_log_focus(_event=None):
+            """指针进入日志区时把焦点交给日志框，保证日志区仍可用触控板/滚轮滚动"""
+            try:
+                cur = self.focus_get()
+                if isinstance(cur, ttk.Entry):
+                    return
+                self.log.focus_set()
+            except Exception:
+                pass
+
         def __bind_wheel(widget):
             """递归绑定滚轮事件：修复鼠标悬停在复选框上时滚轮失效的问题"""
             widget.bind("<MouseWheel>", __scroll_event)
@@ -764,19 +787,29 @@ class MyUI(ttk.Labelframe):
             widget.bind("<Button-5>", __scroll_down)  # Linux 滚轮下
             for child in widget.winfo_children():
                 __bind_wheel(child)
+
+        def __grab_wheel_focus(event=None):
+            """把焦点交给指针下的控件本身（复选框/画布）：Windows 对触控板滚动按焦点窗口投递，
+            焦点在日志 Text 时条目区永远收不到；正在输入框里打字时不抢。"""
+            try:
+                cur = self.focus_get()
+                if isinstance(cur, ttk.Entry):
+                    return
+                w = getattr(event, 'widget', None) or actcanvas
+                w.focus_force()
+            except Exception:
+                pass
         
-        def __scroll_func(event):
+        def __scroll_func(event=None):
             """更新滚动区域：内容不足视口高度时锁到视口高度，避免滚轮把内容拉上去露白"""
             actcanvas.configure(width=300, height=180)
             bb = actcanvas.bbox("all")
             if bb:
-                # 内容高度 < 视口高度(180) 时，滚动范围撑到视口高度 -> yview 锁死顶部，滚不动
                 actcanvas.configure(scrollregion=(bb[0], bb[1], bb[2], max(bb[3], 180)))
         
         def __create_cv_frame():
-            """创建移植条目滚动画布内的frame"""
+            """创建移植条目滚动画布内的 frame"""
             self.actcvframe = ttk.Frame(actcanvas)
-            # 记录 window item id，切换方案销毁 frame 时须一并删除，否则 bbox 残留撑大滚动范围
             self._cv_item = actcanvas.create_window(0, 0, window=self.actcvframe, anchor='nw')
             self.actcvframe.bind("<Configure>", __scroll_func)
             actcanvas.update()
@@ -809,6 +842,55 @@ class MyUI(ttk.Labelframe):
             else:
                 self._ghwc_warned = False
         
+        def __render_items():
+            """Canvas 自绘移植条目：整个条目区只有 Canvas 一个窗口，无子控件挡事件，
+            指针停在任何一行都在 Canvas 上，滚轮/触控板都能滚动。"""
+            try:
+                _pos = actcanvas.yview()[0]
+            except Exception:
+                _pos = 0.0
+            actcanvas.delete("items")
+            _y = 6
+            for _i, (_k, _v) in enumerate(self.item):
+                _tag = "it_%d" % _i
+                actcanvas.create_rectangle(8, _y + 3, 22, _y + 17, outline="#7a7a7a", width=1,
+                                           tags=("items", _tag))
+                if _v.get():
+                    actcanvas.create_text(15, _y + 10, text="✔",
+                                          font=("Microsoft YaHei UI", 8), fill="#1a1a1a",
+                                          tags=("items", _tag))
+                _t = actcanvas.create_text(30, _y + 10, text=ITEM_LABEL.get(_k, _k),
+                                           anchor='w', width=258,
+                                           font=("Microsoft YaHei UI", 9), fill="#000",
+                                           tags=("items", _tag))
+                _b = actcanvas.bbox(_t)
+                _h = max(22, _b[3] - _y + 4) if _b else 22
+                actcanvas.tag_bind(_tag, "<Button-1>", lambda e, i=_i: __toggle_item(i))
+                _y += _h
+            _tag = "it_ignore"
+            actcanvas.create_rectangle(8, _y + 3, 22, _y + 17, outline="#7a7a7a", width=1,
+                                       tags=("items", _tag))
+            if self._ignore_size_var.get():
+                actcanvas.create_text(15, _y + 10, text="✔",
+                                      font=("Microsoft YaHei UI", 8), fill="#1a1a1a",
+                                      tags=("items", _tag))
+            actcanvas.create_text(30, _y + 10, text="忽略底包镜像大小限制", anchor='w',
+                                  width=258, font=("Microsoft YaHei UI", 9), fill="#000",
+                                  tags=("items", _tag))
+            actcanvas.tag_bind(_tag, "<Button-1>", lambda e: __toggle_ignore())
+            _y += 26
+            actcanvas.configure(scrollregion=(0, 0, 300, max(_y, 180)))
+            actcanvas.yview_moveto(_pos)
+
+        def __toggle_item(_i):
+            _v = self.item[_i][1]
+            _v.set(not _v.get())
+            __sync_select_all()
+
+        def __toggle_ignore():
+            self._ignore_size_var.set(not self._ignore_size_var.get())
+            __render_items()
+
         def __toggle_select_all():
             """全选/全不选：空或部分选中时点击 -> 全部勾选(✓)；全选状态下点击 -> 全部取消(空)"""
             vals = [v.get() for _, v in self.item]
@@ -881,7 +963,7 @@ class MyUI(ttk.Labelframe):
             self.item = []
             self.itembox = []
             
-            # 销毁原有移植条目frame（同时删除画布中的 window item，避免 bbox 残留导致滚动过头留白）
+            # 清空旧条目并重建画布内 frame
             if hasattr(self, 'actcvframe'):
                 actcanvas.delete(self._cv_item)
                 self.actcvframe.destroy()
@@ -938,15 +1020,14 @@ class MyUI(ttk.Labelframe):
                 self.item.append([item_key, BooleanVar(value=item_dict[item_key])])
                 self.itembox.append(
                     ttk.Checkbutton(
-                        self.actcvframe, 
-                        text=ITEM_LABEL.get(item_key, item_key), 
+                        self.actcvframe,
+                        text=ITEM_LABEL.get(item_key, item_key),
                         variable=self.item[index][1],
                         command=__sync_select_all
                     )
                 )
-            
+
             # 移植条目最顶部：忽略底包镜像大小限制（默认不勾；勾选后不按底包大小封顶，直接按内容+64MiB生成）
-            # 独立持有，不写入 configs flags（CLI 用 --ignore-sysimg-size-limit）
             ttk.Checkbutton(
                 self.actcvframe,
                 text='忽略底包镜像大小限制',
@@ -956,7 +1037,7 @@ class MyUI(ttk.Labelframe):
             # 布局移植条目复选框
             for checkbox in self.itembox:
                 checkbox.pack(side='top', fill='x', padx=5)
-            
+
             # 滚动区域：严格贴合条目实际包围盒；内容不足视口高度时锁到视口高度，滚不出空白
             _bbox = actcanvas.bbox("all")
             if _bbox:
@@ -1046,14 +1127,14 @@ class MyUI(ttk.Labelframe):
         )
         self.select_all_box.pack(side='left')
         actframe.configure(labelwidget=actframe_header)
-        actcanvas = Canvas(actframe)
+        actcanvas = Canvas(actframe, width=300, height=180,
+                           yscrollincrement=22, takefocus=1, highlightthickness=0, bd=0)
         actscroll = ttk.Scrollbar(actframe, orient='vertical', command=actcanvas.yview)
         actcanvas.configure(
-            yscrollcommand=actscroll.set, 
-            scrollregion=(0, 0, 300, 180), 
-            yscrollincrement=22  # 1个单位≈1行复选框高度，滚动按行计
+            yscrollcommand=actscroll.set,
+            scrollregion=(0, 0, 300, 180),
         )
-        actcanvas.bind("<MouseWheel>", __scroll_event)  # 绑定鼠标滚轮
+        # Text 自带滚轮/触控板滚动，无需额外绑定
 
         def __in_item_area(event):
             """指针是否落在移植条目区（含动态生成的复选框/标签）"""
@@ -1067,18 +1148,7 @@ class MyUI(ttk.Labelframe):
                 node = getattr(node, 'master', None)
             return False
 
-        def __wheel_global(event):
-            """触控板二指滑动兜底：pan 手势常发给焦点窗口而非指针下的控件，
-            widget 级绑定收不到；这里按指针位置命中条目区后统一滚动，并用事件时间戳避免与 widget 绑定重复滚。"""
-            t = getattr(event, 'time', None)
-            if t is not None and t == getattr(self, '_last_wheel_time', None):
-                return None
-            if __in_item_area(event):
-                self._last_wheel_time = t
-                __scroll_event(event)
-            return None
-
-        self.bind_all("<MouseWheel>", __wheel_global, add='+')
+        actcanvas.bind("<MouseWheel>", __scroll_event)  # 鼠标滚轮
         actscroll.pack(side='right', fill='y')
         actcanvas.pack(side='right', fill='x', expand='yes', anchor='e')
         actframe.pack(side='top', fill='x', expand='yes')
@@ -1268,6 +1338,8 @@ class MyUI(ttk.Labelframe):
         # ========== 右侧日志区域 ==========
         logframe = ttk.Labelframe(self, text="日志输出")
         self.log = LogLabel(logframe)
+        self.log.bind("<Enter>", __grab_log_focus, add='+')
+
         _log_toolbar = ttk.Frame(logframe)
         _log_toolbar.pack(side='top', fill='x', padx=4, pady=(2, 0))
         ttk.Button(_log_toolbar, text="清空日志", width=9, command=self.log.clear).pack(side='right')

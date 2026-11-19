@@ -281,3 +281,12 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 - 本桥接接口随工具版本发布：当前 `1.3.7.001`（格式 = 主版本 `1.3` + beta号 `7` + p号 `001`；沿革：`1.3.6.003` +4 模块→`1.3.6.007`，+2→`1.3.6.009`（mddb 文件替换类型对冲 + wmt_launcher ramdisk 注入），+3→`1.3.6.012`（配置加载与内嵌表同步 / 单实例跳转 / 启动脚本前置检测）；上一发布版 `1.3.6.012` → 本版 `1.3.7.001`，属功能增强：升 z 位、p 重置 001，包含两项——补全 Linux/ARM64 解密环境（随包 OpenSSL/brotli、OPPO 解密核心对齐、临时目录统一 `tmp/oppo_decrypt/`、窗口左上角 LOGO 图标显示、日志框一键清空）与合并独立 OPPO 工具的高通 QC OFP 分支（尾部 `0x7CEF` 页索引 + 加密 XML 分派、6 组密钥、Sahara/Chained 长度特判、PK zip 型固定密码解压、结构兜底））
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）
+
+## 14. 已知限制 / Known Limitations
+
+- **移植条目区的触控板二指滑动不生效**（Windows 笔记本 Precision Touchpad 实测）。鼠标滚轮正常；日志输出区、更新弹窗的触控板滚动正常；仅「支持的移植条目」列表区域无法用触控板双指滑动，需改用鼠标滚轮或拖动右侧滚动条。
+  - 原因：Windows Precision Touchpad 默认发送 `delta=1` 的超高精度滚轮消息，Tk 8.6 的 Win32 事件层未将其转换成 `<MouseWheel>` 投递给 Canvas / Checkbutton，`bind_all`、`bindtags`、焦点转移都收不到事件（实测无任何回调、无日志）。
+  - 已尝试且无效：widget 级 `<MouseWheel>` 绑定、`bind_all` 全局兜底、`focus_force` 焦点转移、`bindtags` 前置拦截、1px Text 代理、Canvas 自绘条目、Text 文本行承载。
+  - 未采用：Win32 低级鼠标钩子（`WH_MOUSE_LL`），会拦截/抢占鼠标，且存在 `CallNextHookEx` 参数溢出问题。
+  - 影响范围：仅 GUI 交互体验，不影响移植/解密功能与 CLI。
+  - Linux 环境备注：传统 X11 + libinput 映射为 `Button-4/5` 时可通过补绑解决；Wayland / XWayland 平滑滚动下同样不生效。
