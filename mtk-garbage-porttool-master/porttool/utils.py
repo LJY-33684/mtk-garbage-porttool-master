@@ -1042,6 +1042,148 @@ class portutils:
                             __replace(basedir.joinpath(i), portdir.joinpath(i))
                         else:
                             print(f"  - 跳过 {i}（底包中不存在）", file=self.std)
+                case 'patch_binder_kernel':
+                    print(f"【移植项】3.4.5 内核 Binder NULL 守卫补丁...", file=self.std)
+                    from .legacy345 import KernelImage, patch_binder
+                    _kn = None
+                    for _c in ('kernel', 'kernel.gz'):
+                        if portdir.joinpath(_c).exists():
+                            _kn = portdir.joinpath(_c); break
+                    if _kn is None:
+                        print("  - 跳过（boot 内未找到内核文件）", file=self.std)
+                        continue
+                    _tmpk = portdir.joinpath('kernel.patched')
+                    _k = KernelImage(_kn)
+                    if _k.has('selinuxfs'):
+                        print("  ! 底包内核带 selinuxfs，可能非 3.4.5 无 SELinux 情形；仍尝试 Binder 补丁", file=self.std)
+                    _man = patch_binder(_k, str(_tmpk))
+                    if _man:
+                        _clear_attrs(_kn)
+                        _kn.write_bytes(_tmpk.read_bytes())
+                        _tmpk.unlink()
+                        print(f"  - 补丁完成：site {_man['site']} -> cave {_man['cave']}（{_man.get('cave_len','?')} 字节空洞）", file=self.std)
+                        print(f"  - 内核已就地修补（zImage 总长不变，FNAME 填充）", file=self.std)
+                    else:
+                        if _tmpk.exists():
+                            _tmpk.unlink()
+                        print("  - 未检出 MTK Binder 缺陷三连（内核可能已修补或非该代 binder），保持原件", file=self.std)
+                case 'selinux_disabled_cmdline':
+                    print(f"【移植项】3.4.5 SELinux 启动失败防护（底包无 selinuxfs）...", file=self.std)
+                    # 事实（AOSP 7.0.0_r1/7.1.2_r36，与维护者核对一致）：stock init 的
+                    # selinux_status_from_cmdline() 只认 permissive，无 disabled 值；
+                    # load_policy 失败 → security_failure() → 重启进 recovery。
+                    # 因此 cmdline 对 stock 7.x init **无效**，只是对已去失败路径的
+                    # init 加一层保险；真正前提是 donor init 已打过补丁，这里做字节级核验。
+                    _init_check = portdir.joinpath('initrd', 'init')
+                    if _init_check.is_file():
+                        from .legacy345 import classify_init_selinux_boot
+                        _v = classify_init_selinux_boot(_init_check.read_bytes())
+                        _verdict = _v['verdict']
+                        if _verdict == 'patched':
+                            print("  - 移植源 init 核验：无 SELinux 启动失败重启路径（已被社区补丁去除），"
+                                  "cmdline disabled 作保险写入", file=self.std)
+                        elif _verdict == 'stock':
+                            print("  ! 【高风险】移植源 init 仍是 stock 逻辑（解析 androidboot.selinux"
+                                  " 且引用 security_failure）：stock 7.x 只认 permissive，"
+                                  "底包无 selinuxfs 时 load_policy 失败会直接重启进 recovery。"
+                                  "cmdline 无法修复此路径，需先对 init 打社区补丁"
+                                  "（load_policy 失败分支 return false）后重试", file=self.std)
+                        elif _verdict == 'partial':
+                            print("  ! 移植源 init 的 SELinux 失败路径特征不完整（部分补丁），"
+                                  "建议人工反汇编确认 load_policy 失败是否仍会重启", file=self.std)
+                        else:
+                            print("  - 移植源 init 未检出该失败消息（可能为 4.x init 或非 ELF32），"
+                                  "按保险写入 cmdline", file=self.std)
+                    _bi_path = portdir.joinpath("bootinfo.txt")
+                    if not _bi_path.exists():
+                        print("  - 跳过（未找到 bootinfo.txt）", file=self.std)
+                        continue
+                    _lines = [i.rstrip('\n') for i in _bi_path.open(encoding='utf-8-sig').readlines()]
+                    _changed = False
+                    for _i, _l in enumerate(_lines):
+                        if _l.startswith('cmdline:'):
+                            _v = _l.split(':', 1)[1].strip()
+                            if 'androidboot.selinux=' in _v:
+                                _nv = re.sub(r'androidboot\.selinux=\w+', 'androidboot.selinux=disabled', _v)
+                            else:
+                                _nv = _v + ' androidboot.selinux=disabled'
+                            if _nv != _v:
+                                _lines[_i] = 'cmdline:' + _nv; _changed = True
+                    if _changed:
+                        _clear_attrs(_bi_path)
+                        with _bi_path.open('w', encoding='utf-8', newline='\n') as _f:
+                            _f.write('\n'.join(_lines) + '\n')
+                        print("  - cmdline 已设为 androidboot.selinux=disabled", file=self.std)
+                    else:
+                        print("  - cmdline 无需修改", file=self.std)
+                case 'patch_module_order':
+                    print(f"【移植项】3.4.5 MTK 模块加载顺序重写...", file=self.std)
+                    from .legacy345 import rewrite_mtk_module_loads
+                    _rcdir = portdir.joinpath('initrd')
+                    if not _rcdir.is_dir():
+                        print("  - 跳过（未找到 initrd 目录）", file=self.std)
+                        continue
+                    _rcs = sorted(p for p in _rcdir.glob('init.mt*.rc') if p.is_file()
+                                  and not p.name.endswith(('.usb.rc', '.aee.rc', '.environ.rc')))
+                    if not _rcs:
+                        print("  - 跳过（未找到平台主 rc）", file=self.std)
+                        continue
+                    _rc = _rcs[0]
+                    _txt = _rc.read_text(encoding='utf-8', errors='replace')
+                    _new, _total, _miss, _changed = rewrite_mtk_module_loads(_txt)
+                    if not _changed:
+                        print(f"  - {_rc.name} 模块加载段已规范（{_total} 项），无需修改", file=self.std)
+                        continue
+                    _clear_attrs(_rc)
+                    _rc.write_text(_new, encoding='utf-8', newline='\n')
+                    print(f"  - 已重写 {_rc.name} 模块加载段：按依赖序共 {_total} 项，补全缺失 {_miss} 项"
+                          "（沿用移植源原有命令形态，不写死 helper 名；幂等）", file=self.std)
+                case 'align_fstab':
+                    print(f"【移植项】fstab 名称对齐（把底包挂载表内容写到移植源 mount_all 实际引用的文件名）...", file=self.std)
+                    _rcd = portdir.joinpath('initrd')
+                    _bini = basedir.joinpath('initrd')
+                    if not _rcd.is_dir() or not _bini.is_dir():
+                        print("  - 跳过（initrd 目录缺失）", file=self.std)
+                        continue
+                    _targets = []
+                    for _p in sorted(_rcd.glob('init.mt*.rc')):
+                        if _p.name.endswith(('.usb.rc', '.aee.rc', '.environ.rc')):
+                            continue
+                        for _m in re.finditer(r'mount_all\b[^\n]*', _p.read_text(encoding='utf-8', errors='replace')):
+                            for _tok in _m.group(0).split():
+                                if 'fstab' in _tok and not _tok.startswith('-'):
+                                    _targets.append(_tok.lstrip('/'))
+                    _targets = list(dict.fromkeys(_targets))
+                    if not _targets:
+                        print("  - 跳过（移植源 rc 未解析到 mount_all fstab 引用）", file=self.std)
+                        continue
+                    def _base_pick(_name):
+                        _x = _bini.joinpath(_name)
+                        if _x.is_file():
+                            return _x
+                        _bare = _bini.joinpath('fstab')
+                        if _bare.is_file():
+                            return _bare
+                        _c = sorted([q for q in _bini.iterdir()
+                                     if q.is_file() and ('fstab' in q.name.lower())])
+                        return _c[0] if _c else None
+                    _n_align = 0
+                    for _name in _targets:
+                        _src = _base_pick(_name)
+                        if _src is None:
+                            print(f"  - 警告：底包 initrd 无任何 fstab 文件，{_name} 保持移植源原样", file=self.std)
+                            continue
+                        _dst = _rcd.joinpath(_name)
+                        _cont = _src.read_bytes()
+                        if _dst.is_file() and _dst.read_bytes() == _cont:
+                            continue
+                        _dst.parent.mkdir(parents=True, exist_ok=True)
+                        _clear_attrs(_dst)
+                        _dst.write_bytes(_cont)
+                        _n_align += 1
+                        print(f"  - 底包 {_src.name} 内容 → 移植源 {_name}（分区描述以目标机为准）", file=self.std)
+                    if _n_align == 0:
+                        print("  - 已对齐，无需修改", file=self.std)
                 case 'replace_init':
                     # #76：空值守卫——方案 replace 未配置 init 条目时跳过，避免静默空转（与 #55补 对齐）
                     if not self.items.get('replace', {}).get('init'):
@@ -1915,7 +2057,8 @@ class portutils:
                 # hwcomposer 例外：直接与底包内核 DISP/DSI 驱动强绑定，跨大版本【保留底包】（照常替换），
                 # 移植源高版本 hwcomposer 在底包内核上黑屏/壁纸异常（词典笔实证：换回底包 hwcomposer 立即正常）。
                 # 同版本时照常替换；modem/wifi/bt 固件与射频数据由独立的 firmware、mddb 组继续替换。
-                if self._cross_major and replace_type in GRAPHICS_REPLACE_GROUPS:
+                if (self._cross_major and replace_type in GRAPHICS_REPLACE_GROUPS
+                        and not self._flag('legacy345_mode')):
                     print(f"【移植项】替换{replace_type}相关文件...", file=self.std)
                     print(f"  ! 跨大版本图形栈：{replace_type} 与移植源图形框架（surfaceflinger）强成套，", file=self.std)
                     print(f"  ! 用底包旧图形栈覆盖移植源会导致黑屏/壁纸异常（词典笔 5.0→7.1.2 实证）。", file=self.std)

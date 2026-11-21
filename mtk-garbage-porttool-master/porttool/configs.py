@@ -9,6 +9,72 @@ import json
 
 # configs for porttool
 support_chipset_portstep = {
+    'mt6572/mt6582/mt6592 kernel-3.4.5 (Android 4.x-7.x)': {
+        'partitions': {
+            'system': '/dev/block/mmcblk0p4',
+            'boot': '/dev/block/bootimg',
+        },
+        'flags': {
+            'legacy345_mode': True,
+            'replace_kernel': True,
+            'patch_binder_kernel': True,
+            'selinux_disabled_cmdline': True,
+            'replace_fstab': True,
+            'align_fstab': True,
+            'patch_module_order': True,
+            'replace_modules': True,
+            'replace_malidriver': True,
+            'replace_gralloc': True,
+            'replace_firmware': True,
+            'replace_mddb': True,
+            'replace_mtk-kpd': True,
+            'replace_wifi': True,
+            'fix_storage': True,
+            'enable_adb': True,
+            'generate_script': True,
+            'fit_density': True,
+            'change_model': True,
+            'change_timezone': True,
+            'change_locale': True,
+            'set_cn_servers': True,
+            'use_custom_update-binary': True,
+        },
+        'replace': {
+            'kernel': [
+                'kernel',
+                'kernel.gz',
+            ],
+            'fstab': [
+                'initrd/fstab',
+                'initrd/fstab.mt6572',
+                'initrd/fstab.mt6582',
+                'initrd/fstab.mt6592',
+            ],
+            'modules': [
+                'lib/modules',
+            ],
+            'malidriver': [
+                'lib/libMali.so',
+            ],
+            'gralloc': [
+                'lib/hw/gralloc.mt6572.so',
+                'lib/hw/gralloc.mt6582.so',
+                'lib/hw/gralloc.mt6592.so',
+            ],
+            'firmware': [
+                'etc/firmware',
+            ],
+            'mddb': [
+                'etc/mddb',
+            ],
+            'mtk-kpd': [
+                'usr/keylayout/mtk-kpd.kl',
+            ],
+            'wifi': [
+                'etc/wifi',
+            ],
+        },
+    },
     'mt6572/mt6582/mt6592 kernel-3.4.67': {
         'partitions': {
             'system': '/dev/block/mmcblk0p4',

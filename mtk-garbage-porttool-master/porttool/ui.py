@@ -904,6 +904,11 @@ class MyUI(ttk.Labelframe):
         
         # 移植条目 key -> 中文显示名（#158：UI 直接显示中文，未收录的 key 回退显示英文 key）
         ITEM_LABEL = {
+            'patch_binder_kernel': '内核 Binder 补丁（3.4.5 必开，Android7 epoll 等待项防崩）',
+            'patch_module_order': '模块加载顺序重写（ccci→STP→WiFi/蓝牙/FM）',
+            'selinux_disabled_cmdline': 'cmdline SELinux 关闭（底包内核无 selinuxfs 时必开）',
+            'replace_modules': '内核模块 lib/modules（底包，3.4.5 通常需开）',
+            'legacy345_mode': '3.4.5 跨版本标志（GPU 强制底包+勿单关）',
             'replace_kernel': '替换内核 kernel',
             'replace_audiodriver': '音频驱动（底层引擎/功放）',
             'replace_audiohal': '音频HAL primary（设备无声可优先尝试此条目）',
@@ -955,7 +960,7 @@ class MyUI(ttk.Labelframe):
             """加载选中芯片类型对应的移植条目"""
             print(f"选中移植方案为{select}...", file=self.log)
             item_dict = {k: v for k, v in support_chipset_portstep[select]['flags'].items()
-                         if k not in ('recovery_only_mode', 'kernel_only_mode', 'lk_patch_mode', 'oppo_decrypt_mode')}
+                         if k not in ('recovery_only_mode', 'kernel_only_mode', 'lk_patch_mode', 'oppo_decrypt_mode', 'legacy345_mode')}
             # 仅移植Recovery / 仅移植内核 方案只输出 img：隐藏无意义的 generate_script 条目
             if ('recovery_only_mode' in support_chipset_portstep[select]['flags']
                     or 'kernel_only_mode' in support_chipset_portstep[select]['flags']):
