@@ -118,10 +118,11 @@ This is a ROM porting assistance tool specifically designed for MTK low-end chip
 <a name="presets"></a>
 ## 支持方案 / Supported Presets
 
-工具内置以下预设方案（UI「芯片类型」下拉框选择，10 套）：
+工具内置以下预设方案（UI「芯片类型」下拉框选择，11 套）：
 
 | 方案 / Preset | 说明 / Description |
 |---|---|
+| `mt6572/mt6582/mt6592 kernel-3.4.5 (Android 4.x-7.x)` | 3.4.5 无 SELinux 一代（MT6572/82/92，内核 Binder 补丁 + cmdline disabled + 模块顺序/fstab 对齐） |
 | `mt6572/mt6582/mt6592 kernel-3.4.67` | 经典老平台（Android 4.x~7.x 入门机） |
 | `G79 (mt6735/mt6735m/mt6737) kernel-3.18.19` | 常见入门机方案（含巴枪/扫码设备） |
 | `mt6580/mt8321 (通用, Android 5.1-7.1.2)` | 通用入门平台 |
