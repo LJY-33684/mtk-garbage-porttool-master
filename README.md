@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3.7.016**
+> 当前版本 / Current version：**1.3.7.019**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -374,6 +374,14 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3.7.019**（§202 复验加固 / post-audit hardening）
+  - **自更新备份/回滚 / Self-update backup & rollback**：替换前把当前程序目录完整备份到同级 `<app>.backup`；Windows 用 `robocopy /MIR` 先备份，覆盖失败时用备份镜像回滚；Linux 用 `cp -a` 备份 + `set -eu`，复制失败先删除半覆盖目录再从备份恢复；不再出现“新 .py + 旧 .pyd”的半覆盖状态
+  - **更新包 SHA256 / Update SHA256**：`latest_version.txt` 新增 `update_sha256=`，`download_update()` 边下载边计算 SHA256，与远端字段不一致时删除下载文件并拒绝安装
+  - **更新期间拦截与清理 / Update guard & cleanup**：移植流程 `is_running` 时点击“下载并安装”直接提示并拒绝；替换成功后删除 `mtk_porttool_update.zip` 与解压暂存目录，失败路径也清理下载文件
+  - **32 位架构拦截 / 32-bit architecture guard**：`archdetect.py` 不再放行 Linux `arm`/`x86`，仅允许随包有二进制对应的 `aarch64`/`x86_64`，避免通过检测后找不到 magiskboot/openssl
+  - **OpenSSL 超时 / OpenSSL timeout**：`_openssl_decrypt()` 增加 120s 超时并捕获 `TimeoutExpired`，大块解密卡住时不再无限挂起
+  - **fsutil 内联 / fsutil inline**：将仅 `oppo_decrypt.py` 使用的 `porttool/fsutil.py` 两个函数内联回解密模块，移除独立小模块；独立 OPPO 工具同步同一改法
+  - **版本号 / Versioning**：016 + 3 个修补模块（自更新加固 / 架构检测 / OpenSSL 超时）→ `1.3.7.019`
 - **1.3.7.016**（11 项健壮性与可移植性修补 / 11 robustness & portability fixes）
   - **x86_64 magiskboot / x86_64 magiskboot**：`bin/linux/x86_64/magiskboot` 原为误放的 aarch64 ELF，现替换为官方 Magisk v31.1 的 x86_64 静态二进制；启动时按 ELF `e_machine` 校验主机架构，错放时明确报错而不是执行失败
   - **Linux 可执行权限 / Linux executable bits**：`run.sh`、`cnfix.sh`、`bin/linux/**` 在 git index 与 release zip 中统一为 `0755`（zip `create_system=3`），避免 Linux 解压后 Permission denied
@@ -395,7 +403,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
   - **代码折叠 / Code fold**：删除 PR 新增的独立 `porttool/legacy345.py` 与 `Legacy345Porter`/`BootImage` 死代码（含 `/dev/emmc@android`、`size=0x600000`、`t6-insmod`、`chipid 0x6572` 等机型硬编码），标准管线用到的 `KernelImage`/`patch_binder`/`find_cave`/`rewrite_mtk_module_loads`/`classify_init_selinux_boot` 全部折进 `porttool/utils.py`；测试改为直接测上线函数
   - **版本号 / Versioning**：按「修 N 升 N」，001 + 4 个修补模块（模块段 / Binder / SELinux / fstab 根 rc）→ `1.3.7.005`
 - **1.3.7.001**（Linux/ARM64 解密环境补全 + OPPO 核心合并 + UI 小功能 / Linux & ARM64 decrypt stack + OPPO core merge + UI niceties）
-  - **OPPO 解密核心合并 / OPPO decrypt core merge**：`oppo_decrypt.py` / `brotli.py` 与独立版 `oppo-firmware-decrypt` 1.0.0.009 对齐——平台/架构过滤更严格（WSL 下不再误用 Windows `openssl.exe`、ARM64 不再尝试 x86_64 二进制）、OZIP 小块改走 pyaes 批量路径、失败路径与临时目录清理加固；新增 `porttool/fsutil.py`（带 Windows 只读属性清理的 `_rmtree`）
+  - **OPPO 解密核心合并 / OPPO decrypt core merge**：`oppo_decrypt.py` / `brotli.py` 与独立版 `oppo-firmware-decrypt` 1.0.0.009 对齐——平台/架构过滤更严格（WSL 下不再误用 Windows `openssl.exe`、ARM64 不再尝试 x86_64 二进制）、OZIP 小块改走 pyaes 批量路径、失败路径与临时目录清理加固；新增 `porttool/fsutil.py`（带 Windows 只读属性清理的 `_rmtree`；019 已内联回 `oppo_decrypt.py`）
   - **Linux/ARM64 随包组件 / Bundled Linux & ARM64 components**：新增 `bin/linux/{aarch64,x86_64}/openssl` 与 `brotli`，`porttool/_vendor_brotli/` 补齐 cp312–cp315 的 aarch64 wheel（cp315 为自编 `linux_aarch64`）；Linux/ARM64 上 3GB 级 OZIP/OPS 解密由纯 Python pyaes 回退转为随包 OpenSSL 加速，无需系统安装 openssl
   - **临时目录对齐 / Temp dir aligned**：临时缓存统一回到工具目录 `tmp/oppo_decrypt/`（解密结束自动清理），不再依赖输出目录可写
   - **UI 小功能 / UI niceties**：窗口图标改用透明标题栏 `app_blank.ico`（非 Windows 用 `app.png`）；标题栏左侧新增 `app_header.png` LOGO，点击跳转作者 GitHub 主页；日志输出区顶部新增「清空日志」按钮（同步清空待写入队列，避免清空后残留日志回填）

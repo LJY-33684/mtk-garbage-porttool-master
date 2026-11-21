@@ -335,7 +335,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3.7.016'
+tool_author = 'affggh'; tool_version = '1.3.7.019'
 
 class proputil:
     def __init__(self, propfile: str):

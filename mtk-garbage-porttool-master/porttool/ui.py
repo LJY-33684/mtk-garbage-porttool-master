@@ -1427,15 +1427,15 @@ class MyUI(ttk.Labelframe):
             # 静默检查只在远端确实更新时弹窗；远端更旧/相同都不打扰用户
             if silent and status != 'newer':
                 return
-            self._on_update_success(result.tag, result.body, result.download_url, status)
+            self._on_update_success(result.tag, result.body, result.download_url, status, result.sha256)
         else:
             if not silent:
                 self._on_update_failed(result.reason)
 
-    def _on_update_success(self, tag, body, download_url, status='unknown'):
+    def _on_update_success(self, tag, body, download_url, status='unknown', sha256=None):
         """检查更新成功（主线程）"""
         self._check_update_btn.config(text="检查更新", state="normal")
-        self._show_update_dialog(tag, body, download_url, status)
+        self._show_update_dialog(tag, body, download_url, status, sha256)
 
     def _on_update_failed(self, reason):
         """检查更新失败（主线程）"""
@@ -1443,7 +1443,7 @@ class MyUI(ttk.Labelframe):
         # 3秒后恢复按钮文字
         self.after(3000, lambda: self._check_update_btn.config(text="检查更新"))
 
-    def _show_update_dialog(self, tag, body, download_url, status='unknown'):
+    def _show_update_dialog(self, tag, body, download_url, status='unknown', sha256=None):
         """显示更新内容弹窗（markdown 格式 + 标题右侧前往下载按钮）"""
         win = Toplevel(self)
         if status == 'older':
@@ -1477,7 +1477,7 @@ class MyUI(ttk.Labelframe):
             if status == 'newer':
                 install_btn = ttk.Button(header_frame, text="下载并安装")
                 install_btn.pack(side='right', padx=(0, 6))
-                install_btn.config(command=lambda: self._start_self_update(win, install_btn, download_url))
+                install_btn.config(command=lambda: self._start_self_update(win, install_btn, download_url, sha256))
 
         # markdown 内容区
         content_frame = ttk.Frame(win)
@@ -1494,19 +1494,26 @@ class MyUI(ttk.Labelframe):
 
     # ========== 程序内自更新（#5）==========
 
-    def _start_self_update(self, win, btn, download_url):
+    def _start_self_update(self, win, btn, download_url, sha256=None):
         """主线程：点击“下载并安装”，后台下载/校验/启动替换脚本。"""
+        if getattr(self, 'is_running', False):
+            messagebox.showwarning(
+                "更新暂不可用",
+                "移植流程正在执行。请等待当前任务结束，再下载并安装更新，避免文件被占用或任务被中断。",
+                parent=win,
+            )
+            return
         btn.config(text="准备下载...", state="disabled")
         threading.Thread(
             target=self._self_update_worker,
-            args=(win, btn, download_url),
+            args=(win, btn, download_url, sha256),
             daemon=True,
         ).start()
 
-    def _self_update_worker(self, win, btn, download_url):
+    def _self_update_worker(self, win, btn, download_url, sha256=None):
         """后台线程：下载 -> 校验解压 -> 启动替换脚本。"""
+        zip_path = os.path.join(tempfile.gettempdir(), "mtk_porttool_update.zip")
         try:
-            zip_path = os.path.join(tempfile.gettempdir(), "mtk_porttool_update.zip")
             if os.path.exists(zip_path):
                 os.remove(zip_path)
 
@@ -1514,12 +1521,17 @@ class MyUI(ttk.Labelframe):
                 pct = int(got * 100 / total) if total else 0
                 self._enqueue_main(lambda p=pct: self._self_update_progress(btn, p))
 
-            download_update(download_url, zip_path, progress=on_progress)
+            download_update(download_url, zip_path, progress=on_progress, expected_sha256=sha256)
             self._enqueue_main(lambda: self._self_update_progress(btn, 100, "校验中..."))
             stage_root = stage_update(zip_path)
-            launch_update_installer(stage_root)
+            launch_update_installer(stage_root, zip_path)
         except Exception as e:
             err = str(e)
+            try:
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+            except OSError:
+                pass
             self._enqueue_main(lambda: self._self_update_failed(win, btn, err))
             return
         self._enqueue_main(lambda: self._self_update_ready(win))

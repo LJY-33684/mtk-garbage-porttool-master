@@ -12,7 +12,7 @@
 #   - 失败明确报错（不再 exit(0) 伪成功）；原始固件保留不动
 # Extracted into standalone OPPO Firmware Decrypt Tool (1.0.0.001):
 #   - 从 mtk-garbage-porttool 1.3.6.012 抽出，去掉移植/LK 依赖
-#   - utils._rmtree 改为本包 core/fsutil.py（仍为同一实现）
+#   - utils._rmtree 改为模块内置 _rmtree（原 fsutil.py 已内联，仍为同一实现）
 #   - 临时目录重新对齐 mtk 工具：统一 tmp/oppo_decrypt/，解密结束自动清理
 # ============================================================
 import binascii
@@ -29,8 +29,35 @@ from pathlib import Path
 from struct import pack, unpack
 
 from . import pyaes
-from .fsutil import _rmtree
 
+
+def _clear_attrs(path):
+    """清除 Windows 只读/系统/隐藏属性，使文件可被写入或删除。"""
+    try:
+        if os.name == 'nt':
+            from ctypes import windll
+            windll.kernel32.SetFileAttributesW(str(path), 0x80)  # FILE_ATTRIBUTE_NORMAL
+        else:
+            # POSIX：保留原有权限，仅确保可写。
+            # 不能直接 chmod(path, S_IWRITE)（=0200 只写），否则后续读取文件会 PermissionError。
+            os.chmod(path, os.stat(path).st_mode | 0o222)
+    except Exception:
+        pass
+
+
+def _rmtree(path):
+    """健壮版 rmtree：遇到只读/系统属性等拒绝删除时，先清属性再重试。"""
+    if not Path(path).exists():
+        return
+
+    def _onerror(func, p, exc_info):
+        _clear_attrs(p)
+        try:
+            func(p)
+        except Exception:
+            pass
+
+    shutil.rmtree(str(path), onerror=_onerror)
 
 
 # ============================================================
@@ -98,7 +125,10 @@ def _openssl_decrypt(mode, key, iv, data):
             binascii.hexlify(key).decode(), '-nosalt', '-nopad']
     if iv is not None:
         args += ['-iv', binascii.hexlify(iv).decode()]
-    r = subprocess.run(args, input=data, capture_output=True)
+    try:
+        r = subprocess.run(args, input=data, capture_output=True, timeout=120)
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError('openssl 解密超时（120s），已终止子进程') from e
     if r.returncode != 0:
         raise RuntimeError('openssl 解密失败：' + r.stderr.decode('utf-8', 'replace').strip())
     return r.stdout

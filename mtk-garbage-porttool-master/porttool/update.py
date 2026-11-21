@@ -3,6 +3,7 @@
 import urllib.request
 import json
 import base64
+import hashlib
 import os
 import re
 import shutil
@@ -59,13 +60,14 @@ def version_status(remote, local):
 
 class UpdateResult:
     """更新检查结果对象（线程安全，只读数据）"""
-    __slots__ = ('ok', 'tag', 'body', 'download_url', 'reason')
+    __slots__ = ('ok', 'tag', 'body', 'download_url', 'sha256', 'reason')
 
-    def __init__(self, ok=False, tag=None, body='', download_url=None, reason=''):
+    def __init__(self, ok=False, tag=None, body='', download_url=None, sha256=None, reason=''):
         self.ok = ok
         self.tag = tag
         self.body = body
         self.download_url = download_url
+        self.sha256 = sha256
         self.reason = reason
 
 
@@ -97,6 +99,7 @@ def fetch_update_info(source, timeout=UPDATE_TIMEOUT):
 
         # 2. 解析 latest_version.txt（支持有引号/无引号、update_url/update_url_1/update_url_2）
         tag = None
+        sha256 = None
         all_urls = {}
         for line in raw.splitlines():
             line = line.strip()
@@ -106,6 +109,9 @@ def fetch_update_info(source, timeout=UPDATE_TIMEOUT):
             m = re.match(r'(update_url(?:_\d+)?)\s*=\s*(.+?)\s*$', line)
             if m:
                 all_urls[m.group(1)] = m.group(2).strip().strip('"').strip("'")
+            m = re.match(r'update_sha256\s*=\s*(.+?)\s*$', line)
+            if m:
+                sha256 = m.group(1).strip().strip('"').strip("'").lower()
 
         if not tag:
             result.reason = "版本信息格式错误"
@@ -118,6 +124,7 @@ def fetch_update_info(source, timeout=UPDATE_TIMEOUT):
             result.tag = tag
             result.body = body
             result.download_url = download_url
+            result.sha256 = sha256
 
     except Exception as e:
         err_str = str(e).lower()
@@ -144,16 +151,21 @@ def fetch_release_body(src_cfg, tag, timeout=UPDATE_TIMEOUT):
     return body
 
 
-def download_update(url, dest_path, progress=None, timeout=180):
+def download_update(url, dest_path, progress=None, timeout=180, expected_sha256=None):
     """下载更新 zip 到 dest_path；progress(got, total) 用于 UI 进度回调。
 
-    只接受 http/https，限制最大 300 MiB，下载后交给 stage_update 做 zip 校验。
+    只接受 http/https，限制最大 300 MiB；下载时同步计算 SHA256，若远端
+    latest_version.txt 带 update_sha256 则必须一致，否则删除下载文件并报错。
     """
     if not url or not str(url).lower().startswith(("http://", "https://")):
         raise ValueError("更新地址不是有效的 http/https 链接")
+    expected_sha256 = (expected_sha256 or "").strip().lower() or None
+    if expected_sha256 is not None and not re.fullmatch(r'[0-9a-f]{64}', expected_sha256):
+        raise ValueError("更新包 SHA256 格式不合法")
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     req = urllib.request.Request(str(url), headers={"User-Agent": _UA})
+    digest = hashlib.sha256()
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
         if total > 300 * 1024 * 1024:
@@ -168,10 +180,24 @@ def download_update(url, dest_path, progress=None, timeout=180):
                 if got > 300 * 1024 * 1024:
                     raise ValueError("更新包超过 300 MiB，已中止下载")
                 f.write(chunk)
+                digest.update(chunk)
                 if progress:
                     progress(got, total)
     if total and got != total:
+        try:
+            dest_path.unlink()
+        except OSError:
+            pass
         raise IOError(f"更新包不完整：应为 {total} 字节，实际 {got} 字节")
+    actual_sha256 = digest.hexdigest()
+    if expected_sha256 and actual_sha256 != expected_sha256:
+        try:
+            dest_path.unlink()
+        except OSError:
+            pass
+        raise ValueError(
+            f"更新包 SHA256 不匹配：期望 {expected_sha256}，实际 {actual_sha256}"
+        )
     return str(dest_path)
 
 
@@ -222,14 +248,18 @@ def stage_update(zip_path):
     return str(app_root)
 
 
-def launch_update_installer(stage_root):
+def launch_update_installer(stage_root, zip_path=None):
     """生成并在后台启动替换脚本；调用方应立即退出程序。
 
-    Windows 用 robocopy 覆盖文件后重新运行 run.bat；Linux 用 cp -a 后执行 run.sh。
+    替换前先把当前程序目录完整备份到同级 ``<app>.backup``；复制失败时
+    用备份镜像回滚，避免“新 .py + 旧 .pyd”的半覆盖状态。复制成功后再
+    删除更新 zip 与解压暂存目录。Windows 用 robocopy，Linux 用 cp -a。
     脚本会等待 3 秒，给当前进程退出留出时间。
     """
     app_root = Path(__file__).resolve().parent.parent
     stage_root = Path(stage_root)
+    backup_root = Path(str(app_root) + ".backup")
+    zip_path = str(zip_path) if zip_path else ""
     if os.name == "nt":
         script = Path(tempfile.gettempdir()) / "mtk_porttool_apply_update.bat"
         script.write_text(
@@ -237,14 +267,30 @@ def launch_update_installer(stage_root):
             '"%SystemRoot%\\System32\\chcp.com" 65001 >nul 2>nul\n'
             f'set "SRC={stage_root}"\n'
             f'set "DST={app_root}"\n'
+            f'set "BACKUP={backup_root}"\n'
+            f'set "ZIP={zip_path}"\n'
             '"%SystemRoot%\\System32\\ping.exe" -n 4 127.0.0.1 >nul\n'
+            'if exist "%BACKUP%" rmdir /s /q "%BACKUP%"\n'
+            '"%SystemRoot%\\System32\\robocopy.exe" "%DST%" "%BACKUP%" /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:1 >nul\n'
+            'if errorlevel 8 (\n'
+            '  echo [ERROR] backup failed, robocopy exit=%ERRORLEVEL% > "%TEMP%\\mtk_porttool_update_error.log"\n'
+            '  exit /b 1\n'
+            ')\n'
             '"%SystemRoot%\\System32\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /NFL /NDL /NJH /NJS /NP /R:2 /W:1 >nul\n'
             'if errorlevel 8 (\n'
             '  echo [ERROR] update copy failed, robocopy exit=%ERRORLEVEL% > "%TEMP%\\mtk_porttool_update_error.log"\n'
+            '  "%SystemRoot%\\System32\\robocopy.exe" "%BACKUP%" "%DST%" /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:1 >nul\n'
+            '  if errorlevel 8 (\n'
+            '    echo [ERROR] rollback failed, backup kept at "%BACKUP%" >> "%TEMP%\\mtk_porttool_update_error.log"\n'
+            '  ) else (\n'
+            '    echo [INFO] rolled back to "%BACKUP%" >> "%TEMP%\\mtk_porttool_update_error.log"\n'
+            '  )\n'
             '  exit /b 1\n'
             ')\n'
-            'start "" "%DST%\\run.bat"\n'
-            'del "%~f0"\n',
+            'if exist "%SRC%" rmdir /s /q "%SRC%"\n'
+            'if exist "%ZIP%" del /f /q "%ZIP%"\n'
+            'start "" /B cmd /c ""%DST%\\run.bat""\n'
+            'exit /b 0\n',
             encoding="utf-8",
             newline="\r\n",
         )
@@ -260,10 +306,22 @@ def launch_update_installer(stage_root):
         )
     else:
         script = Path(tempfile.gettempdir()) / "mtk_porttool_apply_update.sh"
+        zip_cleanup = f'rm -f "{zip_path}"' if zip_path else ':'
         script.write_text(
             "#!/bin/sh\n"
+            "set -eu\n"
             "sleep 3\n"
-            f'cp -a "{stage_root}"/. "{app_root}"/\n'
+            f'BACKUP="{backup_root}"\n'
+            'rm -rf "$BACKUP"\n'
+            f'cp -a "{app_root}" "$BACKUP"\n'
+            f'if ! cp -a "{stage_root}"/. "{app_root}"/; then\n'
+            '  echo "[ERROR] update copy failed; rolling back from $BACKUP" >&2\n'
+            f'  rm -rf "{app_root}"\n'
+            f'  cp -a "$BACKUP" "{app_root}" || echo "[ERROR] rollback failed; backup kept at $BACKUP" >&2\n'
+            '  exit 1\n'
+            'fi\n'
+            f'rm -rf "{stage_root}"\n'
+            f'{zip_cleanup}\n'
             f'exec "{app_root}/run.sh"\n',
             encoding="utf-8",
         )

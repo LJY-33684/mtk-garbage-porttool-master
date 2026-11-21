@@ -19,10 +19,9 @@ def retTypeAndMachine():
             sys.stderr.write("Error : Program on windows only support 64bit machine\n")
             return None
     if ostype == 'linux':
-        if not (machine == 'aarch64' or \
-                machine == 'arm' or \
-                machine == 'x86' or \
-                machine == 'x86_64'):
-            sys.stderr.write("Error : Machine not support your device [%s]\n" %machine)
+        # 随包 bin/linux 只有 aarch64 与 x86_64 两套二进制；
+        # 32 位 arm/x86 若放行会在后续找不到 magiskboot/openssl。
+        if not (machine == 'aarch64' or machine == 'x86_64'):
+            sys.stderr.write("Error : Linux only support 64bit machine [%s]\n" %machine)
             return None
     return ostype.replace('windows', 'win'), machine
