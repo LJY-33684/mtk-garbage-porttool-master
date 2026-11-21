@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3.7.001**
+> 当前版本 / Current version：**1.3.7.005**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -374,6 +374,14 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3.7.005**（PR #8 合并后的稳定性修补 / post-merge stability patch）
+  - **新预设 / New preset**：合并 [@Xxinn034](https://github.com/Xxinn034) 的 PR #8，新增 `mt6572/mt6582/mt6592 kernel-3.4.5 (Android 4.x-7.x)` 预设（11 套）；预设保留 `legacy345_mode` + Binder/SELinux/模块序/fstab 全套 3.4.5 适配项
+  - **模块加载段重写 / Module block rewrite**：插入点改回「第一条模块行所在的 on 段」，注释/空行隔开不再把 12 条 insmod 插成顶层；无 insmod 行时只补在 `on post-fs-data` / `on boot` 段尾，找不到 on 段拒绝改；`.ko.ko` 兜底修复；每个模块保留自己的命令形态与参数（`mac=...` 不再被复制给全部模块）；wlan 槽位按 donor 的 `mt6572/mt6582` 变体选择；其他 on 段不跨段搬动、不重复补
+  - **Binder 补丁 / Binder guard**：Binder 缺陷特征必须唯一，多处命中拒绝盲选；site/cave 4 字节对齐校验；`beq site_va - 0x50` 作为待验证假设，回跳目标必须在 kernel 地址范围内、非空、不与 cave 重叠，否则放弃补丁；所有 B/BEQ 校验 ±32MB 与端点范围；新增 ADR (`add/sub pc`) 引用扫描，避免 cave 落在被 `ADR` 引用的零区
+  - **SELinux 分支 / SELinux branch**：按 donor init 字节取证自动分流——`patched`/`unknown` 写 `androidboot.selinux=disabled` 作保险；`stock`/`partial` 判定为「cmdline 无法修复」，立即中止本次移植并明确告警，不再产出必然重启进 recovery 的包
+  - **fstab 对齐 / fstab align**：`align_fstab` 同时扫描根 `init.rc` 与 `init.mt*.rc` 的 `mount_all`，覆盖 fstab 引用写在根 rc 的 donor
+  - **代码折叠 / Code fold**：删除 PR 新增的独立 `porttool/legacy345.py` 与 `Legacy345Porter`/`BootImage` 死代码（含 `/dev/emmc@android`、`size=0x600000`、`t6-insmod`、`chipid 0x6572` 等机型硬编码），标准管线用到的 `KernelImage`/`patch_binder`/`find_cave`/`rewrite_mtk_module_loads`/`classify_init_selinux_boot` 全部折进 `porttool/utils.py`；测试改为直接测上线函数
+  - **版本号 / Versioning**：按「修 N 升 N」，001 + 4 个修补模块（模块段 / Binder / SELinux / fstab 根 rc）→ `1.3.7.005`
 - **1.3.7.001**（Linux/ARM64 解密环境补全 + OPPO 核心合并 + UI 小功能 / Linux & ARM64 decrypt stack + OPPO core merge + UI niceties）
   - **OPPO 解密核心合并 / OPPO decrypt core merge**：`oppo_decrypt.py` / `brotli.py` 与独立版 `oppo-firmware-decrypt` 1.0.0.009 对齐——平台/架构过滤更严格（WSL 下不再误用 Windows `openssl.exe`、ARM64 不再尝试 x86_64 二进制）、OZIP 小块改走 pyaes 批量路径、失败路径与临时目录清理加固；新增 `porttool/fsutil.py`（带 Windows 只读属性清理的 `_rmtree`）
   - **Linux/ARM64 随包组件 / Bundled Linux & ARM64 components**：新增 `bin/linux/{aarch64,x86_64}/openssl` 与 `brotli`，`porttool/_vendor_brotli/` 补齐 cp312–cp315 的 aarch64 wheel（cp315 为自编 `linux_aarch64`）；Linux/ARM64 上 3GB 级 OZIP/OPS 解密由纯 Python pyaes 回退转为随包 OpenSSL 加速，无需系统安装 openssl

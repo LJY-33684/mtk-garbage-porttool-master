@@ -37,7 +37,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3.7.001`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3.7.005`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -120,6 +120,11 @@ python porttool_cli.py port \
 | `fix_storage` | 存储修复·boot 侧（AMG 教程，仅 mt6572/mt6582/mt6592 方案提供）：收敛 fstab 外置存储声明（删除 `/devices/` 存储行、补标准 sdcard1/usbotg 行），并在 init.rc 删除 `ro.vold.primary_physical`、补充 protect 挂载 / `mount_all` / 存储 symlink，修复"单卡槽设备刷入后冒出多个损坏 SD 卡卷"的问题。多数设备此条目即可解决 |
 | `fix_storage_system` | 存储修复·system 侧（兜底，仅 mt6572/mt6582/mt6592 方案提供，默认关闭）：**仅当 fix_storage（boot 侧）修复后存储仍异常时勾选**。将底包 `system/bin/sdcard` + `system/bin/vold` 替换进移植源（对应 AMG 教程"6582 移植 6572 固件后仍异常时从同版本 6582 包提取这两个文件"）。带版本守卫：底包与移植源 Android 大版本不一致时自动跳过（vold/sdcard 跨版本不兼容），仅保留 boot 侧修复 |
 | `generate_script` | 生成自动刷机脚本（**仅 zip 输出生效**；img 输出无卡刷脚本概念，CLI/GUI 会自动忽略该条目，非 bug） |
+| `legacy345_mode` | 3.4.5 跨版本标志（GPU 强制底包、勿单关）；仅 `kernel-3.4.5` 预设默认开 |
+| `patch_binder_kernel` | 3.4.5 binder waiter.private NULL 守卫：特征必须唯一，多处命中拒绝盲选；`beq site-0x50` 为待验证假设，回跳目标不合法则跳过并打印原因（不产出错误补丁） |
+| `selinux_disabled_cmdline` | 3.4.5 SELinux 失败路径分流：按 donor `initrd/init` 字节取证，`patched`/`unknown` 写 `androidboot.selinux=disabled` 作保险；`stock`/`partial` 立即中止本次移植并告警（cmdline 无法修复，继续出包会重启进 recovery） |
+| `patch_module_order` | 3.4.5 模块加载段重写：只处理第一条模块行所在的 `on` 段，按依赖序补全；每个模块保留自己的命令形态/参数，wlan 按 donor 变体选择；不跨 `on` 段搬动、不向顶层追加 |
+| `align_fstab` | fstab 名称对齐：扫描根 `init.rc` 与 `init.mt*.rc` 的 `mount_all` 引用，把底包挂载表写到 donor 实际引用的文件名 |
 
 > **§188 条目拆分说明（1.3.6.007 起）**：凡与上游（`ColdWindScholar/mtk-garbage-porttool` 的 `porttool/configs.py`）存在差异的移植条目，均拆为两条——**上游定点**（32 位原版行为，默认值继承拆分前）与**后引入扩展**（lib64/vendor/通配等本地新增维度，默认关）。GUI 勾"上游定点"= 对齐上游行为；勾"后引入扩展"= 启用本地扩展；两条都勾 = 拆分前完整行为。仅 `mt6572/mt6582/mt6592 kernel-3.4.67`（gralloc/hwcomposer/malidriver/ril/firmware/mddb/libshowlogo）与 `G79 (mt6735/mt6735m/mt6737)`（camera/malidriver/firmware/mddb/libshowlogo）执行拆分（上游有精确定义）；其余方案为本地自建、无上游对照，保持单条。**仅移植内核方案**已补回 `replace_firmware`/`replace_mddb`（上游行为：`etc/firmware` + `etc/mddb`，默认开启）。
 
@@ -279,7 +284,7 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3.7.001`（格式 = 主版本 `1.3` + beta号 `7` + p号 `001`；沿革：`1.3.6.003` +4 模块→`1.3.6.007`，+2→`1.3.6.009`（mddb 文件替换类型对冲 + wmt_launcher ramdisk 注入），+3→`1.3.6.012`（配置加载与内嵌表同步 / 单实例跳转 / 启动脚本前置检测）；上一发布版 `1.3.6.012` → 本版 `1.3.7.001`，属功能增强：升 z 位、p 重置 001，包含两项——补全 Linux/ARM64 解密环境（随包 OpenSSL/brotli、OPPO 解密核心对齐、临时目录统一 `tmp/oppo_decrypt/`、窗口左上角 LOGO 图标显示、日志框一键清空）与合并独立 OPPO 工具的高通 QC OFP 分支（尾部 `0x7CEF` 页索引 + 加密 XML 分派、6 组密钥、Sahara/Chained 长度特判、PK zip 型固定密码解压、结构兜底））
+- 本桥接接口随工具版本发布：当前 `1.3.7.005`（格式 = 主版本 `1.3` + beta号 `7` + p号 `005`；沿革：`1.3.6.003` +4 模块→`1.3.6.007`，+2→`1.3.6.009`（mddb 文件替换类型对冲 + wmt_launcher ramdisk 注入），+3→`1.3.6.012`（配置加载与内嵌表同步 / 单实例跳转 / 启动脚本前置检测）；`1.3.6.012` → `1.3.7.001` 属功能增强：升 z 位、p 重置 001，包含补全 Linux/ARM64 解密环境（随包 OpenSSL/brotli、OPPO 解密核心对齐、临时目录统一 `tmp/oppo_decrypt/`、窗口左上角 LOGO 图标显示、日志框一键清空）与合并独立 OPPO 工具的高通 QC OFP 分支（尾部 `0x7CEF` 页索引 + 加密 XML 分派、6 组密钥、Sahara/Chained 长度特判、PK zip 型固定密码解压、结构兜底）；本版 `1.3.7.005` = `1.3.7.001` + 4 个修补模块（模块加载段 / Binder 守卫 / SELinux 分流 / fstab 根 rc），并合并 PR #8 的 `kernel-3.4.5` 预设（`legacy345_mode`））
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）
 
 ## 14. 已知限制 / Known Limitations

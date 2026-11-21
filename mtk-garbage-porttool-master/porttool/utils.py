@@ -32,6 +32,7 @@ import sys
 import platform
 import gzip
 import zlib
+import struct
 
 if osname == 'nt':
     from ctypes import windll, wintypes
@@ -334,7 +335,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3.7.001'
+tool_author = 'affggh'; tool_version = '1.3.7.005'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -1044,7 +1045,6 @@ class portutils:
                             print(f"  - 跳过 {i}（底包中不存在）", file=self.std)
                 case 'patch_binder_kernel':
                     print(f"【移植项】3.4.5 内核 Binder NULL 守卫补丁...", file=self.std)
-                    from .legacy345 import KernelImage, patch_binder
                     _kn = None
                     for _c in ('kernel', 'kernel.gz'):
                         if portdir.joinpath(_c).exists():
@@ -1055,28 +1055,32 @@ class portutils:
                     _tmpk = portdir.joinpath('kernel.patched')
                     _k = KernelImage(_kn)
                     if _k.has('selinuxfs'):
-                        print("  ! 底包内核带 selinuxfs，可能非 3.4.5 无 SELinux 情形；仍尝试 Binder 补丁", file=self.std)
-                    _man = patch_binder(_k, str(_tmpk))
+                        print("  ! 移植源内核带 selinuxfs，可能非 3.4.5 无 SELinux 情形；仍尝试 Binder 补丁", file=self.std)
+                    _diag = []
+                    _man = patch_binder(_k, str(_tmpk), _diag)
                     if _man:
                         _clear_attrs(_kn)
                         _kn.write_bytes(_tmpk.read_bytes())
                         _tmpk.unlink()
-                        print(f"  - 补丁完成：site {_man['site']} -> cave {_man['cave']}（{_man.get('cave_len','?')} 字节空洞）", file=self.std)
+                        print(f"  - 补丁完成：site {_man['site']} -> cave {_man['cave']}（{_man.get('cave_len','?')} 字节空洞，唯一特征 {_man.get('candidates','?')} 处）", file=self.std)
                         print(f"  - 内核已就地修补（zImage 总长不变，FNAME 填充）", file=self.std)
                     else:
                         if _tmpk.exists():
                             _tmpk.unlink()
-                        print("  - 未检出 MTK Binder 缺陷三连（内核可能已修补或非该代 binder），保持原件", file=self.std)
+                        for _m in _diag:
+                            print(f"  ! {_m}", file=self.std)
+                        print("  - 未打 Binder 补丁（内核可能已修补、非该代 binder，或特征/跳转校验未通过），保持原件", file=self.std)
                 case 'selinux_disabled_cmdline':
                     print(f"【移植项】3.4.5 SELinux 启动失败防护（底包无 selinuxfs）...", file=self.std)
-                    # 事实（AOSP 7.0.0_r1/7.1.2_r36，与维护者核对一致）：stock init 的
+                    # 事实（AOSP 7.0.0_r1/7.1.2_r36）：stock init 的
                     # selinux_status_from_cmdline() 只认 permissive，无 disabled 值；
                     # load_policy 失败 → security_failure() → 重启进 recovery。
-                    # 因此 cmdline 对 stock 7.x init **无效**，只是对已去失败路径的
-                    # init 加一层保险；真正前提是 donor init 已打过补丁，这里做字节级核验。
+                    # 因此 cmdline 对 stock 7.x init **无效**；只有 donor init 已打过
+                    # 社区补丁（去掉失败重启路径）才可继续。这里做字节级核验，
+                    # stock/partial 一律不写 cmdline，也不再继续出包。
                     _init_check = portdir.joinpath('initrd', 'init')
+                    _verdict = 'unknown'
                     if _init_check.is_file():
-                        from .legacy345 import classify_init_selinux_boot
                         _v = classify_init_selinux_boot(_init_check.read_bytes())
                         _verdict = _v['verdict']
                         if _verdict == 'patched':
@@ -1094,6 +1098,16 @@ class portutils:
                         else:
                             print("  - 移植源 init 未检出该失败消息（可能为 4.x init 或非 ELF32），"
                                   "按保险写入 cmdline", file=self.std)
+                    else:
+                        print("  - 未找到移植源 initrd/init，无法核验 SELinux 失败路径；"
+                              "按 unknown 处理，仅写保险 cmdline", file=self.std)
+
+                    if _verdict in ('stock', 'partial'):
+                        print("  ! 已中止本次移植：stock/partial init 无法靠 cmdline 修复，"
+                              "继续出包会在开机时重启进 recovery；请先修 init 再重跑本项"
+                              "（不产出必然 bootloop 的包）", file=self.std)
+                        return False
+
                     _bi_path = portdir.joinpath("bootinfo.txt")
                     if not _bi_path.exists():
                         print("  - 跳过（未找到 bootinfo.txt）", file=self.std)
@@ -1102,13 +1116,14 @@ class portutils:
                     _changed = False
                     for _i, _l in enumerate(_lines):
                         if _l.startswith('cmdline:'):
-                            _v = _l.split(':', 1)[1].strip()
-                            if 'androidboot.selinux=' in _v:
-                                _nv = re.sub(r'androidboot\.selinux=\w+', 'androidboot.selinux=disabled', _v)
+                            _cmd = _l.split(':', 1)[1].strip()
+                            if 'androidboot.selinux=' in _cmd:
+                                _new_cmd = re.sub(r'androidboot\.selinux=\w+',
+                                                  'androidboot.selinux=disabled', _cmd)
                             else:
-                                _nv = _v + ' androidboot.selinux=disabled'
-                            if _nv != _v:
-                                _lines[_i] = 'cmdline:' + _nv; _changed = True
+                                _new_cmd = _cmd + ' androidboot.selinux=disabled'
+                            if _new_cmd != _cmd:
+                                _lines[_i] = 'cmdline:' + _new_cmd; _changed = True
                     if _changed:
                         _clear_attrs(_bi_path)
                         with _bi_path.open('w', encoding='utf-8', newline='\n') as _f:
@@ -1118,7 +1133,6 @@ class portutils:
                         print("  - cmdline 无需修改", file=self.std)
                 case 'patch_module_order':
                     print(f"【移植项】3.4.5 MTK 模块加载顺序重写...", file=self.std)
-                    from .legacy345 import rewrite_mtk_module_loads
                     _rcdir = portdir.joinpath('initrd')
                     if not _rcdir.is_dir():
                         print("  - 跳过（未找到 initrd 目录）", file=self.std)
@@ -1129,15 +1143,23 @@ class portutils:
                         print("  - 跳过（未找到平台主 rc）", file=self.std)
                         continue
                     _rc = _rcs[0]
+                    _wlan = None
+                    if '6572' in _rc.name:
+                        _wlan = 'wlan_mt6572.ko'
+                    elif '6582' in _rc.name or '6592' in _rc.name:
+                        _wlan = 'wlan_mt6582.ko'
                     _txt = _rc.read_text(encoding='utf-8', errors='replace')
-                    _new, _total, _miss, _changed = rewrite_mtk_module_loads(_txt)
+                    _new, _total, _miss, _changed, _note = rewrite_mtk_module_loads(
+                        _txt, wlan_name=_wlan)
+                    if _note:
+                        print(f"  - {_note}", file=self.std)
                     if not _changed:
                         print(f"  - {_rc.name} 模块加载段已规范（{_total} 项），无需修改", file=self.std)
                         continue
                     _clear_attrs(_rc)
                     _rc.write_text(_new, encoding='utf-8', newline='\n')
                     print(f"  - 已重写 {_rc.name} 模块加载段：按依赖序共 {_total} 项，补全缺失 {_miss} 项"
-                          "（沿用移植源原有命令形态，不写死 helper 名；幂等）", file=self.std)
+                          "（每个模块保留自己的命令形态/参数；不跨 on 段搬动；幂等）", file=self.std)
                 case 'align_fstab':
                     print(f"【移植项】fstab 名称对齐（把底包挂载表内容写到移植源 mount_all 实际引用的文件名）...", file=self.std)
                     _rcd = portdir.joinpath('initrd')
@@ -1146,9 +1168,15 @@ class portutils:
                         print("  - 跳过（initrd 目录缺失）", file=self.std)
                         continue
                     _targets = []
-                    for _p in sorted(_rcd.glob('init.mt*.rc')):
-                        if _p.name.endswith(('.usb.rc', '.aee.rc', '.environ.rc')):
-                            continue
+                    _rc_paths = []
+                    _root_rc = _rcd.joinpath('init.rc')
+                    if _root_rc.is_file():
+                        _rc_paths.append(_root_rc)
+                    _rc_paths += sorted(
+                        p for p in _rcd.glob('init.mt*.rc')
+                        if p.is_file() and not p.name.endswith(
+                            ('.usb.rc', '.aee.rc', '.environ.rc')))
+                    for _p in _rc_paths:
                         for _m in re.finditer(r'mount_all\b[^\n]*', _p.read_text(encoding='utf-8', errors='replace')):
                             for _tok in _m.group(0).split():
                                 if 'fstab' in _tok and not _tok.startswith('-'):
@@ -2992,29 +3020,29 @@ class portutils:
         # kernel-only / recovery-only + zip 输出二次拦截：UI 已拦截，此处防绕过 UI 直接调用
         if self._flag('kernel_only_mode') and not self.genimg:
             print(f"【移植失败】kernel-only（仅替换内核）仅支持 img 输出，请将输出类型切换为 img", file=self.std)
-            return
+            return False
         if self._flag('recovery_only_mode') and not self.genimg:
             print(f"【移植失败】recovery-only（仅移植Recovery）仅支持 img 输出，请将输出类型切换为 img", file=self.std)
-            return
+            return False
         if self._flag('recovery_only_mode') and self.source_type == 'zip':
             print(f"【移植失败】recovery-only（仅移植Recovery）仅支持 img 移植源（不支持 zip 卡刷包源）", file=self.std)
-            return
+            return False
 
         # LK去警告 模式：直接执行 LK 打补丁（无解包 / 无 system 参与）
         if self._flag('lk_patch_mode'):
             if not self.genimg:
                 print(f"【移植失败】LK去警告（仅去警告）仅支持 img 输出", file=self.std)
-                return
+                return False
             from .LKPatch import run_lk_patch
             _ok = run_lk_patch(self.bootimg, self.std)
             print(f"\n【流程结束】LK去警告{'成功' if _ok else '失败'}，流程结束", file=self.std)
-            return
+            return _ok
 
         try:
             self.__decompress_portzip()
             if not self.__port_boot():
                 print(f"【移植失败】boot.img移植过程出错", file=self.std)
-                return
+                return False
             # kernel-only / recovery-only 模式：只处理 boot/recovery，跳过 system.img
             if self._flag('kernel_only_mode'):
                 print(f"\n【kernel-only】仅替换内核模式，跳过 system.img 处理", file=self.std)
@@ -3029,6 +3057,7 @@ class portutils:
                 self.__pack_rom()
         
             print(f"\n【流程结束】移植工具执行完毕！", file=self.std)
+            return True
         finally:  # 新增finally：无论成功/失败都执行清理
             # 异常冒泡到 finally 时，真正的失败点在上面最后一条执行日志附近（先清理后报错只是顺序问题）
             if sys.exc_info()[0] is not None:
@@ -3045,3 +3074,518 @@ class portutils:
             if Path("base").exists():
                 _rmtree("base")
             print(f"【清理完成】base目录已删除", file=self.std)
+
+MTK_MAGIC = 0x58881688
+
+# MTK 3.4.5 模块加载顺序：ccci 在 STP 前，STP core 在 combo 前。
+# 规范槽位用主名；wlan 按芯片有 mt6572/mt6582 两个变体，归一到同一槽位。
+MTK_MODULE_ORDER = [
+    'devinfo.ko', 'sec.ko', 'devapc.ko',
+    'ccci_plat.ko', 'ccci.ko',
+    'mtk_stp_wmt.ko', 'mtk_stp_bt.ko', 'mtk_stp_gps.ko', 'mtk_fm_drv.ko',
+    'mtk_wmt_wifi.ko', 'wlan_mt6582.ko',
+    'vcodec_kernel_driver.ko',
+]
+_WLAN = ('wlan_mt6582.ko', 'wlan_mt6572.ko')   # 同一槽位的芯片变体（主名在前）
+_WLAN_SLOT = MTK_MODULE_ORDER.index('wlan_mt6582.ko')
+
+# insmod 行：native `insmod <path>` 或 `exec -- <helper> insmod <path>`
+# （helper 形态原样保留；只认 .ko 结尾，避免把注释/其他命令误判）
+_INSMOD_RE = re.compile(
+    r'^([ \t]*(?:(?:exec\b[^\n]*?)?insmod[ \t]+)(\S+\.ko)[^\n]*?)[ \t]*$')
+_RANK = {}
+for _i, _n in enumerate(MTK_MODULE_ORDER):
+    _RANK[_n] = _i
+for _w in _WLAN:
+    _RANK[_w] = _WLAN_SLOT
+
+
+def _module_line_form(sample_line):
+    """从一条现有 insmod 行提取「命令模板」：(head, tail)。
+
+    head = 行首到模块 basename 之前（含 helper 与 /system/lib/modules/ 前缀），
+    tail = basename(.ko) 之后到行尾。新行 = head + 模块名 + tail，
+    从而原样保留 native / exec -- helper 与路径前缀，只换模块文件名。
+    没有可识别样本时 tail 为空，绝不能返回 '.ko'——模块名本身已带 .ko，
+    否则会拼出 devinfo.ko.ko。
+    """
+    m = _INSMOD_RE.match(sample_line)
+    if not m:
+        return '    insmod /system/lib/modules/', ''
+    path = m.group(2)                       # 例如 /system/lib/modules/wlan_mt6582.ko
+    idx = sample_line.find(path)
+    if idx < 0:
+        return '    insmod /system/lib/modules/', ''
+    slash = path.rfind('/')
+    base_start = idx + slash + 1            # basename（含 .ko）在原行中的起点
+    head = sample_line[:base_start]
+    tail = sample_line[idx + len(path):].rstrip()
+    return head, tail
+
+
+_SECTION_RE = re.compile(r'^\s*(on|service|import)\s+\S')
+
+
+def _section_starts(lines):
+    """返回所有段起点 (下标, 类型)；类型为 on/service/import。
+
+    service/import 也必须算段边界：否则 `service` 块里的 insmod 会被误认成
+    前面 `on` 段的命令，重写后落进 service 块。
+    """
+    starts = []
+    for i, ln in enumerate(lines):
+        m = _SECTION_RE.match(ln)
+        if m:
+            starts.append((i, m.group(1)))
+    return starts
+
+
+def _section_of(idx, starts):
+    """idx 所属段 (下标, 类型)；顶层返回 None。"""
+    owner = None
+    for s in starts:
+        if s[0] <= idx:
+            owner = s
+        else:
+            break
+    return owner
+
+
+def _section_end(start, starts, n):
+    """段结束下标（不含）：下一个 on/service/import 行或文件尾。"""
+    start_idx = start[0] if isinstance(start, tuple) else start
+    for s in starts:
+        if s[0] > start_idx:
+            return s[0]
+    return n
+
+
+def rewrite_mtk_module_loads(txt, wlan_name=None):
+    """重写 rc 的 MTK 模块加载段：按 MTK_MODULE_ORDER 重排并补全缺失项。
+
+    - 只处理「第一条已识别模块行所在的 on 段」；其他 on 段的模块行原样保留，
+      不跨 trigger 搬动（避免把晚加载的模块提前）。
+    - 插入点就是该段第一条模块行的位置，不再回退到 `on boot` 之前或文件尾；
+      空行/注释隔开的真实 rc 不会把 insmod 插成顶层命令。
+    - 每个模块保留 donor 自己的命令形态与参数；只有确实缺失的槽位才用
+      第一条模块行的 head 补，且 tail 为空（不把某个模块的 mac=... 参数
+      复制给全部模块）。
+    - wlan 槽位按 donor 实际变体选择；缺行时优先 wlan_name，其次文本里出现的
+      变体，最后才用主名 wlan_mt6582.ko。
+    - 返回 (新文本, 规范槽位数, 补全数, 是否变更, 说明)。
+    """
+    lines = txt.split('\n')
+    starts = _section_starts(lines)
+    records = []
+    for i, ln in enumerate(lines):
+        m = _INSMOD_RE.match(ln)
+        if not m:
+            continue
+        base = m.group(2).rsplit('/', 1)[-1]
+        if base not in _RANK:
+            continue
+        head, tail = _module_line_form(ln)
+        records.append({'i': i, 'base': base, 'head': head, 'tail': tail,
+                        'sec': _section_of(i, starts)})
+
+    total = len(MTK_MODULE_ORDER)
+
+    # 没有任何已识别模块行：只在 on post-fs-data / on boot 段尾补一整块。
+    # 找不到 on 段时宁可不改，也不把顶层/文件尾塞成非法 rc。
+    if not records:
+        anchor = None
+        for pat in (r'^\s*on\s+post-fs-data\b', r'^\s*on\s+boot\b'):
+            for i, ln in enumerate(lines):
+                if re.match(pat, ln):
+                    anchor = i
+                    break
+            if anchor is not None:
+                break
+        if anchor is None:
+            return txt, total, 0, False, \
+                '未找到 on post-fs-data/on boot 段，未修改（不向顶层或文件尾追加）'
+
+        pos = _section_end(anchor, starts, len(lines))
+        default_head = '    insmod /system/lib/modules/'
+        _wlan = wlan_name if wlan_name in _WLAN else None
+        if _wlan is None:
+            _wlan = next((w for w in _WLAN if w in txt), None)
+        block = []
+        for i, name in enumerate(MTK_MODULE_ORDER):
+            if i == _WLAN_SLOT and _wlan:
+                name = _wlan
+            block.append(default_head + name)
+        out = lines[:pos] + block + lines[pos:]
+        new = '\n'.join(out)
+        return new, total, total, new != txt, \
+            '原 rc 无 MTK insmod 行，已在 on 段尾补全 %d 项' % total
+
+    # 有模块行：只重写第一条模块行所在的 on 段。
+    target_sec = records[0]['sec']
+    if target_sec is None:
+        return txt, total, 0, False, \
+            '识别到 insmod 行但不在任何段内，未修改（疑似非法顶层命令）'
+    if target_sec[1] != 'on':
+        return txt, total, 0, False, \
+            'insmod 行位于 %s 段而非 on 段，未修改（避免写进 service/import 块）' % target_sec[1]
+
+    target_recs = [r for r in records if r['sec'] == target_sec]
+    other_recs = [r for r in records if r['sec'] != target_sec]
+
+    chosen = {}                             # slot idx -> basename（donor 实际用名优先）
+    forms = {}                              # basename -> (head, tail)
+    for r in target_recs:
+        slot = _RANK[r['base']]
+        chosen.setdefault(slot, r['base'])
+        forms.setdefault(r['base'], (r['head'], r['tail']))
+
+    present_other = {_RANK[r['base']] for r in other_recs}
+
+    default_head = target_recs[0]['head']
+    _wlan = wlan_name if wlan_name in _WLAN else None
+    if _wlan is None:
+        _wlan = next((w for w in _WLAN if w in txt), None)
+
+    block = []
+    added = 0
+    for slot, name in enumerate(MTK_MODULE_ORDER):
+        if slot in chosen:
+            base = chosen[slot]
+            head, tail = forms[base]
+        elif slot in present_other:
+            # 该模块已在其他 on 段出现；不在本段重复补，避免二次 insmod。
+            continue
+        else:
+            base = _wlan if (slot == _WLAN_SLOT and _wlan) else name
+            head, tail = default_head, ''     # 缺失项不继承任何模块参数
+            added += 1
+        block.append(head + base + tail)
+
+    # 删除本段原识别行，插回第一条模块行的位置（kept 坐标系）。
+    rec_idx = {r['i'] for r in target_recs}
+    first_idx = min(rec_idx)
+    kept = [ln for i, ln in enumerate(lines) if i not in rec_idx]
+    pos = first_idx                         # 第一条模块行之前没有本段删除项
+    out = kept[:pos] + block + kept[pos:]
+    new = '\n'.join(out)
+
+    notes = []
+    if other_recs:
+        notes.append('其他段 %d 条模块行保持原样（不跨段搬动）' % len(other_recs))
+    if present_other:
+        notes.append('%d 个槽位已在其他段，未重复补' % len(present_other))
+    note = '；'.join(notes)
+    return new, total, added, new != txt, note
+
+
+def _elf32_load_segments(data):
+    """ELF32 的 PT_LOAD 表 (file_off, vaddr, filesz)；非 ELF32 返回 None。"""
+    if len(data) < 52 or data[:4] != b'\x7fELF' or data[4] != 1:
+        return None
+    try:
+        ph_off = struct.unpack('<I', data[0x1c:0x20])[0]
+        ph_num, ph_entsize = struct.unpack('<HH', data[0x2a:0x2e])
+    except struct.error:
+        return None
+    segs = []
+    for i in range(ph_num):
+        o = ph_off + i * ph_entsize
+        if o + 32 > len(data):
+            break
+        t, off, va, _pa, fs, _ms, _fl, _al = struct.unpack('<8I', data[o:o + 32])
+        if t == 1 and fs:
+            segs.append((off, va, fs))
+    return segs or None
+
+
+def _off2va(segs, off):
+    for o, v, f in segs:
+        if o <= off < o + f:
+            return v + (off - o)
+    return None
+
+
+SECFAIL_NEEDLE = b'Security failure; rebooting into recovery mode'
+
+
+def classify_init_selinux_boot(init_bytes):
+    """判定移植源 init 二进制的启动期 SELinux 失败路径（字节级取证，无外部依赖）。
+
+    背景（AOSP 7.0.0_r1 / 7.1.2_r36 源码）：
+      selinux_status_from_cmdline() **只认 androidboot.selinux=permissive**，没有
+      disabled 这个值；selinux_initialize() 无条件调用 selinux_android_load_policy()，
+      失败即 security_failure() → "Security failure; rebooting into recovery mode"。
+      → 底包内核无 selinuxfs 时，**任何 cmdline 值都救不了 stock init**；
+        能开机的前提是 donor init 已被去掉该失败路径（TestMT6572 / ferhung
+        mt6582_patches 一类社区补丁，典型改法是 load_policy 失败分支 return false）。
+
+    判定两个字节特征：
+      parses_cmdline     —— init 里有 'androidboot.selinux' 串（stock 的 cmdline 解析器）
+      secfail_referenced —— 'Security failure; rebooting into recovery mode' 串是否
+                            仍被字面量池引用（被删干净的补丁会让串变悬空/消失）
+
+    verdict：
+      'patched'  两者皆无 → boot 期无失败重启路径，安全（cmdline 仅作保险）
+      'stock'    解析 cmdline 且失败消息被引用 → 无 selinuxfs 底包上必启动失败
+      'partial'  只有其一 → 风险不明，提示人工确认
+      'unknown'  非 ELF32 / 找不到该消息（如 4.x init，本就不含此逻辑）
+    """
+    out = {'parses_cmdline': None, 'secfail_present': None,
+           'secfail_referenced': None, 'verdict': 'unknown'}
+    if not init_bytes:
+        return out
+    out['parses_cmdline'] = b'androidboot.selinux' in init_bytes
+    p = init_bytes.find(SECFAIL_NEEDLE)
+    if p < 0:
+        # 4.x init 之类根本没有这条消息；无法判定也意味着无此失败路径
+        out['verdict'] = 'unknown'
+        return out
+    start = init_bytes.rfind(b'\x00', 0, p) + 1
+    segs = _elf32_load_segments(init_bytes)
+    if segs is None:
+        return out
+    out['secfail_present'] = True
+    va = _off2va(segs, start)
+    if va is None:
+        return out
+    out['secfail_referenced'] = init_bytes.count(struct.pack('<I', va)) > 0
+    if out['parses_cmdline'] and out['secfail_referenced']:
+        out['verdict'] = 'stock'
+    elif not out['parses_cmdline'] and not out['secfail_referenced']:
+        out['verdict'] = 'patched'
+    else:
+        out['verdict'] = 'partial'
+    return out
+
+
+class KernelImage:
+    """MTK zImage（KERN 头 + gzip/xz 载荷）。"""
+
+    def __init__(self, path):
+        self.path = str(path)
+        self.raw = Path(path).read_bytes()
+        body, self.base = self.raw, 0
+        if struct.unpack('<I', self.raw[:4])[0] == MTK_MAGIC:
+            size = struct.unpack('<I', self.raw[4:8])[0]
+            self.base = 512
+            body = self.raw[512:512 + size]
+        self.body = body
+        self.kind = self.comp_off = self.vmlinux = None
+        for pat, kind in ((b'\x1f\x8b\x08', 'gzip'), (b'\xfd7zXZ\x00', 'xz')):
+            i = body.find(pat)
+            while i >= 0:
+                try:
+                    if kind == 'gzip':
+                        o = zlib.decompressobj(31)
+                        v = o.decompress(body[i:]) + o.flush()
+                    else:
+                        v = lzma.decompress(body[i:], format=lzma.FORMAT_XZ)
+                    if v.find(b'Linux version') >= 0:
+                        self.kind, self.comp_off, self.vmlinux = kind, i, v
+                        break
+                except Exception:
+                    pass
+                i = body.find(pat, i + 1)
+            if self.vmlinux:
+                break
+        if self.vmlinux is None:
+            raise ValueError('%s: 找不到可解压的内核载荷' % path)
+        self.base_va = 0xc0008000
+        self.elf = self.vmlinux[:4] == b'\x7fELF'
+        m = re.search(rb'Linux version ([0-9.]+)', self.vmlinux)
+        self.version = m.group(1).decode() if m else '?'
+
+    def has(self, needle):
+        if isinstance(needle, str):
+            needle = needle.encode()
+        return self.vmlinux.find(needle) >= 0
+
+    def recompress(self, vmlinux, levels=(9, 8), mems=(7, 8, 9)):
+        span = len(self.body) - self.comp_off - 8
+        best = None          # (level, memlevel, payload)
+        for lv in levels:
+            for mem in mems:
+                c = zlib.compressobj(lv, zlib.DEFLATED, 31, mem)
+                gz = c.compress(vmlinux) + c.flush()
+                if len(gz) <= span and (best is None or len(gz) < len(best[2])):
+                    best = (lv, mem, gz)
+        if best is None:
+            raise ValueError('补丁后内核压不进原压缩跨度')
+        lv, mem, gz = best
+        pad = span - len(gz)
+        if pad:
+            gz = bytearray(gz)
+            gz[3] |= 0x08          # Linux 3.4 的 gunzip 只跳 FNAME
+            gz = bytes(gz[:10]) + b'P' * (pad - 1) + b'\x00' + bytes(gz[10:])
+        return gz, lv, mem, pad
+
+    def rebuild(self, vmlinux, out):
+        gz, lv, mem, pad = self.recompress(vmlinux)
+        img = bytearray(self.raw[:self.base + self.comp_off])
+        img += gz
+        img += self.raw[self.base + self.comp_off + len(gz):]
+        Path(out).write_bytes(bytes(img))
+        return out, lv, mem, pad
+
+
+def _arm_imm(imm12):
+    """ARM 数据 processing 立即数：imm8 循环右移 2*rot。"""
+    imm8 = imm12 & 0xFF
+    rot = (imm12 >> 8) & 0xF
+    if rot:
+        imm8 = ((imm8 >> (2 * rot)) | (imm8 << (32 - 2 * rot))) & 0xFFFFFFFF
+    return imm8
+
+
+def find_cave(vmlinux, need=24, lo=None, hi=None, base=0xc0008000):
+    """找无人引用的全零区：字面量、B/BL 目标、ADR (add/sub pc) 都不落入。
+
+    注意：MTK zImage 解压出的是 raw vmlinux，没有 ELF program header，
+    无法从字节上证明 zero 区位于可执行段；本函数只做引用扫描。
+    """
+    n = len(vmlinux)
+    refs = set()
+    for off in range(0, n - 3, 4):
+        w = struct.unpack_from('<I', vmlinux, off)[0]
+        if base <= w < base + n:
+            refs.add(w)
+        if (w & 0x0F000000) in (0x0A000000, 0x0B000000):
+            imm = w & 0x00FFFFFF
+            if imm & 0x00800000:
+                imm -= 0x01000000
+            refs.add(base + off + 8 + (imm << 2))
+        # ADR 伪指令：add/sub rd, pc, #imm
+        if (w & 0xFFFFF000) == 0xE28F0000:
+            refs.add(base + off + 8 + _arm_imm(w & 0xFFF))
+        elif (w & 0xFFFFF000) == 0xE24F0000:
+            refs.add(base + off + 8 - _arm_imm(w & 0xFFF))
+
+    i = lo or 0
+    end = min(hi or n, n)
+    while i < end:
+        if vmlinux[i] == 0:
+            j = i
+            while j < n and vmlinux[j] == 0:
+                j += 1
+            if j - i >= need and i % 4 == 0:
+                va = base + i
+                if not any(va <= v < va + need for v in refs):
+                    return i, j - i
+            i = j
+        else:
+            i += 1
+    return None
+
+
+def _branch_edges(vmlinux, base):
+    """收集所有 B/BL（含条件 B）的 (源地址, 目标地址)，用于反推回调标签。"""
+    edges = []
+    n = len(vmlinux)
+    for off in range(0, n - 3, 4):
+        w = struct.unpack_from('<I', vmlinux, off)[0]
+        if (w & 0x0F000000) not in (0x0A000000, 0x0B000000):
+            continue
+        imm = w & 0x00FFFFFF
+        if imm & 0x00800000:
+            imm -= 0x01000000
+        edges.append((base + off, base + off + 8 + (imm << 2)))
+    return edges
+
+
+def patch_binder(kimg, out, diagnostics=None):
+    """MTK Binder waiter.private NULL 守卫。找到唯一特征就补，否则返回 None。
+
+    PR 原稿无条件取 cands[0] 并硬编码 `beq site_va - 0x50`；这里改为：
+      - 特征必须唯一，多处命中直接拒绝（避免改错函数）；
+      - 优先从 site 之后的 B/BEQ 目标反推「原回调」标签（不写死偏移）；
+        找不到才回退 -0x50，并继续做范围/对齐/非空/cave 重叠校验；
+      - site/cave 必须 4 字节对齐；
+      - 所有 B/BEQ 都校验源/目标在内核范围内，超出 ±32MB 直接放弃。
+    回退 -0x50 仍不保证跨机型正确，但目标不合法就不打补丁，而不是把错误
+    跳转写进内核。
+    """
+    def diag(msg):
+        if diagnostics is not None:
+            diagnostics.append(msg)
+
+    v = bytearray(kimg.vmlinux)
+    base = kimg.base_va
+    needle = bytes.fromhex('003094e5')
+    cands, pos = [], v.find(needle)
+    while pos >= 0:
+        if pos % 4 == 0 and pos + 16 <= len(v):
+            w = bytes(v[pos:pos + 16])
+            if b'\x80\xc0\x0b\xe5' in w and bytes.fromhex('020053e3') in w:
+                cands.append(pos)
+        pos = v.find(needle, pos + 1)
+    if not cands:
+        diag('未发现 MTK Binder 缺陷三连')
+        return None
+    if len(cands) != 1:
+        diag('发现 %d 处 Binder 特征（%s），拒绝盲选第一处'
+             % (len(cands), ', '.join(hex(base + c) for c in cands[:4])))
+        return None
+
+    site = cands[0]
+    if site % 4:
+        diag('Binder 特征 site 未 4 字节对齐: %s' % hex(base + site))
+        return None
+    cave = find_cave(bytes(v), 24, lo=0x200000, hi=len(v) - 0x1000, base=base)
+    if cave is None:
+        diag('未找到无人引用的 24 字节零空洞')
+        return None
+    cave_off, cave_len = cave
+    if cave_off % 4:
+        diag('cave 未 4 字节对齐: %s' % hex(base + cave_off))
+        return None
+
+    def branch(src_va, dst_va, cond=0xe):
+        if not (base <= src_va < base + len(v)) or not (base <= dst_va < base + len(v)):
+            raise ValueError('分支端点不在内核地址范围')
+        off = dst_va - (src_va + 8)
+        if off % 4 or not (-(1 << 25) <= off < (1 << 25)):
+            raise ValueError('分支超出 ±32MB 或未对齐')
+        return struct.pack('<I', (cond << 28) | 0x0A000000 | ((off >> 2) & 0xFFFFFF))
+
+    site_va, cave_va = base + site, base + cave_off
+    # 回调标签：优先找 site 之后 0x200 内、指向 site 前 0x10..0x100 的 B/BEQ。
+    back = []
+    for src_va, dst_va in _branch_edges(v, base):
+        if (site_va <= src_va <= site_va + 0x200
+                and site_va - 0x100 <= dst_va <= site_va - 0x10
+                and dst_va % 4 == 0):
+            back.append(dst_va)
+    if back:
+        counts = {}
+        for t in back:
+            counts[t] = counts.get(t, 0) + 1
+        null_va = max(counts, key=lambda t: (counts[t], t))
+        null_src = 'branch-target'
+    else:
+        null_va = site_va - 0x50
+        null_src = 'fallback -0x50'
+        diag('未找到 site 前的 B/BEQ 目标，回退 -0x50（继续校验）')
+
+    if not (base <= null_va < base + len(v)) or null_va % 4:
+        diag('原回调候选 %s 不在内核范围/未对齐，放弃补丁' % hex(null_va))
+        return None
+    if cave_va <= null_va < cave_va + cave_len:
+        diag('原回调候选 %s 落在 cave 内，放弃补丁' % hex(null_va))
+        return None
+    if bytes(v[null_va - base:null_va - base + 4]) == b'\x00\x00\x00\x00':
+        diag('原回调候选 %s 处为空字节，疑似错误偏移，放弃补丁' % hex(null_va))
+        return None
+
+    stub = bytes.fromhex('80c00be5')                # str ip,[fp,#-0x80]
+    stub += bytes.fromhex('000054e3')               # cmp r4,#0
+    stub += branch(cave_va + 8, null_va, 0)         # beq -> 原回调
+    stub += bytes.fromhex('003094e5')               # ldr r3,[r4]
+    stub += branch(cave_va + 16, site_va + 8)       # b   -> 续
+    v[site:site + 4] = branch(site_va, cave_va)
+    v[cave_off:cave_off + len(stub)] = stub
+    out, lv, mem, pad = kimg.rebuild(bytes(v), out)
+    return {'site': hex(site_va), 'cave': hex(cave_va), 'cave_len': cave_len,
+            'null_target': hex(null_va), 'null_source': null_src,
+            'candidates': len(cands),
+            'stub': stub.hex(), 'gzip_level': lv, 'gzip_memlevel': mem,
+            'fname_pad': pad, 'output': str(out)}

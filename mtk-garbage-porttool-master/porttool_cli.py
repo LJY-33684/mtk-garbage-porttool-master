@@ -179,7 +179,8 @@ def cmd_port(a, log):
     try:
         pu = portutils(items, a.base_boot, base_sys, port_source, source_type, genimg, log)
         print(f"【CLI】输出目录：{pu.outdir}", file=log)
-        pu.start()
+        if not pu.start():
+            return 2
     except Exception as e:
         import traceback
         print(f"【移植异常】执行过程出错：{e}", file=log)

@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""legacy345 回归测试（自包含，无需任何 ROM 镜像）。
+"""legacy345 回归测试（自包含，无需 ROM 镜像）。
 
-用合成数据构造「MTK Binder 缺陷 + 零空洞」的内核和最小 boot 镜像，
-验证管线的四个核心不变量：
-
-  T1  Binder 补丁自动定位：特征匹配到唯一 site、cave 无引用、跳板字节正确
-  T2  zImage 重封装：总长不变，且按 Linux 3.4 的 FNAME-only 规则可解回
-  T3  boot 合成：ramdisk 来自移植源、内核来自底包、cmdline/fstab 修改到位
-  T4  cpio 往返：无改动重打包逐字节一致
+覆盖标准管线真正调用的函数，并逐个复现 PR 审查确认的四类阻塞：
+  T1  Binder 补丁：唯一 site / cave 避开字面量+ADR / 跳板字节正确
+  T2  zImage 重封装：总长不变，按 Linux 3.4 FNAME-only 规则可解回
+  T3  模块段重写：注释隔行不再插顶层、无 .ko.ko、参数不串、wlan 变体正确
+  T4  SELinux init 取证：stock/patched/partial/unknown 四类 verdict
+  T5  失败路径：多处特征、非法 -0x50 目标、顶层 insmod 均拒绝改
 
 直接运行：  python -m porttool.test_legacy345
 """
 import gzip
-import hashlib
-import io
 import os
 import struct
 import sys
@@ -23,50 +20,24 @@ import zlib
 
 if __package__ in (None, ''):
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from porttool.legacy345 import (BootImage, KernelImage, Legacy345Porter,
-                                    patch_binder, find_cave, MTK_MAGIC)
+    from porttool.utils import (KernelImage, patch_binder, find_cave,
+                                rewrite_mtk_module_loads,
+                                classify_init_selinux_boot, MTK_MAGIC)
 else:
-    from .legacy345 import (BootImage, KernelImage, Legacy345Porter,
-                            patch_binder, find_cave, MTK_MAGIC)
+    from .utils import (KernelImage, patch_binder, find_cave,
+                        rewrite_mtk_module_loads,
+                        classify_init_selinux_boot, MTK_MAGIC)
 
 OK, BAD = [], []
 
 
 def ck(label, cond, detail=''):
     (OK if cond else BAD).append((label, detail))
-    print('%s %-52s %s' % ('OK  ' if cond else 'FAIL', label, detail))
+    print('%s %-56s %s' % ('OK  ' if cond else 'FAIL', label, detail))
 
-
-# ---------------------------------------------------------------- 合成数据
 
 def le32(v):
     return struct.pack('<I', v)
-
-
-def cpio_newc(name, mode, data):
-    """一条 newc 记录 + 尾填充（4 对齐）。"""
-    nb = name.encode() + b'\x00'
-    fields = [0] * 13
-    fields[1] = mode
-    fields[6] = len(data)
-    fields[11] = len(nb)
-    hdr = b'070701' + b''.join(b'%08X' % x for x in fields)
-    out = bytearray(hdr + nb)
-    out += b'\x00' * ((4 - len(out) % 4) % 4)
-    out += data
-    out += b'\x00' * ((4 - len(out) % 4) % 4)
-    return bytes(out)
-
-
-def cpio_archive(files, dirs=()):
-    out = bytearray()
-    for d in dirs:
-        out += cpio_newc(d, 0o040755, b'')
-    for n, m, data in files:
-        out += cpio_newc(n, m, data)
-    out += cpio_newc('TRAILER!!!', 0, b'')
-    out += b'\x00' * ((512 - len(out) % 512) % 512)
-    return bytes(out)
 
 
 # ARM 指令（与真实 T6/Y511 内核缺陷点字节一致）
@@ -74,98 +45,225 @@ LDR_R3_R4 = bytes.fromhex('003094e5')          # ldr r3,[r4]   ← 缺陷指令
 STR_IP_FP = bytes.fromhex('80c00be5')          # str ip,[fp,#-0x80]
 CMP_R3_2 = bytes.fromhex('020053e3')           # cmp r3,#2
 
+MTK_MAGIC_BYTES = le32(MTK_MAGIC)
+
 
 def build_fake_vmlinux(site_off=0x40000, cave_off=0x220000):
-    """构造含 MTK Binder 缺陷特征 + 一处零空洞 + 一处被引用的零区 的镜像。
-
-    - 缺陷三连：ldr r3,[r4] / str ip,[fp,#-0x80] / cmp r3,#2 同现 16 字节窗口
-    - cave_off 处：40 字节全零，**无人引用** → 合法空洞（≥0x200000，
-      与 patch_binder 内部 find_cave 的 lo 一致）
-    - decoy_off 处：40 字节全零，但后面有一个字面量指向它 → 必须被排除
-    """
+    """含 Binder 缺陷三连 + 一处合法零洞 + 一处被字面量引用的零区。"""
     size = cave_off + 0x40000
     im = bytearray(size)
-    # 填充非零噪声（可执行段）
     for i in range(0, size, 4):
         struct.pack_into('<I', im, i, 0xE1A00000 | ((i // 4) & 0xFFFF))
-    # 缺陷三连
     im[site_off:site_off + 4] = LDR_R3_R4
     im[site_off + 4:site_off + 8] = STR_IP_FP
     im[site_off + 8:site_off + 12] = CMP_R3_2
-    # 合法空洞
+    # site 后 0x20 处放一条 B 回 site-0x50，模拟原回调标签；
+    # patch_binder 应优先从该目标反推 null_target，而不是直接硬编码偏移。
+    # src=site+0x20, PC=src+8, dst=site-0x50 → off=-0x78 → imm=-0x1e。
+    struct.pack_into('<I', im, site_off + 0x20, 0xEAFFFFE2)
     im[cave_off:cave_off + 40] = bytes(40)
-    # 诱饵零区 + 指向它的字面量（模拟字面量池引用）
     decoy = cave_off + 0x20000
     im[decoy:decoy + 40] = bytes(40)
     im[decoy + 256:decoy + 260] = le32(0xC0008000 + decoy)
-    # 内核横幅（KernelImage 解压后校验用）
     banner = b'Linux version 3.4.5 (fake@build) #1 SMP\n\x00'
     im[0x200:0x200 + len(banner)] = banner
     im[0x300:0x309] = b'_mali_ukk'
     return bytes(im), site_off, cave_off, decoy
 
 
+def build_fake_vmlinux_adr():
+    """ADR 引用的零区在合法洞之前；find_cave 必须跳过它。"""
+    size = 0x260000
+    im = bytearray(size)
+    for i in range(0, size, 4):
+        struct.pack_into('<I', im, i, 0xE1A00000 | ((i // 4) & 0xFFFF))
+    im[0x40000:0x40004] = LDR_R3_R4
+    im[0x40004:0x40008] = STR_IP_FP
+    im[0x40008:0x4000c] = CMP_R3_2
+    # ADR 指令：add r0, pc, #0xFF0 → 0xC0008000 + 0x200FF8
+    # imm12 = rot 14 + imm8 0xFF（ROR(0xFF, 28) = 0xFF0）
+    struct.pack_into('<I', im, 0x200000, 0xE28F0EFF)
+    im[0x200FF8:0x201020] = bytes(0x28)      # 被 ADR 引用的零区
+    im[0x220000:0x220028] = bytes(0x28)      # 合法零洞
+    return bytes(im), 0x220000
+
+
 def build_mtk_kernel(vmlinux):
     """zImage 风格：512B MTK KERN 头 + gzip 载荷 + 尾部数据。"""
     gz = gzip.compress(vmlinux, 9, mtime=0)
-    payload = bytearray(gz) + bytes(64)          # 尾部填充模拟
+    payload = bytearray(gz) + bytes(64)
     hdr = MTK_MAGIC_BYTES + le32(len(payload)) + b'KERN' + bytes(512 - 12)
     return bytes(hdr) + bytes(payload)
 
 
-MTK_MAGIC_BYTES = le32(0x58881688)
+def synth_init(with_cmdline_parser, with_secfail_ref, with_secfail_str,
+               text_len=0x40, rodata_gap=4):
+    """拼最小 ELF32 init：rodata 放失败串，字面量池按开关引用它。"""
+    secfail = b'Security failure; rebooting into recovery mode...\n\x00'
+    cmdln = b'androidboot.selinux\x00'
+    rodata = bytearray()
+    if with_secfail_str:
+        rodata += secfail
+    if with_cmdline_parser:
+        rodata += cmdln
+    body_off = 52 + 32
+    code = bytearray(text_len)
+    if with_secfail_ref and with_secfail_str:
+        struct.pack_into('<I', code, text_len - 4, 0x8000 + text_len + rodata_gap)
+    total = bytes(code) + bytes(rodata_gap) + bytes(rodata)
+    hdr = bytearray(b'\x7fELF\x01\x01\x01' + bytes(9))
+    hdr += struct.pack('<HHIIIIIHHHHHH', 2, 40, 1, 0x8000, 52, 0, 0,
+                       52, 32, 1, 32, 40, 0)
+    struct.pack_into('<I', hdr, 0x1c, 52)
+    struct.pack_into('<H', hdr, 0x2a, 1)
+    struct.pack_into('<H', hdr, 0x2e, 32)
+    ph = struct.pack('<8I', 1, body_off, 0x8000, 0x8000,
+                     len(total), len(total), 5, 0x1000)
+    return bytes(hdr) + ph + total
 
 
-def build_boot(kernel_img, ramdisk_files, dirs=(), cmdline=b'', name=b'',
-               page=2048, partition=None):
-    """最小 ANDROID! v0 boot 镜像（含 MTK 512B ramdisk 包装）。"""
-    raw_rd = cpio_archive(ramdisk_files, dirs)
-    gz = gzip.compress(raw_rd, 9, mtime=0)
-    wrapper = MTK_MAGIC_BYTES + le32(len(gz)) + b'ROOT' + bytes(512 - 12)
-    ramdisk = wrapper + gz
+# ---------------------------------------------------------------- 模块段测试
 
-    head = bytearray(page)
-    head[0:8] = b'ANDROID!'
-    struct.pack_into('<10I', head, 8,
-                     len(kernel_img), 0x10008000,
-                     len(ramdisk), 0x11000000,
-                     0, 0x10F00000,
-                     0x10000100, page, 0, 0)
-    head[48:48 + len(name)] = name
-    head[64:64 + len(cmdline)] = cmdline
-    h = hashlib.sha1()
-    for seg in (kernel_img, ramdisk, b''):
-        h.update(seg)
-        h.update(le32(len(seg)))
-    head[576:608] = h.digest() + bytes(12)
-
-    img = bytearray(head) + kernel_img
-    img += b'\x00' * ((page - len(img) % page) % page)
-    img += ramdisk
-    if partition:
-        img += b'\x00' * (partition - len(img))
-    return bytes(img)
+RC_COMMENT = (
+    'on boot\n'
+    '    start foo\n'
+    '\n'
+    '# load MTK modules\n'
+    '    insmod /system/lib/modules/mtk_wmt_wifi.ko mac=00:11:22\n'
+    '    insmod /system/lib/modules/devinfo.ko\n'
+    '\n'
+    'service foo /system/bin/foo\n'
+    '    class core\n'
+)
 
 
-# ---------------------------------------------------------------- 测试
+def test_module_rewrite():
+    out, total, added, changed, note = rewrite_mtk_module_loads(
+        RC_COMMENT, wlan_name='wlan_mt6572.ko')
+    ck('T3 注释/空行隔开仍留在 on boot 段内',
+       out.startswith('on boot\n') and '# load MTK modules' in out
+       and 'on boot' not in out[out.find('devinfo.ko'):], note)
+    ck('T3 不生成 .ko.ko', '.ko.ko' not in out)
+    ck('T3 参数只留在原模块', 'mac=00:11:22' in out
+       and out.count('mac=00:11:22') == 1
+       and 'devinfo.ko mac' not in out)
+    ck('T3 缺失 wlan 用 6572 变体', 'wlan_mt6572.ko' in out
+       and 'wlan_mt6582.ko' not in out)
+    ck('T3 总槽位 12 / 补全 10', total == 12 and added == 10,
+       '%d/%d' % (total, added))
 
-FSTAB = (b'/emmc@android /system ext4 ro wait\n')
-INIT_RC = b'on early-init\n    start ueventd\n'
-DEFAULT_PROP = b'ro.secure=1\n'
+    # 幂等
+    out2, _t, _a, ch2, _n = rewrite_mtk_module_loads(out, wlan_name='wlan_mt6572.ko')
+    ck('T3 模块段幂等', out2 == out and not ch2)
+
+    # 无 insmod 行：补在 on post-fs-data 段尾，不落顶层
+    rc_empty = 'on post-fs-data\n    mkdir /data\n\non boot\n    start foo\n'
+    out, total, added, changed, note = rewrite_mtk_module_loads(
+        rc_empty, wlan_name='wlan_mt6582.ko')
+    ck('T3 无 insmod 行时插在 on 段尾', 'mkdir /data' in out
+       and out.index('devinfo.ko') > out.index('mkdir /data')
+       and out.index('devinfo.ko') < out.index('on boot'))
+    ck('T3 无 insmod 行不生成 .ko.ko', '.ko.ko' not in out and total == 12
+       and added == 12)
+
+    # 无 on 段：拒绝改
+    rc_top = 'insmod /system/lib/modules/devinfo.ko\n'
+    out, total, added, changed, note = rewrite_mtk_module_loads(rc_top)
+    ck('T3 顶层 insmod 拒绝改写', out == rc_top and not changed
+       and ('不在任何段' in note or '不在 on 段' in note))
+
+    # 其他 on 段不搬动、不重复
+    rc_two = ('on boot\n    insmod /system/lib/modules/devinfo.ko\n'
+              'on post-fs-data\n    insmod /system/lib/modules/sec.ko\n')
+    out, total, added, changed, note = rewrite_mtk_module_loads(rc_two)
+    ck('T3 其他 on 段保持原样', out.count('devinfo.ko') == 1
+       and out.count('sec.ko') == 1
+       and out.index('sec.ko') > out.index('on post-fs-data')
+       and '其他段' in note)
+
+    # service 块内的 insmod 不得被当成 on 段命令
+    rc_service = ('service foo /system/bin/foo\n'
+                  '    insmod /system/lib/modules/devinfo.ko\n')
+    out, total, added, changed, note = rewrite_mtk_module_loads(rc_service)
+    ck('T3 service 块内 insmod 拒绝改写', out == rc_service and not changed
+       and 'service' in note)
+
+    # on 段里已有 service 块：无 insmod 时补块必须在 service 之前
+    rc_on_service = ('on post-fs-data\n    mkdir /data\n'
+                     'service foo /system/bin/foo\n    class core\n')
+    out, total, added, changed, note = rewrite_mtk_module_loads(
+        rc_on_service, wlan_name='wlan_mt6582.ko')
+    ck('T3 无 insmod 时补块不落进 service 块',
+       out.index('devinfo.ko') > out.index('mkdir /data')
+       and out.index('devinfo.ko') < out.index('service foo'))
 
 
-class Log:
-    def write(self, s):
-        pass
+def test_find_cave_adr():
+    v, valid = build_fake_vmlinux_adr()
+    cave = find_cave(v, 24, lo=0x200000, hi=len(v) - 0x1000)
+    ck('T1 find_cave 跳过 ADR 引用零区',
+       cave is not None and cave[0] == valid,
+       'cave=0x%x expect=0x%x' % (cave[0] if cave else -1, valid))
 
-    def flush(self):
-        pass
+
+def test_patch_failures(tmp):
+    # 两处特征 → 拒绝
+    v, *_ = build_fake_vmlinux()
+    v = bytearray(v)
+    v[0x50000:0x5000c] = v[0x40000:0x4000c]
+    p = os.path.join(tmp, 'dup.bin')
+    with open(p, 'wb') as f:
+        f.write(build_mtk_kernel(bytes(v)))
+    diag = []
+    man = patch_binder(KernelImage(p), os.path.join(tmp, 'dup_out.bin'), diag)
+    ck('T5 多处 Binder 特征拒绝盲选', man is None and diag
+       and '2 处' in diag[0], diag[0] if diag else '')
+
+    # site < 0x50 → -0x50 越界 → 拒绝
+    v2, site2, *_ = build_fake_vmlinux(site_off=0x40)
+    p2 = os.path.join(tmp, 'low.bin')
+    with open(p2, 'wb') as f:
+        f.write(build_mtk_kernel(v2))
+    diag2 = []
+    man2 = patch_binder(KernelImage(p2), os.path.join(tmp, 'low_out.bin'), diag2)
+    ck('T5 -0x50 目标越界时拒绝补丁', man2 is None and diag2
+       and '不在内核范围' in diag2[0], diag2[0] if diag2 else '')
+
+    # 没有回跳 B 时回退 -0x50，但仍校验目标非空
+    v3, site3, *_ = build_fake_vmlinux()
+    v3 = bytearray(v3)
+    struct.pack_into('<I', v3, site3 + 0x20, 0xE1A00000)  # 抹掉回跳 B
+    p3 = os.path.join(tmp, 'fallback.bin')
+    with open(p3, 'wb') as f:
+        f.write(build_mtk_kernel(bytes(v3)))
+    man3 = patch_binder(KernelImage(p3), os.path.join(tmp, 'fallback_out.bin'))
+    ck('T5 无回跳 B 时回退 -0x50 并校验通过',
+       man3 is not None and man3.get('null_source') == 'fallback -0x50'
+       and man3.get('null_target') == hex(0xC0008000 + site3 - 0x50),
+       '%s / %s' % (man3.get('null_source') if man3 else None,
+                    man3.get('null_target') if man3 else None))
+
+
+def test_selinux():
+    ck('T4 stock init → stock',
+       classify_init_selinux_boot(synth_init(True, True, True))['verdict'] == 'stock')
+    ck('T4 补丁后(串悬空无解析器) → patched',
+       classify_init_selinux_boot(synth_init(False, False, True))['verdict'] == 'patched')
+    ck('T4 只解析 cmdline → partial',
+       classify_init_selinux_boot(synth_init(True, False, True))['verdict'] == 'partial')
+    ck('T4 只引用失败串 → partial',
+       classify_init_selinux_boot(synth_init(False, True, True))['verdict'] == 'partial')
+    ck('T4 无该消息(如 4.x init) → unknown',
+       classify_init_selinux_boot(synth_init(False, False, False))['verdict'] == 'unknown')
+    ck('T4 空/非 ELF → unknown',
+       classify_init_selinux_boot(b'')['verdict'] == 'unknown'
+       and classify_init_selinux_boot(b'nope' * 8)['verdict'] == 'unknown')
 
 
 def main():
-    print('=' * 68)
+    print('=' * 72)
     print('legacy345 回归测试（合成数据）')
-    print('=' * 68)
+    print('=' * 72)
     tmp = tempfile.mkdtemp(prefix='legacy345_')
 
     # ---------- T1/T2 内核补丁 ----------
@@ -180,10 +278,11 @@ def main():
     ck('T1 vmlinux 解压等长', len(k.vmlinux) == len(vmlinux),
        '%d vs %d' % (len(k.vmlinux), len(vmlinux)))
 
-    cave = find_cave(k.vmlinux, 24, lo=0, hi=len(k.vmlinux))
+    cave = find_cave(k.vmlinux, 24, lo=0x200000, hi=len(k.vmlinux) - 0x1000)
     ck('T1 find_cave 避开被引用零区',
-       cave is not None and abs(cave[0] - cave_off) < abs(cave[0] - decoy_off),
+       cave is not None and cave[0] == cave_off,
        'cave=0x%x' % (cave[0] if cave else -1))
+    test_find_cave_adr()
 
     out = os.path.join(tmp, 'kernel_fixed.bin')
     man = patch_binder(k, out)
@@ -191,11 +290,14 @@ def main():
     if man:
         ck('T1 补丁点为缺陷 ldr 指令',
            man['site'] == hex(0xC0008000 + site_off), man['site'])
+        ck('T1 回调目标由 B 反推（非硬编码）',
+           man.get('null_source') == 'branch-target'
+           and man.get('null_target') == hex(0xC0008000 + site_off - 0x50),
+           '%s / %s' % (man.get('null_source'), man.get('null_target')))
         ck('T1 stub 以 str+cmp r4 开头',
-           man['stub'].startswith('80c00be5') or len(man['stub']) == 20,
+           man['stub'].startswith('80c00be5') and len(man['stub']) == 40,
            man['stub'])
 
-        # T2: 重封装后总长不变 + 可解回 + 补丁真的落进镜像
         with open(out, 'rb') as f:
             fixed_bytes = f.read()
         with open(kbin, 'rb') as f:
@@ -208,7 +310,6 @@ def main():
         ck('T2 缺陷点已被改成跳转',
            kf.vmlinux[site_off:site_off + 4] != LDR_R3_R4,
            kf.vmlinux[site_off:site_off + 4].hex())
-        # 跳转目标 == cave，且从 site 能一路走回 site+8（结构校验）
         w = struct.unpack('<I', kf.vmlinux[site_off:site_off + 4])[0]
         ck('T2 site 处是 B 指令(cond=0xE, op=0x0A)',
            (w & 0x0F000000) == 0x0A000000, hex(w))
@@ -221,7 +322,6 @@ def main():
         ck('T2 stub 写入空洞',
            kf.vmlinux[(tgt - 0xC0008000):(tgt - 0xC0008000) + 20].hex() == man['stub'])
 
-        # T2b: 模拟 Linux 3.4 解压器（只跳 FNAME），在 KernelImage 的 body 内定位
         body = kf.body
         gp = body.find(b'\x1f\x8b\x08')
         probe = zlib.decompressobj(31)
@@ -240,114 +340,11 @@ def main():
         else:
             ck('T2b 无需填充（未用 FNAME）', True)
 
-    # ---------- T3 boot 合成 ----------
-    base_rd = [('init', 0o100750, b'BASEINIT'),
-               ('init.mt6572.rc', 0o100750,
-                b'on boot\n    class_start core\n'),
-               ('default.prop', 0o100644, DEFAULT_PROP),
-               ('fstab.mt6572', 0o100644, FSTAB)]
-    donor_rd = [('init', 0o100750, b'DONORINIT'),
-                ('init.mt6572.rc', 0o100750,
-                 b'on boot\n    class_start core\n'),
-                ('default.prop', 0o100644, b'ro.secure=0\n'),
-                ('fstab.mt6572', 0o100644, b'/emmc@android /system ext4 ro wait\n')]
-    base_boot = os.path.join(tmp, 'base_boot.img')
-    donor_boot = os.path.join(tmp, 'donor_boot.img')
-    base_kernel = open(kbin, 'rb').read()
-    with open(base_boot, 'wb') as f:
-        f.write(build_boot(base_kernel, base_rd, cmdline=b'console=ttyMT0'))
-    with open(donor_boot, 'wb') as f:
-        f.write(build_boot(base_kernel, donor_rd))
+    test_patch_failures(tmp)
+    test_module_rewrite()
+    test_selinux()
 
-    p = Legacy345Porter(base_boot, None, donor_boot, None,
-                        log=Log(), outdir=os.path.join(tmp, 'out'))
-    # 直接测 s2_boot（s0/s1 上面已覆盖等价逻辑）
-    boot = p.s2_boot(out, cmdline='androidboot.selinux=disabled')
-    nb = BootImage(boot)
-    ents, _, _ = nb.entries()
-    files = {e[0]: e[2] for e in ents}
-    ck('T3 输出 boot 内核来自底包补丁产物', nb.kernel == open(out, 'rb').read())
-    ck('T3 ramdisk 来自移植源（init=DONORINIT）',
-       files.get('init') == b'DONORINIT')
-    ck('T3 cmdline 生效', 'selinux=disabled' in nb.cmdline, nb.cmdline)
-    ck('T3 fstab 被重写',
-       b'mmcblk0p4' in files.get('fstab.mt6572', b'')
-       or b'emmc@' in files.get('fstab.mt6572', b''),
-       files.get('fstab.mt6572', b'')[:40])
-    ck('T3 模块加载块已注入',
-       b't6-insmod' in files.get('init.mt6572.rc', b''))
-    ck('T3 default.prop 标记', b'ro.port.build=legacy345-port' in
-       files.get('default.prop', b''))
-    ck('T3 sha1 头校验一致', nb.sha_id[:20] == hashlib.sha1(
-        nb.kernel + le32(len(nb.kernel))
-        + nb.ramdisk + le32(len(nb.ramdisk))
-        + b'' + le32(0)).digest())
-
-    # 幂等：对 s2 产物再跑一次 s3 的模块补丁不叠加
-    rc1 = p._patch_module_load(files['init.mt6572.rc'].decode())
-    rc2 = p._patch_module_load(rc1)
-    ck('T3 模块块补丁幂等（不叠加）', rc1 == rc2,
-       '%d vs %d' % (rc1.count('t6-insmod'), rc2.count('t6-insmod')))
-
-    # ---------- T4 cpio 往返 ----------
-    b0 = BootImage(base_boot)
-    e0, tr0, tl0 = b0.entries()
-    again = BootImage.pack_cpio(e0, tr0, tl0)
-    ck('T4 cpio 无改动往返逐字节一致', again == gzip.decompress(b0.gz))
-
-    # 改一个文件再回来
-    for e in e0:
-        if e[0] == 'init':
-            e[2] = b'CHANGED'
-    changed = BootImage.pack_cpio(e0, tr0, tl0)
-    d2, _t2, _r2 = _cpio_from_raw(changed)
-    vals = {x[0]: x[2] for x in d2}
-    ck('T4 修改后往返仍可解析', vals.get('init') == b'CHANGED')
-
-    # ---------- T5 init SELinux 失败路径判定（合成 ELF32，零外部依赖） ----------
-    from porttool.legacy345 import classify_init_selinux_boot as cls
-
-    def synth_init(with_cmdline_parser, with_secfail_ref, with_secfail_str,
-                   text_len=0x40, rodata_gap=4):
-        """拼最小 ELF32 init：rodata 放 'Security failure...' 串，
-        字面量池按开关引用它（引用=stock 失败路径仍在；悬空=社区补丁删掉分支）。"""
-        secfail = b'Security failure; rebooting into recovery mode...\n\x00'
-        cmdln = b'androidboot.selinux\x00'
-        rodata = bytearray()
-        if with_secfail_str:
-            rodata += secfail
-        if with_cmdline_parser:
-            rodata += cmdln
-        body_off = 52 + 32
-        code = bytearray(text_len)
-        if with_secfail_ref and with_secfail_str:
-            # 单 LOAD：p_offset=body_off, p_vaddr=0x8000 → VA(串)=0x8000+text_len+gap
-            struct.pack_into('<I', code, text_len - 4, 0x8000 + text_len + rodata_gap)
-        total = bytes(code) + bytes(rodata_gap) + bytes(rodata)
-        hdr = bytearray(b'\x7fELF\x01\x01\x01' + bytes(9))
-        hdr += struct.pack('<HHIIIIIHHHHHH', 2, 40, 1, 0x8000, 52, 0, 0,
-                           52, 32, 1, 32, 40, 0)
-        struct.pack_into('<I', hdr, 0x1c, 52)
-        struct.pack_into('<H', hdr, 0x2a, 1)
-        struct.pack_into('<H', hdr, 0x2e, 32)
-        ph = struct.pack('<8I', 1, body_off, 0x8000, 0x8000,
-                         len(total), len(total), 5, 0x1000)
-        return bytes(hdr) + ph + total
-
-    ck('T5 stock init → stock',
-       cls(synth_init(True, True, True))['verdict'] == 'stock')
-    ck('T5 补丁后(串悬空无解析器) → patched',
-       cls(synth_init(False, False, True))['verdict'] == 'patched')
-    ck('T5 只解析 cmdline → partial',
-       cls(synth_init(True, False, True))['verdict'] == 'partial')
-    ck('T5 只引用失败串 → partial',
-       cls(synth_init(False, True, True))['verdict'] == 'partial')
-    ck('T5 无该消息(如 4.x init) → unknown',
-       cls(synth_init(False, False, False))['verdict'] == 'unknown')
-    ck('T5 空/非 ELF → unknown',
-       cls(b'')['verdict'] == 'unknown' and cls(b'nope' * 8)['verdict'] == 'unknown')
-
-    print('=' * 68)
+    print('=' * 72)
     print('RESULT: %s  (%d ok, %d failed)'
           % ('PASS' if not BAD else 'FAIL', len(OK), len(BAD)))
     for label, detail in BAD:
@@ -355,30 +352,6 @@ def main():
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
     return 0 if not BAD else 1
-
-
-def _cpio_from_raw(raw):
-    """内部用：从 cpio 原始字节解析（复用 BootImage 逻辑）。"""
-    entries, trailer, trailing = [], None, b''
-    pos = 0
-    while pos + 110 <= len(raw):
-        if raw[pos:pos + 6] != b'070701':
-            break
-        hdr = raw[pos:pos + 110]
-        v = [int(hdr[6 + i * 8:14 + i * 8], 16) for i in range(13)]
-        name = raw[pos + 110:pos + 110 + v[11] - 1].decode()
-        start = (pos + 110 + v[11] + 3) & ~3
-        data = raw[start:start + v[6]]
-        nxt = (start + v[6] + 3) & ~3
-        if name == 'TRAILER!!!':
-            return entries, (hdr, name, data), raw[nxt:]
-        entries.append([name, v, data, hdr])
-        pos = nxt
-    return entries, trailer, trailing
-
-
-class _BI(BootImage):
-    pass
 
 
 if __name__ == '__main__':
