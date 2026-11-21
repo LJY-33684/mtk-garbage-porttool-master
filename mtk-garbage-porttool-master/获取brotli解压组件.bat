@@ -1,52 +1,63 @@
 @echo off
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+"%SystemRoot%\System32\chcp.com" 65001 >nul 2>nul
 setlocal enabledelayedexpansion
-title »ñÈ¡ brotli ½âÑ¹×é¼þ
+title èŽ·å– brotli è§£åŽ‹ç»„ä»¶
 
 set "ROOT=%~dp0"
 set "DST=%ROOT%bin\win\x86_64"
 set "ZIP=%TEMP%\brotli_porttool.zip"
 set "EX=%TEMP%\brotli_porttool_ex"
 
-rem ÏÂÔØÔ´£ºGitHub ¹Ù·½ release ÎªÖ÷£¬ghproxy ¼ÓËÙ¾µÏñ¶µµ×£¨Ö±Á¬Ê§°ÜÊ±×Ô¶¯ÇÐ»»£©
+rem ä¸‹è½½æºï¼šGitHub å®˜æ–¹ release ä¸ºä¸»ï¼Œghproxy åŠ é€Ÿé•œåƒå…œåº•ï¼ˆç›´è¿žå¤±è´¥æ—¶è‡ªåŠ¨åˆ‡æ¢ï¼‰
 set CAND0=https://github.com/google/brotli/releases/download/v1.2.0/brotli-x64-windows-static.zip
-set CAND1=https://mirror.ghproxy.com/https://github.com/google/brotli/releases/download/v1.2.0/brotli-x64-windows-static.zip
-set CAND2=https://ghfast.top/https://github.com/google/brotli/releases/download/v1.2.0/brotli-x64-windows-static.zip
+set CAND1=https://ghfast.top/https://github.com/google/brotli/releases/download/v1.2.0/brotli-x64-windows-static.zip
+set CAND2=https://mirror.ghproxy.com/https://github.com/google/brotli/releases/download/v1.2.0/brotli-x64-windows-static.zip
+set SHA256=3208AB82D4F08E062A25660CF38092DB4E8415792AA1E579956D37740F8D8924
 
 if exist "%DST%\brotli.exe" goto installed
 
 
 :not_installed
 echo ===============================================================
-echo   brotli ½âÑ¹×é¼þ£¨¿ÉÑ¡£¬ÍÆ¼ö°²×°£©
+echo   brotli è§£åŽ‹ç»„ä»¶ï¼ˆå¯é€‰ï¼ŒæŽ¨èå®‰è£…ï¼‰
 echo ---------------------------------------------------------------
-echo   ÓÃÓÚÔÚ¡¸img ¾µÏñ¡¹Êä³öÏÂ½âÑ¹ Android 9+ ¹Ì¼þµÄ new.dat.br
-echo   £¨OPPO/Realme/OnePlus ¹Ì¼þ½âÃÜºó×ª»» system/vendor ·ÖÇø¾µÏñ£©
-echo   Î´°²×°Ê±¸Ã×ª»»»áÃ÷È·±¨´í²¢±£Áô .br Ô´ÎÄ¼þ£¨²»¾²Ä¬½µ¼¶£©
-echo   zip ¿¨Ë¢°üÊä³öÓë Android 8 ÒÔÏÂÀÏ¹Ì¼þÎÞÐè´Ë×é¼þ
-echo   °²×°ºó¹¤¾ß×Ô¶¯ÆôÓÃ£¬ÎÞÐèÖØÆô
+echo   ç”¨äºŽåœ¨ã€Œimg é•œåƒã€è¾“å‡ºä¸‹è§£åŽ‹ Android 9+ å›ºä»¶çš„ new.dat.br
+echo   ï¼ˆOPPO/Realme/OnePlus å›ºä»¶è§£å¯†åŽè½¬æ¢ system/vendor åˆ†åŒºé•œåƒï¼‰
+echo   æœªå®‰è£…æ—¶è¯¥è½¬æ¢ä¼šæ˜Žç¡®æŠ¥é”™å¹¶ä¿ç•™ .br æºæ–‡ä»¶ï¼ˆä¸é™é»˜é™çº§ï¼‰
+echo   zip å¡åˆ·åŒ…è¾“å‡ºä¸Ž Android 8 ä»¥ä¸‹è€å›ºä»¶æ— éœ€æ­¤ç»„ä»¶
+echo   å®‰è£…åŽå·¥å…·è‡ªåŠ¨å¯ç”¨ï¼Œæ— éœ€é‡å¯
 echo ===============================================================
 echo.
-echo ÇëÑ¡Ôñ²Ù×÷£¨ÊäÈëÊý×Öºó»Ø³µ£©£º
-echo   0 - ÍË³ö
-echo   1 - °²×°¸Ã×é¼þ
-set /p CHOICE=ÇëÑ¡Ôñ:
+echo è¯·é€‰æ‹©æ“ä½œï¼ˆè¾“å…¥æ•°å­—åŽå›žè½¦ï¼‰ï¼š
+echo   0 - é€€å‡º
+echo   1 - å®‰è£…è¯¥ç»„ä»¶
+set /p CHOICE=è¯·é€‰æ‹©:
 if "%CHOICE%"=="1" goto download
 exit /b 0
 
 
 :download
 for %%U in (%CAND0% %CAND1% %CAND2%) do (
-  echo [ÏÂÔØ] ÕýÔÚÏÂÔØ¹Ù·½ brotli 1.2.0£¨Windows ¾²Ì¬°æ£©...
-  echo        À´Ô´£º%%U
+  echo [ä¸‹è½½] æ­£åœ¨ä¸‹è½½å®˜æ–¹ brotli 1.2.0ï¼ˆWindows é™æ€ç‰ˆï¼‰...
+  echo        æ¥æºï¼š%%U
   del /q "%ZIP%" 2>nul
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $ProgressPreference='SilentlyContinue'; try { $src='%%U'; $dst='%ZIP%'; $req=[System.Net.HttpWebRequest]::Create($src); $req.Timeout=180000; $resp=$req.GetResponse(); $total=[long]$resp.ContentLength; $fs=[IO.File]::Create($dst); $buf=New-Object byte[] 65536; $stream=$resp.GetResponseStream(); $got=[long]0; $last=-1; while(($n=$stream.Read($buf,0,$buf.Length)) -gt 0){ $fs.Write($buf,0,$n); $got+=$n; if($total -gt 0){ $pct=[int](100*$got/$total); if($pct -ne $last){ $last=$pct; $full=[int]($pct/5); $bar=('¨€'*$full)+('-'*(20-$full)); Write-Host -NoNewline ([string][char]13 + '[' + $bar + '] ' + $pct + '%  ') } } }; $fs.Close(); $stream.Close(); $resp.Close(); Write-Host '' } catch { Write-Host 'ÏÂÔØÊ§°Ü' } }" 2>nul
+  "%SystemRoot%\System32\curl.exe" -fL --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 300 -o "%ZIP%" "%%U"
   if exist "%ZIP%" (
+    set "GOT="
+    for /f "skip=1 tokens=*" %%H in ('%SystemRoot%\System32\certutil.exe -hashfile "%ZIP%" SHA256 2^>nul') do if not defined GOT set "GOT=%%H"
+    set "GOT=!GOT: =!"
+    if /i not "!GOT!"=="%SHA256%" (
+      echo [å¤±è´¥] SHA256 æ ¡éªŒä¸åŒ¹é…ï¼Œå·²æ‹’ç»è§£åŽ‹ã€‚
+      del /q "%ZIP%" 2>nul
+      goto fail
+    )
     if exist "%EX%" rmdir /s /q "%EX%"
-    echo [½âÑ¹] ÕýÔÚ½âÑ¹...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; try { Expand-Archive -Force -LiteralPath '%ZIP%' -DestinationPath '%EX%' } catch { }" 2>nul
+    echo [è§£åŽ‹] æ­£åœ¨è§£åŽ‹...
+    "%PS%" -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; try { Expand-Archive -Force -LiteralPath '%ZIP%' -DestinationPath '%EX%' } catch { }" 2>nul
     if exist "%EX%\brotli.exe" goto install
   )
-  echo [ÌáÊ¾] ¸ÃÔ´Ê§°Ü£¬³¢ÊÔÏÂÒ»¸öÔ´...
+  echo [æç¤º] è¯¥æºå¤±è´¥ï¼Œå°è¯•ä¸‹ä¸€ä¸ªæº...
 )
 
 goto fail
@@ -59,54 +70,54 @@ for /r "%EX%" %%F in (brotli.exe) do if not defined SRC set "SRC=%%~dpF"
 if not defined SRC goto fail
 copy /y "%SRC%brotli.exe" "%DST%\" >nul
 
-echo [ÑéÖ¤]
+echo [éªŒè¯]
 "%DST%\brotli.exe" --version 2>nul
 if errorlevel 1 goto fail
 
 echo.
-echo [Íê³É] brotli ½âÑ¹×é¼þÒÑ°²×°µ½ bin\win\x86_64
-echo        ´Ëºó OPPO ¹Ì¼þ img Êä³ö½«×Ô¶¯Ê¹ÓÃ¸Ã×é¼þ½âÑ¹ new.dat.br¡£
+echo [å®Œæˆ] brotli è§£åŽ‹ç»„ä»¶å·²å®‰è£…åˆ° bin\win\x86_64
+echo        æ­¤åŽ OPPO å›ºä»¶ img è¾“å‡ºå°†è‡ªåŠ¨ä½¿ç”¨è¯¥ç»„ä»¶è§£åŽ‹ new.dat.brã€‚
 del /q "%ZIP%" 2>nul
 rmdir /s /q "%EX%" 2>nul
 echo.
-echo °´ÈÎÒâ¼üÍË³ö±¾´°¿Ú...
+echo æŒ‰ä»»æ„é”®é€€å‡ºæœ¬çª—å£...
 pause >nul
 exit /b 0
 
 
 :fail
 echo.
-echo [Ê§°Ü] ÏÂÔØ»ò½âÑ¹Ê§°Ü£¨ÍøÂç²»Í¨»ò±»À¹½Ø£©£¬¿ÉÉÔºóÖØÊÔ±¾½Å±¾¡£
-echo Î´°²×°Ê±¹¤¾ß»áÃ÷È·±¨´í²¢±£Áô .br Ô´ÎÄ¼þ£¬²»Ó°Ïì zip Êä³ö¡£
+echo [å¤±è´¥] ä¸‹è½½æˆ–è§£åŽ‹å¤±è´¥ï¼ˆç½‘ç»œä¸é€šæˆ–è¢«æ‹¦æˆªï¼‰ï¼Œå¯ç¨åŽé‡è¯•æœ¬è„šæœ¬ã€‚
+echo æœªå®‰è£…æ—¶å·¥å…·ä¼šæ˜Žç¡®æŠ¥é”™å¹¶ä¿ç•™ .br æºæ–‡ä»¶ï¼Œä¸å½±å“ zip è¾“å‡ºã€‚
 del /q "%ZIP%" 2>nul
 rmdir /s /q "%EX%" 2>nul
 echo.
-echo °´ÈÎÒâ¼üÍË³ö±¾´°¿Ú...
+echo æŒ‰ä»»æ„é”®é€€å‡ºæœ¬çª—å£...
 pause >nul
 exit /b 1
 
 
 :installed
-echo [ÒÑ°²×°] ¼ì²âµ½ brotli£¬µ±Ç°°æ±¾£º
+echo [å·²å®‰è£…] æ£€æµ‹åˆ° brotliï¼Œå½“å‰ç‰ˆæœ¬ï¼š
 "%DST%\brotli.exe" --version 2>nul
 echo.
-echo ÇëÑ¡Ôñ²Ù×÷£¨ÊäÈëÊý×Öºó»Ø³µ£©£º
-echo   0 - ÍË³ö
-echo   1 - ÖØÐÂ°²×°¸Ã×é¼þ
-echo   2 - Ð¶ÔØ¸Ã×é¼þ
-set /p CHOICE=ÇëÑ¡Ôñ:
+echo è¯·é€‰æ‹©æ“ä½œï¼ˆè¾“å…¥æ•°å­—åŽå›žè½¦ï¼‰ï¼š
+echo   0 - é€€å‡º
+echo   1 - é‡æ–°å®‰è£…è¯¥ç»„ä»¶
+echo   2 - å¸è½½è¯¥ç»„ä»¶
+set /p CHOICE=è¯·é€‰æ‹©:
 if "%CHOICE%"=="2" goto uninstall
 if "%CHOICE%"=="1" goto reinstall
 exit /b 0
 
 
 :reinstall
-echo [°²×°] ÕýÔÚÉ¾³ýÏÖÓÐ brotli ²¢ÖØÐÂÏÂÔØ...
+echo [å®‰è£…] æ­£åœ¨åˆ é™¤çŽ°æœ‰ brotli å¹¶é‡æ–°ä¸‹è½½...
 del /q "%DST%\brotli.exe" 2>nul
 if exist "%DST%\brotli.exe" (
-  echo [Ê§°Ü] ÎÄ¼þ±»Õ¼ÓÃÎÞ·¨É¾³ý£¬Çë¹Ø±ÕÕ¼ÓÃ³ÌÐòºóÖØÊÔ¡£
+  echo [å¤±è´¥] æ–‡ä»¶è¢«å ç”¨æ— æ³•åˆ é™¤ï¼Œè¯·å…³é—­å ç”¨ç¨‹åºåŽé‡è¯•ã€‚
   echo.
-  echo °´ÈÎÒâ¼üÍË³ö±¾´°¿Ú...
+  echo æŒ‰ä»»æ„é”®é€€å‡ºæœ¬çª—å£...
   pause >nul
   exit /b 1
 )
@@ -114,14 +125,14 @@ goto download
 
 
 :uninstall
-echo [Ð¶ÔØ] ÕýÔÚÉ¾³ý brotli ×é¼þ...
+echo [å¸è½½] æ­£åœ¨åˆ é™¤ brotli ç»„ä»¶...
 del /q "%DST%\brotli.exe" 2>nul
 if exist "%DST%\brotli.exe" (
-  echo [ÌáÊ¾] ÎÄ¼þ±»Õ¼ÓÃÎ´É¾³ý£¬Çë¹Ø±ÕÕ¼ÓÃ³ÌÐòºóÔÙÊÔ¡£
+  echo [æç¤º] æ–‡ä»¶è¢«å ç”¨æœªåˆ é™¤ï¼Œè¯·å…³é—­å ç”¨ç¨‹åºåŽå†è¯•ã€‚
 ) else (
-  echo [Íê³É] brotli ½âÑ¹×é¼þÒÑÐ¶ÔØ¡£
+  echo [å®Œæˆ] brotli è§£åŽ‹ç»„ä»¶å·²å¸è½½ã€‚
 )
 echo.
-echo °´ÈÎÒâ¼üÍË³ö±¾´°¿Ú...
+echo æŒ‰ä»»æ„é”®é€€å‡ºæœ¬çª—å£...
 pause >nul
 exit /b 0

@@ -748,39 +748,60 @@ def _rmrf(path):
 
 
 def _ozip_decryptfile(key, rfilename, emit):
-    """PK 型 OZIP：对提取出的单个加密文件就地解密。"""
-    with open(rfilename, 'rb') as rr:
-        with open(rfilename + ".tmp", 'wb') as wf:
+    """PK 型 OZIP：对提取出的单个加密文件就地解密。返回 False 表示空间不足/失败。"""
+    tmp_path = rfilename + ".tmp"
+    replaced = False
+    try:
+        with open(rfilename, 'rb') as rr:
             rr.seek(0x10)
             dsize = int(rr.read(0x10).replace(b"\x00", b"").decode('utf-8'), 10)
-            rr.seek(0x1050)
-            emit(f"  - 解密 {os.path.basename(rfilename)}")
-            flen = os.stat(rfilename).st_size - 0x1050
-            BATCH_N = 512  # 攒批：512 块 × 0x4000 = 8MB 密文一次解密，避免逐 16KB 起子进程（#89）
-            while dsize > 0:
-                blobs = []    # 本批密文块（每块 0x4000，尾块可能不足）
-                wsize_l = []  # 每块实际写入长度（受 dsize 限制）
-                for _ in range(BATCH_N):
-                    if dsize <= 0:
+            free = shutil.disk_usage(os.path.dirname(os.path.abspath(rfilename))).free
+            need = int(dsize * 1.2)
+            if free < need:
+                emit(f"【错误】磁盘空间不足：{os.path.basename(rfilename)} 需要约 "
+                     f"{need / (1024**3):.2f} GiB，当前仅剩 {free / (1024**3):.2f} GiB")
+                return False
+            with open(tmp_path, 'wb') as wf:
+                rr.seek(0x1050)
+                emit(f"  - 解密 {os.path.basename(rfilename)}")
+                flen = os.stat(rfilename).st_size - 0x1050
+                BATCH_N = 512  # 攒批：512 块 × 0x4000 = 8MB 密文一次解密，避免逐 16KB 起子进程（#89）
+                while dsize > 0:
+                    blobs = []    # 本批密文块（每块 0x4000，尾块可能不足）
+                    wsize_l = []  # 每块实际写入长度（受 dsize 限制）
+                    for _ in range(BATCH_N):
+                        if dsize <= 0:
+                            break
+                        size = 0x4000 if flen > 0x4000 else flen
+                        data = rr.read(size)
+                        if len(data) == 0:
+                            break
+                        wsize = dsize if dsize < size else size
+                        blobs.append(data)
+                        wsize_l.append(wsize)
+                        flen -= size
+                        dsize -= wsize
+                    if not blobs:
                         break
-                    size = 0x4000 if flen > 0x4000 else flen
-                    data = rr.read(size)
-                    if len(data) == 0:
-                        break
-                    wsize = dsize if dsize < size else size
-                    blobs.append(data)
-                    wsize_l.append(wsize)
-                    flen -= size
-                    dsize -= wsize
-                if not blobs:
-                    break
-                dec = aes_ecb_decrypt(key, b''.join(blobs))
-                off = 0
-                for data, wsize in zip(blobs, wsize_l):
-                    wf.write(dec[off:off + wsize])
-                    off += len(data)
-    os.remove(rfilename)
-    os.rename(rfilename + ".tmp", rfilename)
+                    dec = aes_ecb_decrypt(key, b''.join(blobs))
+                    off = 0
+                    for data, wsize in zip(blobs, wsize_l):
+                        wf.write(dec[off:off + wsize])
+                        off += len(data)
+            if dsize > 0:
+                raise ValueError(f"密文数据不足，仍有 {dsize} 字节未解密")
+        os.replace(tmp_path, rfilename)
+        replaced = True
+        return True
+    except Exception as e:
+        if not replaced:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+        emit(f"【错误】解密 {os.path.basename(rfilename)} 失败：{e}")
+        return False
 
 
 def _ozip_decryptfile2(key, rfilename, wfilename):
@@ -983,12 +1004,14 @@ def _ozip(filename, workdir, emit):
                         info.filename = orgfilename
                         out_file = os.path.join(outpath, "out")
                         if clist and info.filename in clist:
-                            _ozip_decryptfile(key, out_file, emit)
+                            if not _ozip_decryptfile(key, out_file, emit):
+                                return None
                         elif not clist:
                             with open(out_file, 'rb') as rr:
                                 m2 = rr.read(12)
                             if m2 == b"OPPOENCRYPT!":
-                                _ozip_decryptfile(key, out_file, emit)
+                                if not _ozip_decryptfile(key, out_file, emit):
+                                    return None
                         Wzip.write(out_file, orgfilename)
                 return outzip
 

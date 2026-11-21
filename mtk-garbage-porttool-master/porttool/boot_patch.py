@@ -7,6 +7,8 @@ import logging
 from hashlib import sha1
 from shutil import copyfile, rmtree
 import zipfile
+import platform
+import struct
 
 from .archdetect import retTypeAndMachine
 
@@ -132,6 +134,26 @@ class BootPatcher(object):
         if not isfile(self.magiskboot):
             print("- magiskboot文件不存在，无法完成初始化", file=self.log)
             return False
+        # Linux 下校验 ELF 架构，防止 x86_64 目录误放 aarch64 二进制（#2）
+        if osname != 'nt':
+            try:
+                with open(self.magiskboot, 'rb') as f:
+                    header = f.read(20)
+                if header[:4] == b'\x7fELF' and len(header) >= 20:
+                    machine = struct.unpack('<H', header[18:20])[0]
+                    host = platform.machine().lower()
+                    expected = {
+                        'x86_64': 0x3E, 'amd64': 0x3E,
+                        'aarch64': 0xB7, 'arm64': 0xB7,
+                        'i386': 0x03, 'i686': 0x03,
+                    }.get(host)
+                    if expected and machine != expected:
+                        print(f"- magiskboot 架构不匹配：当前主机 {host}，二进制 e_machine=0x{machine:X}",
+                              file=self.log)
+                        return False
+            except OSError as e:
+                print(f"- 无法读取 magiskboot 架构信息：{e}", file=self.log)
+                return False
         return True
 
     def __prepare_env(self):
@@ -163,13 +185,19 @@ class BootPatcher(object):
         else:
             creationflags = 0
         logging.info("Run command : \n"+ " ".join(full))
-        ret = subprocess.run(full,
-                            stderr=subprocess.STDOUT,
-                            stdout=subprocess.PIPE,
-                            shell=False,
-                            env=self.env,
-                            creationflags=creationflags,
-                            )
+        try:
+            ret = subprocess.run(full,
+                                stderr=subprocess.STDOUT,
+                                stdout=subprocess.PIPE,
+                                shell=False,
+                                env=self.env,
+                                creationflags=creationflags,
+                                timeout=120,
+                                )
+        except subprocess.TimeoutExpired:
+            msg = "magiskboot 命令超过 120 秒未结束，已终止"
+            logging.error(msg)
+            return -2, msg
         logging.info(ret.stdout.decode())
         return ret.returncode, ret.stdout.decode()
     

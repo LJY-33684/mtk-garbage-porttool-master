@@ -3,7 +3,7 @@ import time
 from io import StringIO
 from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
-from os import walk, getcwd, chdir, symlink, readlink, name as osname, stat, unlink, chmod
+from os import walk, getcwd, chdir, symlink, readlink, name as osname, stat, lstat, unlink, chmod
 import os
 import os.path as op
 from shutil import rmtree, copytree, copy2
@@ -335,7 +335,7 @@ def _print_rows(std, title, rows):
         print(f"{prefix}{k}：{v}", file=std)
 
 
-tool_author = 'affggh'; tool_version = '1.3.7.005'
+tool_author = 'affggh'; tool_version = '1.3.7.016'
 
 class proputil:
     def __init__(self, propfile: str):
@@ -872,11 +872,26 @@ class portutils:
             else:
                 print(f"【信息】{side_name} 架构一致：底包 {base_tag} / 移植源 {port_tag}", file=self.std)
 
-    def execv(self, cmd, verbose=False):
+    @staticmethod
+    def _exec_timeout_for(cmd):
+        """按外部命令类型返回超时秒数；0 表示不限制（仅供特殊调用覆盖）。"""
+        if not cmd or not isinstance(cmd[0], str):
+            return 300
+        name = Path(cmd[0]).name.lower()
+        if name in ('simg2img', 'img2simg'):
+            return 300
+        if name == 'magiskboot':
+            return 120
+        if name == 'make_ext4fs':
+            return 600
+        return 300
+
+    def execv(self, cmd, verbose=False, timeout=None):
         """
         执行系统命令（优化版）
         :param cmd: 命令列表
         :param verbose: 是否输出原始命令和完整输出
+        :param timeout: 超时秒数；None 时按命令类型自动选择，0 表示不限制
         :return: (返回码, 命令输出字节串)
         """
         if verbose:
@@ -889,16 +904,23 @@ class portutils:
                 os.chmod(cmd[0], 0o755)
             except OSError:
                 pass
+        if timeout is None:
+            timeout = self._exec_timeout_for(cmd)
         try:
             ret = subprocess.run(
                 cmd,
                 shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                creationflags=creationflags
+                creationflags=creationflags,
+                timeout=timeout or None
             )
             cmd_output = ret.stdout
             ret_code = ret.returncode
+        except subprocess.TimeoutExpired as e:
+            err_msg = f"【执行超时】命令超过 {timeout} 秒未结束，已终止：{os.path.basename(cmd[0]) if cmd else ''}"
+            self.std.write(err_msg + "\n")
+            return (-2, err_msg.encode('utf-8'))
         except Exception as e:
             err_msg = f"【执行失败】无法执行命令：{str(e)}"
             self.std.write(err_msg + "\n")
@@ -2965,17 +2987,25 @@ class portutils:
         total = 0
         for root, dirs, files in walk("tmp/rom/system"):
             for file in files:
-                total += stat(op.join(root, file)).st_size
+                path = op.join(root, file)
+                try:
+                    # 不跟随符号链接：断链/目录链接不应中断打包，链接本身只占少量空间
+                    total += lstat(path).st_size
+                except OSError as e:
+                    print(f"【警告】跳过无法统计的文件：{path}（{e}）", file=self.std)
         ratio = max(PACK_EXTRA_RESERVE, int(total) // 32)
         return int(total) + ratio
 
     def __readlink(self, dest: str):
         """读取符号链接"""
         if osname == 'nt':
-            with open(dest, 'rb') as f:
-                header = f.read(10)
-                if header == b'!<symlink>':
-                    return f.read().decode('utf-16').rstrip('\0')
+            try:
+                with open(dest, 'rb') as f:
+                    header = f.read(10)
+                    if header == b'!<symlink>':
+                        return f.read().decode('utf-16').rstrip('\0')
+                    return None
+            except (OSError, UnicodeError):
                 return None
         else:
             try:

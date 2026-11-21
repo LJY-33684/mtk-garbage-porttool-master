@@ -1,69 +1,73 @@
 @echo off
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+"%SystemRoot%\System32\chcp.com" 65001 >nul 2>nul
 setlocal enabledelayedexpansion
-title »ñÈ¡ OpenSSL ¼ÓËÙ×é¼þ
+title èŽ·å– OpenSSL åŠ é€Ÿç»„ä»¶
 
 set "ROOT=%~dp0"
 set "DST=%ROOT%bin\win\x86_64"
 set "ZIP=%TEMP%\openssl_porttool.zip"
 set "EX=%TEMP%\openssl_porttool_ex"
 
-rem ÏÂÔØºòÑ¡£¨°´Ë³Ðò³¢ÊÔ£¬fulgan Îª OpenSSL ¹Ù·½ wiki ÊÕÂ¼µÄÃâ°²×°¹¹½¨£©
-rem ±¸Ñ¡Ô´£ºFireDaemon ±ãÐ¯°æ£¨fulgan Ô´±» Cloudflare À¹½ØÊ±×Ô¶¯ÇÐ»»£©
-set CAND0=https://indy.fulgan.com/SSL/openssl-1.0.2u-x64_86-win64.zip
-set CAND1=https://download.firedaemon.com/FireDaemon-OpenSSL/openssl-1.1.1w.zip
+rem å®˜æ–¹æŽ¨èï¼šOpenSSL 3.5 LTSï¼ˆFireDaemon é¢„ç¼–è¯‘ Windows ä¾¿æºåŒ…ï¼‰
+rem å›ºå®šå•ä¸€å¯ä¿¡æºï¼Œç¦æ­¢ç¬¬ä¸‰æ–¹ä»£ç†ï¼›ä¸‹è½½åŽå¿…é¡»é€šè¿‡ SHA256 æ ¡éªŒ
+set CAND0=https://download.firedaemon.com/FireDaemon-OpenSSL/openssl-3.5.9.zip
+set SHA256=76DA391395BE029B44794857B9FF380255E02A0960A98314CD3F6A6816D82696
 
 if exist "%DST%\openssl.exe" goto installed
 
 
 :not_installed
 echo ===============================================================
-echo   OpenSSL ¼ÓËÙ×é¼þ£¨¿ÉÑ¡£¬ÍÆ¼ö°²×°£©
+echo   OpenSSL åŠ é€Ÿç»„ä»¶ï¼ˆå¯é€‰ï¼ŒæŽ¨èå®‰è£…ï¼‰
 echo ---------------------------------------------------------------
-echo   ¸Ã×é¼þÓÃÓÚ¼ÓËÙ OPPO / Realme / OnePlus ¹Ì¼þ½âÃÜ¡£
-echo   Î´°²×°Ê±¹¤¾ßÊ¹ÓÃÄÚÖÃ pyaes ´¿ Python ºó¶Ë£¬
-echo   ¹¦ÄÜ²»ÊÜÓ°Ïì£¬½ö½âÃÜËÙ¶ÈÉÔÂý¡£
-echo   °²×°ºó»á×Ô¶¯ÆôÓÃ¸ü¿ìµÄ OpenSSL ºó¶Ë£¬
-echo   ÓÈÆäÔÚ PK ÐÍ´ó¹Ì¼þÉÏÌáËÙ¿É´ïÊýÊ®±¶¡£
+echo   è¯¥ç»„ä»¶ç”¨äºŽåŠ é€Ÿ OPPO / Realme / OnePlus å›ºä»¶è§£å¯†ã€‚
+echo   æœªå®‰è£…æ—¶å·¥å…·ä½¿ç”¨å†…ç½® pyaes çº¯ Python åŽç«¯ï¼Œ
+echo   åŠŸèƒ½ä¸å—å½±å“ï¼Œä»…è§£å¯†é€Ÿåº¦ç¨æ…¢ã€‚
+echo   å®‰è£…åŽä¼šè‡ªåŠ¨å¯ç”¨æ›´å¿«çš„ OpenSSL åŽç«¯ï¼Œ
+echo   å°¤å…¶åœ¨ PK åž‹å¤§å›ºä»¶ä¸Šæé€Ÿå¯è¾¾æ•°åå€ã€‚
 echo ===============================================================
 echo.
-echo ÇëÑ¡Ôñ²Ù×÷£¨ÊäÈëÊý×Öºó»Ø³µ£©£º
-echo   0 - ÍË³ö
-echo   1 - °²×°¸Ã×é¼þ
-set /p CHOICE=ÄãµÄÑ¡Ôñ£º
+echo è¯·é€‰æ‹©æ“ä½œï¼ˆè¾“å…¥æ•°å­—åŽå›žè½¦ï¼‰ï¼š
+echo   0 - é€€å‡º
+echo   1 - å®‰è£…è¯¥ç»„ä»¶
+set /p CHOICE=ä½ çš„é€‰æ‹©ï¼š
 if "%CHOICE%"=="1" goto download
 exit /b 0
 
 
 :download
-where curl.exe >nul 2>nul
-if errorlevel 1 (
-  echo [ÌáÊ¾] Î´ÕÒµ½ curl.exe£¨Ðè Windows 10 1803 ¼°ÒÔÉÏÏµÍ³£©¡£
-  echo ²»Ó°ÏìÊ¹ÓÃ£º¹¤¾ß½«Ê¹ÓÃÄÚÖÃ pyaes ´¿ Python ºó¶Ë£¬½ö½âÃÜËÙ¶ÈÉÔÂý¡£
+if not exist "%SystemRoot%\System32\curl.exe" (
+  echo [æç¤º] æœªæ‰¾åˆ° curl.exeï¼ˆéœ€ Windows 10 1803 åŠä»¥ä¸Šç³»ç»Ÿï¼‰ã€‚
+  echo ä¸å½±å“ä½¿ç”¨ï¼šå·¥å…·å°†ä½¿ç”¨å†…ç½® pyaes çº¯ Python åŽç«¯ï¼Œä»…è§£å¯†é€Ÿåº¦ç¨æ…¢ã€‚
   echo.
-  echo °´ÈÎÒâ¼üÍË³ö±¾´°¿Ú...
+  echo æŒ‰ä»»æ„é”®é€€å‡ºæœ¬çª—å£...
   pause >nul
   exit /b 1
 )
 
-for %%U in (%CAND0% %CAND1%) do (
-  echo [ÏÂÔØ] ÕýÔÚÏÂÔØ OpenSSL 1.0.2u£¨Ãâ°²×°£©...
-  echo        À´Ô´£º%%U
+for %%U in (%CAND0%) do (
+  echo [ä¸‹è½½] æ­£åœ¨ä¸‹è½½ OpenSSL 3.5.9 LTSï¼ˆå…å®‰è£…ï¼‰...
+  echo        æ¥æºï¼š%%U
   del /q "%ZIP%" 2>nul
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $ProgressPreference='SilentlyContinue'; try { $src='%%U'; $dst='%ZIP%'; $req=[System.Net.HttpWebRequest]::Create($src); $req.Timeout=180000; $resp=$req.GetResponse(); $total=[long]$resp.ContentLength; $fs=[IO.File]::Create($dst); $buf=New-Object byte[] 65536; $stream=$resp.GetResponseStream(); $got=[long]0; $last=-1; while(($n=$stream.Read($buf,0,$buf.Length)) -gt 0){ $fs.Write($buf,0,$n); $got+=$n; if($total -gt 0){ $pct=[int](100*$got/$total); if($pct -ne $last){ $last=$pct; $full=[int]($pct/5); $bar=('¨€'*$full)+('-'*(20-$full)); Write-Host -NoNewline ([string][char]13 + '[' + $bar + '] ' + $pct + '%  ') } } }; $fs.Close(); $stream.Close(); $resp.Close(); Write-Host '' } catch { Write-Host 'ÏÂÔØÊ§°Ü' } }" 2>nul
+  "%SystemRoot%\System32\curl.exe" -fL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 900 -o "%ZIP%" "%%U"
   if exist "%ZIP%" (
+    set "GOT="
+    for /f "skip=1 tokens=*" %%H in ('%SystemRoot%\System32\certutil.exe -hashfile "%ZIP%" SHA256 2^>nul') do if not defined GOT set "GOT=%%H"
+    set "GOT=!GOT: =!"
+    if /i not "!GOT!"=="%SHA256%" (
+      echo [å¤±è´¥] SHA256 æ ¡éªŒä¸åŒ¹é…ï¼Œå·²æ‹’ç»è§£åŽ‹ã€‚
+      del /q "%ZIP%" 2>nul
+      goto fail
+    )
     if exist "%EX%" rmdir /s /q "%EX%"
-    echo [½âÑ¹] ÕýÔÚÕ¹¿ª...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; try { Expand-Archive -Force -LiteralPath '%ZIP%' -DestinationPath '%EX%' } catch { }" 2>nul
+    echo [è§£åŽ‹] æ­£åœ¨å±•å¼€...
+    "%PS%" -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; try { Expand-Archive -Force -LiteralPath '%ZIP%' -DestinationPath '%EX%' } catch { }" 2>nul
+    if exist "%EX%\x64\bin\openssl.exe" goto install
     if exist "%EX%\openssl.exe" goto install
     if exist "%EX%\openssl-1.1\x64\bin\openssl.exe" goto install
   )
-  echo %%U | findstr /i "fulgan" >nul
-  if errorlevel 1 (
-    echo [ÖØÊÔ] ¸ÃÀ´Ô´Ê§°Ü£¬³¢ÊÔÏÂÒ»ºòÑ¡...
-  ) else (
-    echo [ÌáÊ¾] fulgan Ô´±» Cloudflare À¹½Ø(403)£¬Ðè´úÀí²ÅÄÜ·ÃÎÊ
-    echo        ²»ÓÃµ£ÐÄ£¬ÕýÔÚ×Ô¶¯ÇÐ»»¹úÄÚ¿ÉÖ±Á¬µÄ±¸ÓÃÔ´...
-  )
+  echo [é‡è¯•] è¯¥æ¥æºå¤±è´¥ï¼Œè¯·æ£€æŸ¥ç½‘ç»œåŽé‡è¯•ã€‚
 )
 
 goto fail
@@ -71,72 +75,73 @@ goto fail
 :install
 if not exist "%DST%" mkdir "%DST%"
 set "SRC="
-if exist "%EX%\openssl.exe" set "SRC=%EX%\"
+if exist "%EX%\x64\bin\openssl.exe" set "SRC=%EX%\x64\bin\"
+if not defined SRC if exist "%EX%\openssl.exe" set "SRC=%EX%\"
 if exist "%EX%\openssl-1.1\x64\bin\openssl.exe" set "SRC=%EX%\openssl-1.1\x64\bin\"
 if not defined SRC for /r "%EX%" %%F in (openssl.exe) do if not defined SRC set "SRC=%%~dpF"
 if not defined SRC goto fail
 copy /y "%SRC%openssl.exe" "%DST%\" >nul
 for /f "delims=" %%D in ('dir /b /a-d "%SRC%*.dll" 2^>nul') do copy /y "%SRC%%%D" "%DST%\" >nul
 
-echo [ÑéÖ¤]
+echo [éªŒè¯]
 "%DST%\openssl.exe" version 2>nul
 if errorlevel 1 goto fail
 
 echo.
-echo [Íê³É] OpenSSL ¼ÓËÙ×é¼þÒÑ°²×°µ½ bin\win\x86_64
-echo        ´Ëºó OPPO ¹Ì¼þ½âÃÜ½«×Ô¶¯Ê¹ÓÃ¸ü¿ìµÄ OpenSSL ºó¶Ë¡£
+echo [å®Œæˆ] OpenSSL åŠ é€Ÿç»„ä»¶å·²å®‰è£…åˆ° bin\win\x86_64
+echo        æ­¤åŽ OPPO å›ºä»¶è§£å¯†å°†è‡ªåŠ¨ä½¿ç”¨æ›´å¿«çš„ OpenSSL åŽç«¯ã€‚
 del /q "%ZIP%" 2>nul
 rmdir /s /q "%EX%" 2>nul
 echo.
-echo °´ÈÎÒâ¼üÍË³ö±¾´°¿Ú...
+echo æŒ‰ä»»æ„é”®é€€å‡ºæœ¬çª—å£...
 pause >nul
 exit /b 0
 
 :fail
 echo.
-echo [Ê§°Ü] ÏÂÔØ»ò½âÑ¹Ê§°Ü£¨¿ÉÄÜµ±Ç°ÍøÂçÎÞ·¨·ÃÎÊ·Ö·¢Õ¾µã£©¡£
-echo ²»Ó°ÏìÊ¹ÓÃ£º¹¤¾ß½«Ê¹ÓÃÄÚÖÃ pyaes ´¿ Python ºó¶Ë£¬½ö½âÃÜËÙ¶ÈÉÔÂý¡£
-echo ÄãÒ²¿ÉÒÔÉÔºóÍøÂçÕý³£Ê±ÖØÐÂÔËÐÐ±¾½Å±¾¡£
+echo [å¤±è´¥] ä¸‹è½½æˆ–è§£åŽ‹å¤±è´¥ï¼ˆå¯èƒ½å½“å‰ç½‘ç»œæ— æ³•è®¿é—®åˆ†å‘ç«™ç‚¹ï¼‰ã€‚
+echo ä¸å½±å“ä½¿ç”¨ï¼šå·¥å…·å°†ä½¿ç”¨å†…ç½® pyaes çº¯ Python åŽç«¯ï¼Œä»…è§£å¯†é€Ÿåº¦ç¨æ…¢ã€‚
+echo ä½ ä¹Ÿå¯ä»¥ç¨åŽç½‘ç»œæ­£å¸¸æ—¶é‡æ–°è¿è¡Œæœ¬è„šæœ¬ã€‚
 del /q "%ZIP%" 2>nul
 rmdir /s /q "%EX%" 2>nul
 echo.
-echo °´ÈÎÒâ¼üÍË³ö±¾´°¿Ú...
+echo æŒ‰ä»»æ„é”®é€€å‡ºæœ¬çª—å£...
 pause >nul
 exit /b 1
 :installed
-echo [ÒÑ°²×°] ¼ì²âµ½ OpenSSL£¬µ±Ç°°æ±¾£º
+echo [å·²å®‰è£…] æ£€æµ‹åˆ° OpenSSLï¼Œå½“å‰ç‰ˆæœ¬ï¼š
 "%DST%\openssl.exe" version 2>nul
 echo.
-echo ÇëÑ¡Ôñ²Ù×÷£¨ÊäÈëÊý×Öºó»Ø³µ£©£º
-echo   0 - ÍË³ö
-echo   1 - ÖØÐÂ°²×°¸Ã×é¼þ
-echo   2 - Ð¶ÔØ¸Ã×é¼þ
-set /p CHOICE=ÄãµÄÑ¡Ôñ£º
+echo è¯·é€‰æ‹©æ“ä½œï¼ˆè¾“å…¥æ•°å­—åŽå›žè½¦ï¼‰ï¼š
+echo   0 - é€€å‡º
+echo   1 - é‡æ–°å®‰è£…è¯¥ç»„ä»¶
+echo   2 - å¸è½½è¯¥ç»„ä»¶
+set /p CHOICE=ä½ çš„é€‰æ‹©ï¼š
 if "%CHOICE%"=="2" goto uninstall
 if "%CHOICE%"=="1" goto reinstall
 exit /b 0
 
 :reinstall
-echo [ÖØ×°] ÕýÔÚÉ¾³ýÏÖÓÐ OpenSSL ×é¼þ...
-del /q "%DST%\openssl.exe" "%DST%\libeay32.dll" "%DST%\ssleay32.dll" "%DST%\libcrypto-1_1-x64.dll" "%DST%\libssl-1_1-x64.dll" 2>nul
+echo [é‡è£…] æ­£åœ¨åˆ é™¤çŽ°æœ‰ OpenSSL ç»„ä»¶...
+del /q "%DST%\openssl.exe" "%DST%\libeay32.dll" "%DST%\ssleay32.dll" "%DST%\libcrypto-1_1-x64.dll" "%DST%\libssl-1_1-x64.dll" "%DST%\libcrypto-3-x64.dll" "%DST%\libssl-3-x64.dll" 2>nul
 if exist "%DST%\openssl.exe" (
-  echo [Ê§°Ü] ×é¼þÎÄ¼þ±»Õ¼ÓÃÎÞ·¨É¾³ý£¬Çë¹Ø±ÕÕ¼ÓÃ³ÌÐòºóÖØÊÔ¡£
+  echo [å¤±è´¥] ç»„ä»¶æ–‡ä»¶è¢«å ç”¨æ— æ³•åˆ é™¤ï¼Œè¯·å…³é—­å ç”¨ç¨‹åºåŽé‡è¯•ã€‚
   echo.
-  echo °´ÈÎÒâ¼üÍË³ö±¾´°¿Ú...
+  echo æŒ‰ä»»æ„é”®é€€å‡ºæœ¬çª—å£...
   pause >nul
   exit /b 1
 )
 goto download
 
 :uninstall
-echo [Ð¶ÔØ] ÕýÔÚÉ¾³ý OpenSSL ×é¼þ...
-del /q "%DST%\openssl.exe" "%DST%\libeay32.dll" "%DST%\ssleay32.dll" "%DST%\libcrypto-1_1-x64.dll" "%DST%\libssl-1_1-x64.dll" 2>nul
+echo [å¸è½½] æ­£åœ¨åˆ é™¤ OpenSSL ç»„ä»¶...
+del /q "%DST%\openssl.exe" "%DST%\libeay32.dll" "%DST%\ssleay32.dll" "%DST%\libcrypto-1_1-x64.dll" "%DST%\libssl-1_1-x64.dll" "%DST%\libcrypto-3-x64.dll" "%DST%\libssl-3-x64.dll" 2>nul
 if exist "%DST%\openssl.exe" (
-  echo [ÌáÊ¾] ²¿·ÖÎÄ¼þ±»Õ¼ÓÃÎ´ÄÜÉ¾³ý£¬Çë¹Ø±ÕÕ¼ÓÃ³ÌÐòºóÖØÐÂÔËÐÐ¡£
+  echo [æç¤º] éƒ¨åˆ†æ–‡ä»¶è¢«å ç”¨æœªèƒ½åˆ é™¤ï¼Œè¯·å…³é—­å ç”¨ç¨‹åºåŽé‡æ–°è¿è¡Œã€‚
 ) else (
-  echo [Íê³É] OpenSSL ¼ÓËÙ×é¼þÒÑÐ¶ÔØ¡£
+  echo [å®Œæˆ] OpenSSL åŠ é€Ÿç»„ä»¶å·²å¸è½½ã€‚
 )
 echo.
-echo °´ÈÎÒâ¼üÍË³ö±¾´°¿Ú...
+echo æŒ‰ä»»æ„é”®é€€å‡ºæœ¬çª—å£...
 pause >nul
 exit /b 0

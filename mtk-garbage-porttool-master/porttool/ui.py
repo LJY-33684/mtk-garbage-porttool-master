@@ -3,6 +3,7 @@ import queue
 import webbrowser
 import threading
 import os
+import tempfile
 from tkinter import (
     ttk,
     Toplevel,
@@ -25,7 +26,14 @@ from multiprocessing.dummy import DummyProcess
 # 导入自定义模块（需确保这些模块存在于同级目录）
 from .configs import support_chipset, support_chipset_portstep
 from .utils import portutils, tool_version
-from .update import fetch_update_info, render_markdown
+from .update import (
+    fetch_update_info,
+    render_markdown,
+    version_status,
+    download_update,
+    stage_update,
+    launch_update_installer,
+)
 
 class FileChooser(Toplevel):
     """文件选择弹窗类：用于选择底包、移植源文件"""
@@ -1415,16 +1423,19 @@ class MyUI(ttk.Labelframe):
             return
         silent = getattr(self, '_update_silent', False)
         if result.ok:
-            if not (silent and result.tag == tool_version):
-                self._on_update_success(result.tag, result.body, result.download_url)
+            status = version_status(result.tag, tool_version)
+            # 静默检查只在远端确实更新时弹窗；远端更旧/相同都不打扰用户
+            if silent and status != 'newer':
+                return
+            self._on_update_success(result.tag, result.body, result.download_url, status)
         else:
             if not silent:
                 self._on_update_failed(result.reason)
 
-    def _on_update_success(self, tag, body, download_url):
+    def _on_update_success(self, tag, body, download_url, status='unknown'):
         """检查更新成功（主线程）"""
         self._check_update_btn.config(text="检查更新", state="normal")
-        self._show_update_dialog(tag, body, download_url)
+        self._show_update_dialog(tag, body, download_url, status)
 
     def _on_update_failed(self, reason):
         """检查更新失败（主线程）"""
@@ -1432,10 +1443,15 @@ class MyUI(ttk.Labelframe):
         # 3秒后恢复按钮文字
         self.after(3000, lambda: self._check_update_btn.config(text="检查更新"))
 
-    def _show_update_dialog(self, tag, body, download_url):
+    def _show_update_dialog(self, tag, body, download_url, status='unknown'):
         """显示更新内容弹窗（markdown 格式 + 标题右侧前往下载按钮）"""
         win = Toplevel(self)
-        win.title(f"当前已是最新版本 - {tag}" if tag == tool_version else f"发现新版本 - {tag}")
+        if status == 'older':
+            win.title(f"本地版本高于发行版 - {tag}")
+        elif status == 'same':
+            win.title(f"当前已是最新版本 - {tag}")
+        else:
+            win.title(f"发现新版本 - {tag}")
         win.geometry("640x480")
         win.transient(self.winfo_toplevel())
         win.grab_set()
@@ -1443,14 +1459,25 @@ class MyUI(ttk.Labelframe):
         # 标题栏：左侧标题 + 右侧前往下载按钮
         header_frame = ttk.Frame(win)
         header_frame.pack(fill='x', padx=12, pady=(10, 5))
-        title_text = f"当前已是最新版本：{tag}" if tag == tool_version else f"发现新版本：{tag}"
+        if status == 'older':
+            title_text = f"本地版本高于发行版：{tag}（当前 {tool_version}）"
+        elif status == 'same':
+            title_text = f"当前已是最新版本：{tag}"
+        else:
+            title_text = f"发现新版本：{tag}"
         ttk.Label(header_frame, text=title_text, font=('Microsoft YaHei', 12, 'bold')).pack(side='left')
 
         def open_download():
             if download_url:
                 webbrowser.open(download_url)
 
-        ttk.Button(header_frame, text="前往下载", command=open_download).pack(side='right')
+        # 远端版本更旧时不提供下载入口，避免用户主动降级
+        if status != 'older' and download_url:
+            ttk.Button(header_frame, text="前往下载", command=open_download).pack(side='right')
+            if status == 'newer':
+                install_btn = ttk.Button(header_frame, text="下载并安装")
+                install_btn.pack(side='right', padx=(0, 6))
+                install_btn.config(command=lambda: self._start_self_update(win, install_btn, download_url))
 
         # markdown 内容区
         content_frame = ttk.Frame(win)
@@ -1464,3 +1491,67 @@ class MyUI(ttk.Labelframe):
 
         render_markdown(text_widget, body)
         text_widget.config(state='disabled')  # 只读
+
+    # ========== 程序内自更新（#5）==========
+
+    def _start_self_update(self, win, btn, download_url):
+        """主线程：点击“下载并安装”，后台下载/校验/启动替换脚本。"""
+        btn.config(text="准备下载...", state="disabled")
+        threading.Thread(
+            target=self._self_update_worker,
+            args=(win, btn, download_url),
+            daemon=True,
+        ).start()
+
+    def _self_update_worker(self, win, btn, download_url):
+        """后台线程：下载 -> 校验解压 -> 启动替换脚本。"""
+        try:
+            zip_path = os.path.join(tempfile.gettempdir(), "mtk_porttool_update.zip")
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+
+            def on_progress(got, total):
+                pct = int(got * 100 / total) if total else 0
+                self._enqueue_main(lambda p=pct: self._self_update_progress(btn, p))
+
+            download_update(download_url, zip_path, progress=on_progress)
+            self._enqueue_main(lambda: self._self_update_progress(btn, 100, "校验中..."))
+            stage_root = stage_update(zip_path)
+            launch_update_installer(stage_root)
+        except Exception as e:
+            err = str(e)
+            self._enqueue_main(lambda: self._self_update_failed(win, btn, err))
+            return
+        self._enqueue_main(lambda: self._self_update_ready(win))
+
+    def _self_update_progress(self, btn, pct, text=None):
+        try:
+            if btn.winfo_exists():
+                btn.config(text=text or f"下载中 {pct}%")
+        except Exception:
+            pass
+
+    def _self_update_failed(self, win, btn, err):
+        try:
+            if btn.winfo_exists():
+                btn.config(text="下载并安装", state="normal")
+        except Exception:
+            pass
+        messagebox.showerror("自动更新失败", f"更新失败：{err}\n\n可点击“前往下载”手动下载。", parent=win)
+
+    def _self_update_ready(self, win):
+        messagebox.showinfo(
+            "更新已就绪",
+            "更新包已下载并校验通过。程序将退出，自动替换文件后重新启动。",
+            parent=win,
+        )
+        try:
+            win.grab_release()
+            win.destroy()
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
+        os._exit(0)

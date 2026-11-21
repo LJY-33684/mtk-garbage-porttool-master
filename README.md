@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3.7.005**
+> 当前版本 / Current version：**1.3.7.016**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -374,6 +374,18 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3.7.016**（11 项健壮性与可移植性修补 / 11 robustness & portability fixes）
+  - **x86_64 magiskboot / x86_64 magiskboot**：`bin/linux/x86_64/magiskboot` 原为误放的 aarch64 ELF，现替换为官方 Magisk v31.1 的 x86_64 静态二进制；启动时按 ELF `e_machine` 校验主机架构，错放时明确报错而不是执行失败
+  - **Linux 可执行权限 / Linux executable bits**：`run.sh`、`cnfix.sh`、`bin/linux/**` 在 git index 与 release zip 中统一为 `0755`（zip `create_system=3`），避免 Linux 解压后 Permission denied
+  - **启动前置检查 / Startup preflight**：`run.sh` 先检查 `python3` 是否存在且版本 ≥ 3.10，缺失/过低时中文报错并 `exit 1`；Windows `run.bat` 保留同类检查
+  - **版本比较 / Version comparison**：更新检查不再用字符串相等，新增 `parse_version`/`compare_versions`/`version_status`，支持 `1.3.7.006 > 1.3.7.005`、`1.3.7 == 1.3.7.000`、`v` 前缀与缺位补零；远端更旧/相同/更新分别给出明确提示
+  - **命令超时 / Command timeout**：`portutils.execv()` 默认按命令类型设置超时（magiskboot 120s、simg2img/img2simg 300s、make_ext4fs 600s，其余 300s），超时返回 `(-2, …)` 并终止子进程，避免解包/打包卡死
+  - **符号链接健壮性 / Symlink robustness**：Windows `__readlink()` 对 `OSError`/`UnicodeError` 返回 None；`__pack_fit_size()` 改用 `lstat()`，断链/目录链接不再中断容量统计
+  - **组件下载安全 / Component download security**：`获取openssl加速组件.bat` 改用 FireDaemon 官方 3.5.9 包，`获取brotli解压组件.bat` 改用 Google 官方 v1.2.0；两者均先 `certutil` 校验固定 SHA256 再解压，Brotli 的镜像仅作传输兜底且同一哈希校验，失败即删除
+  - **解密磁盘与临时文件 / Decrypt disk & temp cleanup**：`_ozip_decryptfile()` 解密前用 `shutil.disk_usage()` 预检 `dsize*1.2` 空间，失败清理 `.tmp`，成功后 `os.replace()` 原子替换；调用点检查返回值，失败中止而不是继续
+  - **程序内自更新 / In-app self-update**：更新弹窗新增「下载并安装」；下载限 http/https、300 MiB 上限并校验 Content-Length，`stage_update()` 拒绝绝对路径/`..`/非预期顶层目录且要求 `main.py`、`run.bat`、`porttool/utils.py`，Windows 用 `robocopy` 覆盖后重启、Linux 用 `cp -a` 后 `exec run.sh`
+  - **版本号 / Versioning**：按「修 N 升 N」，005 + 11 项修补 → `1.3.7.016`
+  - **开发自检脚本 / Dev self-test**：porttool/test_legacy345.py 保留在发行包内用于 3.4.5 回归自检（37 项）；它只在手动执行时运行，不影响正常启动；若后续需要精简包体可再移出打包白名单
 - **1.3.7.005**（PR #8 合并后的稳定性修补 / post-merge stability patch）
   - **新预设 / New preset**：合并 [@Xxinn034](https://github.com/Xxinn034) 的 PR #8，新增 `mt6572/mt6582/mt6592 kernel-3.4.5 (Android 4.x-7.x)` 预设（11 套）；预设保留 `legacy345_mode` + Binder/SELinux/模块序/fstab 全套 3.4.5 适配项
   - **模块加载段重写 / Module block rewrite**：插入点改回「第一条模块行所在的 on 段」，注释/空行隔开不再把 12 条 insmod 插成顶层；无 insmod 行时只补在 `on post-fs-data` / `on boot` 段尾，找不到 on 段拒绝改；`.ko.ko` 兜底修复；每个模块保留自己的命令形态与参数（`mac=...` 不再被复制给全部模块）；wlan 槽位按 donor 的 `mt6572/mt6582` 变体选择；其他 on 段不跨段搬动、不重复补

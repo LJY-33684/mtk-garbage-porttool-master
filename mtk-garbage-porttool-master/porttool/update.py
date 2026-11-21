@@ -3,8 +3,14 @@
 import urllib.request
 import json
 import base64
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import webbrowser
+import zipfile
+from pathlib import Path
 from tkinter import END
 
 # 更新源配置
@@ -23,6 +29,32 @@ UPDATE_SOURCES = {
 }
 UPDATE_TIMEOUT = 30  # 秒
 _UA = "MTK-PortTool"
+
+
+def parse_version(value):
+    """把 1.3.7.005 / v1.3-beta6p1 等版本串转成可比较的数字元组。"""
+    if not value:
+        return ()
+    return tuple(int(x) for x in re.findall(r'\d+', str(value)))
+
+
+def compare_versions(left, right):
+    """返回 -1 / 0 / 1；缺位按 0 补齐，无法解析时返回 None。"""
+    a, b = parse_version(left), parse_version(right)
+    if not a or not b:
+        return None
+    width = max(len(a), len(b))
+    a = a + (0,) * (width - len(a))
+    b = b + (0,) * (width - len(b))
+    return (a > b) - (a < b)
+
+
+def version_status(remote, local):
+    """返回 newer / same / older / unknown。"""
+    cmp_result = compare_versions(remote, local)
+    if cmp_result is None:
+        return 'unknown'
+    return {1: 'newer', 0: 'same', -1: 'older'}[cmp_result]
 
 
 class UpdateResult:
@@ -110,6 +142,142 @@ def fetch_release_body(src_cfg, tag, timeout=UPDATE_TIMEOUT):
     if not body:
         body = f"## {tag}\n\n更新内容获取失败，请前往下载页面查看详情。"
     return body
+
+
+def download_update(url, dest_path, progress=None, timeout=180):
+    """下载更新 zip 到 dest_path；progress(got, total) 用于 UI 进度回调。
+
+    只接受 http/https，限制最大 300 MiB，下载后交给 stage_update 做 zip 校验。
+    """
+    if not url or not str(url).lower().startswith(("http://", "https://")):
+        raise ValueError("更新地址不是有效的 http/https 链接")
+    dest_path = Path(dest_path)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    req = urllib.request.Request(str(url), headers={"User-Agent": _UA})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        total = int(resp.headers.get("Content-Length") or 0)
+        if total > 300 * 1024 * 1024:
+            raise ValueError(f"更新包过大（{total / (1024 ** 2):.1f} MiB），已拒绝下载")
+        got = 0
+        with open(dest_path, "wb") as f:
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                got += len(chunk)
+                if got > 300 * 1024 * 1024:
+                    raise ValueError("更新包超过 300 MiB，已中止下载")
+                f.write(chunk)
+                if progress:
+                    progress(got, total)
+    if total and got != total:
+        raise IOError(f"更新包不完整：应为 {total} 字节，实际 {got} 字节")
+    return str(dest_path)
+
+
+def stage_update(zip_path):
+    """校验并解压更新包到临时目录，返回解压后的 mtk-garbage-porttool-master 根目录。
+
+    安全约束：拒绝绝对路径、.. 路径穿越和非预期顶层目录；必须包含 main.py、
+    porttool/utils.py 和 run.bat，避免把损坏包/错包覆盖到程序目录。
+    """
+    zip_path = Path(zip_path)
+    if not zip_path.is_file():
+        raise FileNotFoundError("更新包不存在")
+    stage_root = Path(tempfile.mkdtemp(prefix="mtk_porttool_update_"))
+    expected_prefix = "mtk-garbage-porttool-master/"
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            bad = z.testzip()
+            if bad:
+                raise ValueError(f"更新包损坏：{bad}")
+            for info in z.infolist():
+                name = info.filename.replace("\\", "/")
+                if not name or name.endswith("/"):
+                    continue
+                if name.startswith("/") or ".." in Path(name).parts:
+                    raise ValueError(f"更新包含非法路径：{name}")
+                if not name.startswith(expected_prefix):
+                    raise ValueError(f"更新包顶层目录不符合预期：{name}")
+                rel = name[len(expected_prefix):]
+                target = stage_root / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with z.open(info) as src, open(target, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                mode = (info.external_attr >> 16) & 0o777
+                if mode:
+                    try:
+                        os.chmod(target, mode)
+                    except OSError:
+                        pass
+    except Exception:
+        shutil.rmtree(stage_root, ignore_errors=True)
+        raise
+
+    app_root = stage_root
+    for required in ("main.py", "run.bat", "porttool/utils.py"):
+        if not (app_root / required).is_file():
+            shutil.rmtree(stage_root, ignore_errors=True)
+            raise ValueError(f"更新包缺少必要文件：{required}")
+    return str(app_root)
+
+
+def launch_update_installer(stage_root):
+    """生成并在后台启动替换脚本；调用方应立即退出程序。
+
+    Windows 用 robocopy 覆盖文件后重新运行 run.bat；Linux 用 cp -a 后执行 run.sh。
+    脚本会等待 3 秒，给当前进程退出留出时间。
+    """
+    app_root = Path(__file__).resolve().parent.parent
+    stage_root = Path(stage_root)
+    if os.name == "nt":
+        script = Path(tempfile.gettempdir()) / "mtk_porttool_apply_update.bat"
+        script.write_text(
+            "@echo off\n"
+            '"%SystemRoot%\\System32\\chcp.com" 65001 >nul 2>nul\n'
+            f'set "SRC={stage_root}"\n'
+            f'set "DST={app_root}"\n'
+            '"%SystemRoot%\\System32\\ping.exe" -n 4 127.0.0.1 >nul\n'
+            '"%SystemRoot%\\System32\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /NFL /NDL /NJH /NJS /NP /R:2 /W:1 >nul\n'
+            'if errorlevel 8 (\n'
+            '  echo [ERROR] update copy failed, robocopy exit=%ERRORLEVEL% > "%TEMP%\\mtk_porttool_update_error.log"\n'
+            '  exit /b 1\n'
+            ')\n'
+            'start "" "%DST%\\run.bat"\n'
+            'del "%~f0"\n',
+            encoding="utf-8",
+            newline="\r\n",
+        )
+        cmd_exe = os.environ.get("ComSpec") or r"C:\Windows\System32\cmd.exe"
+        subprocess.Popen(
+            [cmd_exe, "/c", str(script)],
+            cwd=str(app_root),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    else:
+        script = Path(tempfile.gettempdir()) / "mtk_porttool_apply_update.sh"
+        script.write_text(
+            "#!/bin/sh\n"
+            "sleep 3\n"
+            f'cp -a "{stage_root}"/. "{app_root}"/\n'
+            f'exec "{app_root}/run.sh"\n',
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        subprocess.Popen(
+            ["/bin/sh", str(script)],
+            cwd=str(app_root),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    return str(script)
 
 
 def render_markdown(text_widget, markdown_text):

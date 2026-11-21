@@ -32,6 +32,7 @@ import json
 import argparse
 import copy
 import subprocess
+import re
 import urllib.request
 
 # ---- 工具目录定位：本文件在工具目录（mtk-garbage-porttool-master/）内，porttool/ 是包目录 ----
@@ -267,6 +268,11 @@ def cmd_fscheck(a, log):
 #   latest_version=tag
 #   update_url_1=GitHub下载直链  /  update_url_2=Gitee下载直链  /  update_url=通用链接
 # ============================================================
+def _ver_tuple(value):
+    """把 1.3.7.016 / v1.3-beta6p1 转成可比较的数字元组（与 update.py 规则一致）。"""
+    return tuple(int(x) for x in re.findall(r'\d+', str(value))) if value else ()
+
+
 def cmd_check_update(a, log):
     import re
     try:
@@ -281,10 +287,19 @@ def cmd_check_update(a, log):
         if not remote:
             print("【更新检查】无法解析远程版本（格式：latest_version=\"tag\"）", file=log)
             return 2
-        if remote == tool_version:
+        rv, lv = _ver_tuple(remote), _ver_tuple(tool_version)
+        if not rv or not lv:
+            print("【更新检查】版本号无法比较", file=log)
+            return 2
+        width = max(len(rv), len(lv))
+        rv += (0,) * (width - len(rv))
+        lv += (0,) * (width - len(lv))
+        if rv > lv:
+            print(f"【更新检查】发现新版本：{remote}（下载地址：{url}）", file=log)
+        elif rv == lv:
             print(f"【更新检查】当前已是最新版本（{tool_version}）", file=log)
         else:
-            print(f"【更新检查】发现新版本：{remote}（下载地址：{url}）", file=log)
+            print(f"【更新检查】本地版本高于远程发行版（{tool_version} > {remote}），无需更新", file=log)
         return 0
     except Exception as e:
         print(f"【更新检查】失败：{e}", file=log)
