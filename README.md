@@ -374,14 +374,15 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
-- **1.3.7.020**（§203 复验修补 / post-audit fix）
+- **1.3.7.020**（相对上一公开发布版 1.3.7.005 的累计更新 / cumulative since 1.3.7.005）
+  - **发布口径 / Release scope**：`1.3.7.016`、`1.3.7.019` 为内部迭代，未单独发版；本次是 `1.3.7.005` 之后首个公开发布版，累计 15 个修补模块（016 11 项 + 019 3 项 + 020 1 项）。
   - **自更新备份瘦身 / Lean update backup**：备份改用 `shutil.copytree` 并排除 `out/`、`tmp/`、`ramdisk/`、`kernel/`、`bootinfo/`、`__pycache__/`、`.git/`、`*.log`，不再把用户解包产生的几百 MB 到几 GB 运行时目录复制进 `<app>.backup`；保留 `configs.json` 等配置
   - **回滚保留运行时 / Runtime-safe rollback**：Windows 与 Linux 的回滚不再镜像删除工具目录，只把备份中的代码/配置覆盖回原位，避免失败回滚把用户 `out/` 一并删掉
   - **配置备份 / Config backup**：覆盖更新前把现有 `configs.json` 复制为 `configs.json.bak`，手工改过配置的用户可一键恢复
   - **重启窗口 / Restart window**：Windows 更新成功后用独立 `cmd /c` 窗口重启 `run.bat`，脚本错误和 `pause` 提示不再被 `/B` 隐藏
   - **打包清理 / Package cleanup**：发行 zip 不再包含 `porttool/test_legacy345.py`（仅源码树保留用于手动回归）；`获取brotli解压组件.bat` 移除 `ghfast.top`、`mirror.ghproxy.com` 两个第三方镜像，仅保留 Google 官方 GitHub 地址与固定 SHA256 校验
-  - **版本号 / Versioning**：019 + 1 个修补模块（`update.py` 自更新备份/回滚/配置/重启）→ `1.3.7.020`
-- **1.3.7.019**（§202 复验加固 / post-audit hardening）
+  - **版本号 / Versioning**：`1.3.7.005` + 15 个修补模块（`1.3.7.016` 11 项 + `1.3.7.019` 3 项 + 本版 1 项 `update.py` 自更新备份/回滚/配置/重启）→ `1.3.7.020`；016/019 未单独发版
+- **1.3.7.019**（§202 复验加固 / 内部迭代，未单独发版）
   - **自更新备份/回滚 / Self-update backup & rollback**：替换前把当前程序目录完整备份到同级 `<app>.backup`；Windows 用 `robocopy /MIR` 先备份，覆盖失败时用备份镜像回滚；Linux 用 `cp -a` 备份 + `set -eu`，复制失败先删除半覆盖目录再从备份恢复；不再出现“新 .py + 旧 .pyd”的半覆盖状态
   - **更新包 SHA256 / Update SHA256**：`latest_version.txt` 新增 `update_sha256=`，`download_update()` 边下载边计算 SHA256，与远端字段不一致时删除下载文件并拒绝安装
   - **更新期间拦截与清理 / Update guard & cleanup**：移植流程 `is_running` 时点击“下载并安装”直接提示并拒绝；替换成功后删除 `mtk_porttool_update.zip` 与解压暂存目录，失败路径也清理下载文件
@@ -389,7 +390,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
   - **OpenSSL 超时 / OpenSSL timeout**：`_openssl_decrypt()` 增加 120s 超时并捕获 `TimeoutExpired`，大块解密卡住时不再无限挂起
   - **fsutil 内联 / fsutil inline**：将仅 `oppo_decrypt.py` 使用的 `porttool/fsutil.py` 两个函数内联回解密模块，移除独立小模块；独立 OPPO 工具同步同一改法
   - **版本号 / Versioning**：016 + 3 个修补模块（自更新加固 / 架构检测 / OpenSSL 超时）→ `1.3.7.019`
-- **1.3.7.016**（11 项健壮性与可移植性修补 / 11 robustness & portability fixes）
+- **1.3.7.016**（11 项健壮性与可移植性修补 / 内部迭代，未单独发版）
   - **x86_64 magiskboot / x86_64 magiskboot**：`bin/linux/x86_64/magiskboot` 原为误放的 aarch64 ELF，现替换为官方 Magisk v31.1 的 x86_64 静态二进制；启动时按 ELF `e_machine` 校验主机架构，错放时明确报错而不是执行失败
   - **Linux 可执行权限 / Linux executable bits**：`run.sh`、`cnfix.sh`、`bin/linux/**` 在 git index 与 release zip 中统一为 `0755`（zip `create_system=3`），避免 Linux 解压后 Permission denied
   - **启动前置检查 / Startup preflight**：`run.sh` 先检查 `python3` 是否存在且版本 ≥ 3.10，缺失/过低时中文报错并 `exit 1`；Windows `run.bat` 保留同类检查

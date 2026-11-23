@@ -1,4 +1,4 @@
 latest_version=1.3.7.020
 update_url_1=https://github.com/LJY-33684/mtk-garbage-porttool-master/releases/download/1.3.7.020/mtk-garbage-porttool-master.zip
 update_url_2=https://gitee.com/Q3368436451/mtk-garbage-porttool-master/releases/download/1.3.7.020/mtk-garbage-porttool-master.zip
-update_sha256=637883f47743a0d8d9f0445e57d53562084c90376cc22b14f3ff9228b9dc6d96
+update_sha256=3bc6e23b0a325f3bc51b15d8d2f41a8d7424e89992e26d6807045ca231861596
