@@ -9,10 +9,8 @@ set "DST=%ROOT%bin\win\x86_64"
 set "ZIP=%TEMP%\brotli_porttool.zip"
 set "EX=%TEMP%\brotli_porttool_ex"
 
-rem 下载源：GitHub 官方 release 为主，ghproxy 加速镜像兜底（直连失败时自动切换）
+rem 下载源：仅 GitHub 官方 release；不引入第三方加速镜像，避免供应链风险
 set CAND0=https://github.com/google/brotli/releases/download/v1.2.0/brotli-x64-windows-static.zip
-set CAND1=https://ghfast.top/https://github.com/google/brotli/releases/download/v1.2.0/brotli-x64-windows-static.zip
-set CAND2=https://mirror.ghproxy.com/https://github.com/google/brotli/releases/download/v1.2.0/brotli-x64-windows-static.zip
 set SHA256=3208AB82D4F08E062A25660CF38092DB4E8415792AA1E579956D37740F8D8924
 
 if exist "%DST%\brotli.exe" goto installed
@@ -38,7 +36,7 @@ exit /b 0
 
 
 :download
-for %%U in (%CAND0% %CAND1% %CAND2%) do (
+for %%U in (%CAND0%) do (
   echo [下载] 正在下载官方 brotli 1.2.0（Windows 静态版）...
   echo        来源：%%U
   del /q "%ZIP%" 2>nul

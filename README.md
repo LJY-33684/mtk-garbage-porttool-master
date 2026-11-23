@@ -1,6 +1,6 @@
 # MTK低端机ROM移植工具 / MTK Low-End Device ROM Porting Tool
 
-> 当前版本 / Current version：**1.3.7.019**
+> 当前版本 / Current version：**1.3.7.020**
 
 > **仓库地址 / Repository：**
 > - **GitHub**：https://github.com/LJY-33684/mtk-garbage-porttool-master
@@ -374,6 +374,13 @@ This tool is intended only for technical learning and exchange regarding ROM por
 <a name="recent-updates"></a>
 ## 近期更新 / Recent Updates
 
+- **1.3.7.020**（§203 复验修补 / post-audit fix）
+  - **自更新备份瘦身 / Lean update backup**：备份改用 `shutil.copytree` 并排除 `out/`、`tmp/`、`ramdisk/`、`kernel/`、`bootinfo/`、`__pycache__/`、`.git/`、`*.log`，不再把用户解包产生的几百 MB 到几 GB 运行时目录复制进 `<app>.backup`；保留 `configs.json` 等配置
+  - **回滚保留运行时 / Runtime-safe rollback**：Windows 与 Linux 的回滚不再镜像删除工具目录，只把备份中的代码/配置覆盖回原位，避免失败回滚把用户 `out/` 一并删掉
+  - **配置备份 / Config backup**：覆盖更新前把现有 `configs.json` 复制为 `configs.json.bak`，手工改过配置的用户可一键恢复
+  - **重启窗口 / Restart window**：Windows 更新成功后用独立 `cmd /c` 窗口重启 `run.bat`，脚本错误和 `pause` 提示不再被 `/B` 隐藏
+  - **打包清理 / Package cleanup**：发行 zip 不再包含 `porttool/test_legacy345.py`（仅源码树保留用于手动回归）；`获取brotli解压组件.bat` 移除 `ghfast.top`、`mirror.ghproxy.com` 两个第三方镜像，仅保留 Google 官方 GitHub 地址与固定 SHA256 校验
+  - **版本号 / Versioning**：019 + 1 个修补模块（`update.py` 自更新备份/回滚/配置/重启）→ `1.3.7.020`
 - **1.3.7.019**（§202 复验加固 / post-audit hardening）
   - **自更新备份/回滚 / Self-update backup & rollback**：替换前把当前程序目录完整备份到同级 `<app>.backup`；Windows 用 `robocopy /MIR` 先备份，覆盖失败时用备份镜像回滚；Linux 用 `cp -a` 备份 + `set -eu`，复制失败先删除半覆盖目录再从备份恢复；不再出现“新 .py + 旧 .pyd”的半覆盖状态
   - **更新包 SHA256 / Update SHA256**：`latest_version.txt` 新增 `update_sha256=`，`download_update()` 边下载边计算 SHA256，与远端字段不一致时删除下载文件并拒绝安装
@@ -393,7 +400,7 @@ This tool is intended only for technical learning and exchange regarding ROM por
   - **解密磁盘与临时文件 / Decrypt disk & temp cleanup**：`_ozip_decryptfile()` 解密前用 `shutil.disk_usage()` 预检 `dsize*1.2` 空间，失败清理 `.tmp`，成功后 `os.replace()` 原子替换；调用点检查返回值，失败中止而不是继续
   - **程序内自更新 / In-app self-update**：更新弹窗新增「下载并安装」；下载限 http/https、300 MiB 上限并校验 Content-Length，`stage_update()` 拒绝绝对路径/`..`/非预期顶层目录且要求 `main.py`、`run.bat`、`porttool/utils.py`，Windows 用 `robocopy` 覆盖后重启、Linux 用 `cp -a` 后 `exec run.sh`
   - **版本号 / Versioning**：按「修 N 升 N」，005 + 11 项修补 → `1.3.7.016`
-  - **开发自检脚本 / Dev self-test**：porttool/test_legacy345.py 保留在发行包内用于 3.4.5 回归自检（37 项）；它只在手动执行时运行，不影响正常启动；若后续需要精简包体可再移出打包白名单
+  - **开发自检脚本 / Dev self-test**：`porttool/test_legacy345.py` 保留在源码树用于 3.4.5 回归自检（37 项）；它只在手动执行时运行，不影响正常启动。1.3.7.020 起不再打入发行 zip。
 - **1.3.7.005**（PR #8 合并后的稳定性修补 / post-merge stability patch）
   - **新预设 / New preset**：合并 [@Xxinn034](https://github.com/Xxinn034) 的 PR #8，新增 `mt6572/mt6582/mt6592 kernel-3.4.5 (Android 4.x-7.x)` 预设（11 套）；预设保留 `legacy345_mode` + Binder/SELinux/模块序/fstab 全套 3.4.5 适配项
   - **模块加载段重写 / Module block rewrite**：插入点改回「第一条模块行所在的 on 段」，注释/空行隔开不再把 12 条 insmod 插成顶层；无 insmod 行时只补在 `on post-fs-data` / `on boot` 段尾，找不到 on 段拒绝改；`.ko.ko` 兜底修复；每个模块保留自己的命令形态与参数（`mac=...` 不再被复制给全部模块）；wlan 槽位按 donor 的 `mt6572/mt6582` 变体选择；其他 on 段不跨段搬动、不重复补

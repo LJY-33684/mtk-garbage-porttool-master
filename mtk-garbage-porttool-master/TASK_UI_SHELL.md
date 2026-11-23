@@ -37,7 +37,7 @@
 
 | 命令 | 输出 | 用途 |
 |---|---|---|
-| `python porttool_cli.py --version` | 版本号（如 `1.3.7.019`） | 版本展示 / 更新比较 |
+| `python porttool_cli.py --version` | 版本号（如 `1.3.7.020`） | 版本展示 / 更新比较 |
 | `python porttool_cli.py --chipsets` | 每行一个方案名 | 壳动态构建"芯片类型"下拉框 |
 | `python porttool_cli.py --items --chipset "<方案名>"` | 每行 `条目键=值`（true/false） | 壳动态构建"移植条目"勾选列表 |
 
@@ -290,9 +290,9 @@ python porttool_cli.py check-update --url "https://github.com/LJY-33684/mtk-garb
 
 ## 13. 版本 / Version
 
-- 本桥接接口随工具版本发布：当前 `1.3.7.019`（格式 = 主版本 `1.3` + beta号 `7` + p号 `019`；沿革：`1.3.6.003` +4 模块→`1.3.6.007`，+2→`1.3.6.009`（mddb 文件替换类型对冲 + wmt_launcher ramdisk 注入），+3→`1.3.6.012`（配置加载与内嵌表同步 / 单实例跳转 / 启动脚本前置检测）；`1.3.6.012` → `1.3.7.001` 属功能增强：升 z 位、p 重置 001，包含补全 Linux/ARM64 解密环境（随包 OpenSSL/brotli、OPPO 解密核心对齐、临时目录统一 `tmp/oppo_decrypt/`、窗口左上角 LOGO 图标显示、日志框一键清空）与合并独立 OPPO 工具的高通 QC OFP 分支（尾部 `0x7CEF` 页索引 + 加密 XML 分派、6 组密钥、Sahara/Chained 长度特判、PK zip 型固定密码解压、结构兜底）；本版 `1.3.7.019` = `1.3.7.016` + 3 项复验加固（自更新备份/回滚与更新包 SHA256、32 位架构拦截、OpenSSL 超时），详见 README 1.3.7.019 节）
+- 本桥接接口随工具版本发布：当前 `1.3.7.020`（格式 = 主版本 `1.3` + beta号 `7` + p号 `020`；沿革：`1.3.6.003` +4 模块→`1.3.6.007`，+2→`1.3.6.009`（mddb 文件替换类型对冲 + wmt_launcher ramdisk 注入），+3→`1.3.6.012`（配置加载与内嵌表同步 / 单实例跳转 / 启动脚本前置检测）；`1.3.6.012` → `1.3.7.001` 属功能增强：升 z 位、p 重置 001，包含补全 Linux/ARM64 解密环境（随包 OpenSSL/brotli、OPPO 解密核心对齐、临时目录统一 `tmp/oppo_decrypt/`、窗口左上角 LOGO 图标显示、日志框一键清空）与合并独立 OPPO 工具的高通 QC OFP 分支（尾部 `0x7CEF` 页索引 + 加密 XML 分派、6 组密钥、Sahara/Chained 长度特判、PK zip 型固定密码解压、结构兜底）；`1.3.7.019` = `1.3.7.016` + 3 项复验加固（自更新备份/回滚与更新包 SHA256、32 位架构拦截、OpenSSL 超时）；本版 `1.3.7.020` = `1.3.7.019` + 1 项自更新收尾（备份排除运行时目录、回滚保留 `out/`、`configs.json.bak`、可见重启窗口），详见 README 1.3.7.020 节）
 - 版本号唯一入口：`porttool/utils.py` 的 `tool_version`（`--version`、日志、zip 内 ui_print 均跟随）
-- 随包开发自检脚本：porttool/test_legacy345.py 用于 3.4.5 回归自检（37 项），仅手动执行，不影响正常启动
+- 随包开发自检脚本：`porttool/test_legacy345.py` 仅保留在源码树用于 3.4.5 回归自检（37 项），不再打入发行 zip；只在手动执行时运行，不影响正常启动
 
 ## 14. 已知限制 / Known Limitations
 

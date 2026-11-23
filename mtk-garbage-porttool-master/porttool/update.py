@@ -248,17 +248,50 @@ def stage_update(zip_path):
     return str(app_root)
 
 
+UPDATE_BACKUP_IGNORE = (
+    "out",
+    "tmp",
+    "ramdisk",
+    "kernel",
+    "bootinfo",
+    "__pycache__",
+    ".git",
+    "*.log",
+)
+
+
+def prepare_update_backup(app_root, backup_root):
+    """备份程序目录，但跳过可再生成的运行时产物。
+
+    旧实现用 ``robocopy /MIR`` 或 ``cp -a`` 备份整个根目录，用户解过包后
+    ``out/`` 可能有几百 MB 到几 GB，更新前的备份会白白复制这些文件。
+    这里用 ``shutil.copytree`` 统一两端的排除规则；``symlinks=True`` 保留
+    Linux 包内已有的符号链接。
+    """
+    app_root = Path(app_root)
+    backup_root = Path(backup_root)
+    if backup_root.exists():
+        shutil.rmtree(backup_root, ignore_errors=True)
+    shutil.copytree(
+        app_root,
+        backup_root,
+        symlinks=True,
+        ignore=shutil.ignore_patterns(*UPDATE_BACKUP_IGNORE),
+    )
+
+
 def launch_update_installer(stage_root, zip_path=None):
     """生成并在后台启动替换脚本；调用方应立即退出程序。
 
-    替换前先把当前程序目录完整备份到同级 ``<app>.backup``；复制失败时
-    用备份镜像回滚，避免“新 .py + 旧 .pyd”的半覆盖状态。复制成功后再
-    删除更新 zip 与解压暂存目录。Windows 用 robocopy，Linux 用 cp -a。
+    替换前先把当前程序目录备份到同级 ``<app>.backup``；复制失败时
+    用备份回滚，避免“新 .py + 旧 .pyd”的半覆盖状态。备份阶段已跳过
+    ``out/`` 等运行时产物；复制成功后再删除更新 zip 与解压暂存目录。
     脚本会等待 3 秒，给当前进程退出留出时间。
     """
     app_root = Path(__file__).resolve().parent.parent
     stage_root = Path(stage_root)
     backup_root = Path(str(app_root) + ".backup")
+    prepare_update_backup(app_root, backup_root)
     zip_path = str(zip_path) if zip_path else ""
     if os.name == "nt":
         script = Path(tempfile.gettempdir()) / "mtk_porttool_apply_update.bat"
@@ -270,16 +303,15 @@ def launch_update_installer(stage_root, zip_path=None):
             f'set "BACKUP={backup_root}"\n'
             f'set "ZIP={zip_path}"\n'
             '"%SystemRoot%\\System32\\ping.exe" -n 4 127.0.0.1 >nul\n'
-            'if exist "%BACKUP%" rmdir /s /q "%BACKUP%"\n'
-            '"%SystemRoot%\\System32\\robocopy.exe" "%DST%" "%BACKUP%" /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:1 >nul\n'
-            'if errorlevel 8 (\n'
-            '  echo [ERROR] backup failed, robocopy exit=%ERRORLEVEL% > "%TEMP%\\mtk_porttool_update_error.log"\n'
+            'if not exist "%BACKUP%\\main.py" (\n'
+            '  echo [ERROR] backup missing before update > "%TEMP%\\mtk_porttool_update_error.log"\n'
             '  exit /b 1\n'
             ')\n'
+            'if exist "%DST%\\configs.json" copy /y "%DST%\\configs.json" "%DST%\\configs.json.bak" >nul\n'
             '"%SystemRoot%\\System32\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /NFL /NDL /NJH /NJS /NP /R:2 /W:1 >nul\n'
             'if errorlevel 8 (\n'
             '  echo [ERROR] update copy failed, robocopy exit=%ERRORLEVEL% > "%TEMP%\\mtk_porttool_update_error.log"\n'
-            '  "%SystemRoot%\\System32\\robocopy.exe" "%BACKUP%" "%DST%" /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:1 >nul\n'
+            '  "%SystemRoot%\\System32\\robocopy.exe" "%BACKUP%" "%DST%" /E /IS /IT /NFL /NDL /NJH /NJS /NP /R:2 /W:1 >nul\n'
             '  if errorlevel 8 (\n'
             '    echo [ERROR] rollback failed, backup kept at "%BACKUP%" >> "%TEMP%\\mtk_porttool_update_error.log"\n'
             '  ) else (\n'
@@ -289,7 +321,7 @@ def launch_update_installer(stage_root, zip_path=None):
             ')\n'
             'if exist "%SRC%" rmdir /s /q "%SRC%"\n'
             'if exist "%ZIP%" del /f /q "%ZIP%"\n'
-            'start "" /B cmd /c ""%DST%\\run.bat""\n'
+            'start "" cmd /c ""%DST%\\run.bat""\n'
             'exit /b 0\n',
             encoding="utf-8",
             newline="\r\n",
@@ -312,12 +344,18 @@ def launch_update_installer(stage_root, zip_path=None):
             "set -eu\n"
             "sleep 3\n"
             f'BACKUP="{backup_root}"\n'
-            'rm -rf "$BACKUP"\n'
-            f'cp -a "{app_root}" "$BACKUP"\n'
-            f'if ! cp -a "{stage_root}"/. "{app_root}"/; then\n'
+            f'APP="{app_root}"\n'
+            f'STAGE="{stage_root}"\n'
+            'if [ ! -d "$BACKUP" ]; then\n'
+            '  echo "[ERROR] backup missing before update" >&2\n'
+            '  exit 1\n'
+            'fi\n'
+            'if [ -f "$APP/configs.json" ]; then\n'
+            '  cp -a "$APP/configs.json" "$APP/configs.json.bak"\n'
+            'fi\n'
+            'if ! cp -a "$STAGE"/. "$APP"/; then\n'
             '  echo "[ERROR] update copy failed; rolling back from $BACKUP" >&2\n'
-            f'  rm -rf "{app_root}"\n'
-            f'  cp -a "$BACKUP" "{app_root}" || echo "[ERROR] rollback failed; backup kept at $BACKUP" >&2\n'
+            '  cp -a "$BACKUP"/. "$APP"/ || echo "[ERROR] rollback failed; backup kept at $BACKUP" >&2\n'
             '  exit 1\n'
             'fi\n'
             f'rm -rf "{stage_root}"\n'
